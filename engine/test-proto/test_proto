@@ -1,0 +1,93 @@
+syntax = 'proto3';
+
+package doc_generator_test;
+
+// @header: My Test API main wrappers
+
+/**
+ * Client request with specified action.
+ */
+message ClientRequest {
+  string trx = 1; // unique transaction id of each message to match it with server response.
+
+  oneof action {
+    TokenRequest token_request = 2;
+    RegistrationRequest registration_request = 3;
+  }
+}
+
+/**
+ * Server response with specified action.
+ */
+message ServerResponse {
+  string trx = 1;
+
+  oneof action {
+    TokenRequest token_response = 2;
+    RegistrationResponse login_request = 3;
+  }
+}
+
+// @header: Registration/authorization related requests
+
+/*
+ * Token request for external API. Returns authorization bearer token (JWT token) payload if login is successful.
+  @code[json]:
+{
+    "trx": "783b9df7-4ab2-481d-8a26-cf30908b673f",
+    "tokenRequest": {
+        "username": "{{USER}}",
+        "password": "{{PASS}}",
+        "expiry": 2147483647
+    }
+}
+*/
+message TokenRequest {
+  string username = 1; // user name (email)
+  string password = 2; // password
+  int64 expiry = 3; // token expiration period in seconds
+}
+
+// @header: My Test API
+
+/*
+ * Token response.
+ */
+message TokenResponse {
+  LoginStatus status = 1; // login status
+  string token = 2; // base64 encoded jwt token to include in authorization bearer header that you need to decode to use in your header
+  int64 valid_till = 3; // valid till (unix timestamp in seconds)
+  string error_reason = 4; // error reason if error has occurred
+}
+
+/*
+ * Registration request.
+ * @autocode[json]
+ */
+message RegistrationRequest {
+  string phone = 1; // phone @len=10
+  string email = 2; // email
+  string password = 3; // password
+  int64 token_id = 4; // recaptcha token that's obtained from recaptcha @max=500 @min=13
+}
+
+/*
+ * Registration response.
+ */
+message RegistrationResponse {
+  RegistrationStatus status = 1; // registration status
+}
+
+enum LoginStatus {
+  LS_OK = 0; // ok
+  LS_FAILED = 1; // invalid credentials provided
+  LS_INVALID_REQUEST = 2; // invalid request parameters provided
+}
+
+enum RegistrationStatus {
+  RS_OK = 0; // ok
+  RS_EMAIL_ALREADY_REGISTERED = 1; // email already registered
+  RS_PHONE_ALREADY_REGISTERED = 2; // phone number already registered
+  RS_PASSWORD_IS_TOO_WEAK = 3; // provided password is too weak
+  RS_INVALID_EMAIL_PROVIDED = 4; // invalid email provided
+}

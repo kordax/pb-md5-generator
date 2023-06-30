@@ -1,0 +1,18 @@
+# Binaries for programs and plugins
+*.exe
+*.so
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (vendor folder could be ignored if you are using Go Modules)
+vendor/
+
+# GoLand-specific (also applicable for other JetBrains IDEs)
+.idea/
+
+# GoLand run/debug configurations
+*.iml
