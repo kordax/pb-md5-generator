@@ -157,3 +157,38 @@ pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
 ```
 
 There's a `test_protofile` in `internal/test-proto` directory for you to check out.
+
+# Libraries Used in the Project
+
+This document lists the libraries used in the project that are licensed under the MIT License, in accordance with their respective licenses.
+
+# MIT Licensed Libraries
+
+- **[golang/protobuf](https://github.com/golang/protobuf)** v1.5.0
+    - **License**: [BSD-3 License](https://github.com/golang/protobuf/blob/master/LICENSE)
+
+- **[google/uuid](https://github.com/google/uuid)** v1.3.0
+    - **License**: [BSD-3 License](https://github.com/google/uuid/blob/master/LICENSE)
+
+- **[goombaio/namegenerator](https://github.com/goombaio/namegenerator)** v0.0.0-20181006234301-989e774b106e
+    - **License**: [Apache-2.0 License](https://github.com/goombaio/namegenerator/blob/master/LICENSE)
+
+- **[pseudomuto/protokit](https://github.com/pseudomuto/protokit)** v0.2.1
+    - **License**: [MIT License](https://github.com/pseudomuto/protokit/blob/master/LICENSE)
+
+- **[rs/zerolog](https://github.com/rs/zerolog)** v1.29.1
+    - **License**: [MIT License](https://github.com/rs/zerolog/blob/master/LICENSE)
+
+- **[stretchr/testify](https://github.com/stretchr/testify)** v1.8.4
+    - **License**: [MIT License](https://github.com/stretchr/testify/blob/master/LICENSE)
+
+- **[mattn/go-colorable](https://github.com/mattn/go-colorable)** v0.1.13
+    - **License**: [MIT License](https://github.com/mattn/go-colorable/blob/master/LICENSE)
+
+- **[mattn/go-isatty](https://github.com/mattn/go-isatty)** v0.0.19
+    - **License**: [MIT License](https://github.com/mattn/go-isatty/blob/master/LICENSE)
+
+- **[pmezard/go-difflib](https://github.com/pmezard/go-difflib)** v1.0.0
+    - **License**: [MIT License](https://github.com/pmezard/go-difflib/blob/master/LICENSE)
+
+Note: The above links and license information are for illustrative purposes and may not be accurate. Please verify the license information by visiting the respective library's repository and reviewing their license file.
