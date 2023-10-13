@@ -1,5 +1,5 @@
+[![Tests](https://github.com/kordax/pb-md5-generator/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/kordax/pb-md5-generator/actions/workflows/Tests.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kordax/pb-md5-generator)](https://goreportcard.com/report/github.com/kordax/pb-md5-generator)
-
 
 # Introduction
 
