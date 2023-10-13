@@ -78,6 +78,71 @@ message RegistrationResponse {
   RegistrationStatus status = 1; // registration status
 }
 
+/*
+ * List user servers. Pagination is optional and is not available for all hosts.
+ * Client don't have to worry about pagination support. In case pagination is not supported, you will receive a single page with all the results.
+ @code[json]:
+{
+    "trx": "{{trx}}",
+    "listServersRequest": {
+        "page": 0,
+        "page_size": 0,
+        "host": "HOST_VULTR"
+    }
+}
+ */
+message ListServersRequest {
+  int32 page = 1; // page index. if @min=0 is given, then default page size will be used @max=150
+  int32 page_size = 2; // page size. @max=500
+}
+
+/*
+ * List servers response.
+ @code[json]:
+{
+  "trx": "{{trx}}",
+  "list_servers_response":  {
+    "status":  "LSS_OK",
+    "page":  1,
+    "page_size":  1,
+    "pages":  1,
+    "host":  "HOST_VULTR",
+    "servers":  [
+      {
+        "id":  "g_650785b9-9a26-4cc3-ba80-484be2dc30e8",
+        "name":  "25167-vc2-1c-1gb-ams-lively-snow"
+      }
+    ]
+  }
+}
+ */
+message ListServersResponse {
+  ListServersStatus status = 1; // operation status
+  int32 page = 2; // page index. if @min=0 is given, then default page size will be used
+  int32 page_size = 3; // page size. @max=500
+  int32 pages = 4; // total pages count
+  repeated ServerEntry servers = 5; // server entries
+}
+
+message ServerEntry {
+  string id = 1; // instance id
+  string name = 2; // instance label
+}
+
+message ServerPlan {
+  string name = 1; // plan id
+  string class = 2; // plan class
+  int64 monthly_rate = 3; // monthly rate (denominated value in POINTS)
+  int64 hourly_rate = 4;  // hourly rate (denominated value in POINTS)
+  int32 gpus = 5; // number of gpus
+  float memory = 6; // memory size in GigaBytes
+  int32 network_out = 7; // network output in GigaBytes
+  int32 cpus = 8; // number of cpus
+  repeated string labels = 9; // associated labels
+  repeated string supported_images = 10; // supported image ids. if list is empty then all images are supported
+  repeated string supported_regions = 11; // supported region ids. if list is empty then all regions are supported
+}
+
 enum LoginStatus {
   LS_OK = 0; // ok
   LS_FAILED = 1; // invalid credentials provided
@@ -90,4 +155,31 @@ enum RegistrationStatus {
   RS_PHONE_ALREADY_REGISTERED = 2; // phone number already registered
   RS_PASSWORD_IS_TOO_WEAK = 3; // provided password is too weak
   RS_INVALID_EMAIL_PROVIDED = 4; // invalid email provided
+}
+
+enum InstanceStatus {
+  INSTANCE_BOOTING = 0;
+  INSTANCE_RUNNING = 1;
+  INSTANCE_OFFLINE = 2;
+  INSTANCE_SHUTTING_DOWN = 3;
+  INSTANCE_REBOOTING = 4;
+  INSTANCE_PROVISIONING = 5;
+  INSTANCE_DELETING = 6;
+  INSTANCE_MIGRATING = 7;
+  INSTANCE_REBUILDING = 8;
+  INSTANCE_CLONING = 9;
+  INSTANCE_RESTORING = 10;
+  INSTANCE_RESIZING = 11;
+  INSTANCE_NOT_EXISTING = 12;
+  INSTANCE_CANCELLED = 13;
+  INSTANCE_CREATING = 14;
+  INSTANCE_UPDATING = 15;
+  INSTANCE_STATUS_NOT_AVAILABLE = 16; // instance status cannot be obtained for this type of instance
+}
+
+enum ListServersStatus {
+  LSS_OK = 0; // ok
+  LSS_INVALID_HOSTING_PROVIDER = 1; // invalid host provided
+  LSS_BAD_PAYLOAD = 2; // bad request (invalid page index or page size)
+  LSS_SELLER_NOT_AVAILABLE = 3;
 }
