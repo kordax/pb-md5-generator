@@ -1,0 +1,41 @@
+on: [push, pull_request]
+name: Go test coverage check
+jobs:
+  test:
+    permissions: write-all
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    name: Go test coverage check
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+      
+      - name: generate test coverage
+        run: go test ./... -coverprofile=./cover.out
+    
+      - name: check test coverage
+        id: coverage
+        uses: vladopajic/go-test-coverage@v2
+        with:
+          # Configure action using config file (option 1)
+          config: ./.testcoverage.yml
+          
+          # Configure action by specifying input parameters individually (option 2)
+          profile: cover.out
+          local-prefix: github.com/kordax/pb-md5-generator
+          threshold-file: 70
+          threshold-package: 70
+          threshold-total: 80
+      - name: make coverage badge
+        uses: action-badges/core@0.2.2
+        if: contains(github.ref, 'main')
+        with:
+          message: ${{ steps.coverage.outputs.badge-text }}
+          message-color: ${{ steps.coverage.outputs.badge-color }}
+          label: Coverage
+          file-name: coverage.svg
+          badge-branch: badges ## orphan branch where badge will be committed
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
