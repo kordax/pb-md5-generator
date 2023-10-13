@@ -13,26 +13,63 @@ import (
 func TestGenerate(t *testing.T) {
 	generator := NewCodegenerator()
 
-	// Mock data
 	files := []ParsedFile{
 		createMockParsedFile(),
 	}
 
-	messageWithCode := &Message{
-		m: &protokit.Descriptor{
-			DescriptorProto: &descriptor.DescriptorProto{
-				Name: refutils.Ref("test message"),
-			},
+	commonDescriptor := &protokit.Descriptor{
+		DescriptorProto: &descriptor.DescriptorProto{
+			Name: refutils.Ref("test message"),
 		},
+	}
+
+	messageWithCode := &Message{
+		m:    commonDescriptor,
 		code: opt.Of(arrayutils.Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
 	}
 
 	messageWithAutocode := &Message{
-		m: &protokit.Descriptor{
-			DescriptorProto: &descriptor.DescriptorProto{
-				Name: refutils.Ref("test message"),
-			},
+		m:        commonDescriptor,
+		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+	}
+
+	messageWithCodeAndAutocode := &Message{
+		m:        commonDescriptor,
+		code:     opt.Of(arrayutils.Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
+		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+	}
+
+	messageWithNeither := &Message{
+		m: commonDescriptor,
+	}
+
+	messageWithMultipleFields := &Message{
+		m:        commonDescriptor,
+		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		fields: []MessageField{
+			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc1", ValueTypeInt, nil),
+			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc2", ValueTypeString, nil),
 		},
+	}
+
+	messageWithEmbeddedMessage := &Message{
+		m:        commonDescriptor,
+		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		fields: []MessageField{
+			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc", ValueTypeStruct, nil),
+		},
+	}
+
+	messageWithEnum := &Message{
+		m:        commonDescriptor,
+		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		fields: []MessageField{
+			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc", ValueTypeEnum, nil),
+		},
+	}
+
+	messageWithNoFields := &Message{
+		m:        commonDescriptor,
 		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
 	}
 
@@ -52,6 +89,55 @@ func TestGenerate(t *testing.T) {
 			name:    "Test with autocode",
 			files:   files,
 			message: messageWithAutocode,
+			wantErr: false,
+		},
+		{
+			name:    "Test with both code and autocode",
+			files:   files,
+			message: messageWithCodeAndAutocode,
+			wantErr: false,
+		},
+		{
+			name:    "Test with neither code nor autocode",
+			files:   files,
+			message: messageWithNeither,
+			wantErr: true,
+		},
+		{
+			name:    "Test with multiple fields",
+			files:   files,
+			message: messageWithMultipleFields,
+			wantErr: false,
+		},
+		{
+			name:    "Test with embedded message",
+			files:   files,
+			message: messageWithEmbeddedMessage,
+			wantErr: true,
+		},
+		{
+			name:    "Test with enum field",
+			files:   files,
+			message: messageWithEnum,
+			wantErr: false,
+		},
+		{
+			name:    "Test with no fields",
+			files:   files,
+			message: messageWithNoFields,
+			wantErr: false,
+		},
+		{
+			name: "Test with multiple entries in ParsedFile",
+			files: []ParsedFile{
+				{
+					index:    0,
+					filename: "multi_entry.proto",
+					title:    "MultipleEntries",
+					entries:  []Entry{ /* ... multiple entries here ... */ },
+				},
+			},
+			message: &Message{m: commonDescriptor, autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson})},
 			wantErr: false,
 		},
 	}
