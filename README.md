@@ -1,3 +1,6 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/kordax/pb-md5-generator)](https://goreportcard.com/report/github.com/kordax/pb-md5-generator)
+
+
 # Introduction
 
 Markdown documentation generator for proto3 protocol.
