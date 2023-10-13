@@ -706,21 +706,22 @@ func parseAutocodeChar(marker string, parameters []string) (any, error) {
 	if ind, _ := arrayutils.ContainsPredicate(parameters, func(v *string) bool {
 		return strings.Contains(*v, marker+"=")
 	}); ind != -1 {
-		spl := strings.Split(parameters[ind], "=")
+		spl := strings.Split(parameters[ind], marker+"=")
+		strVal := strings.Split(spl[1], " ")[0]
 		if len(spl) > 1 {
 			switch marker {
 			case AutocodeValueMarker:
-				return spl[1], nil
+				return strVal, nil
 			case AutocodeMaxLengthMarker:
-				return strconv.ParseUint(spl[1], 10, 64)
+				return strconv.ParseUint(strVal, 10, 64)
 			case AutocodeMinMarker:
-				fallthrough
+				return strconv.ParseFloat(strVal, 64)
 			case AutocodeMaxMarker:
-				fallthrough
+				return strconv.ParseFloat(strVal, 64)
 			case AutocodeTypeMarker:
-				return spl[1], nil
+				return strVal, nil
 			default:
-				return strconv.ParseFloat(spl[1], 64)
+				return strconv.ParseFloat(strVal, 64)
 			}
 		} else {
 			return nil, fmt.Errorf("failed to read parameter '%s', invalid format: %s", marker, parameters[ind])

@@ -85,7 +85,7 @@ func main() {
 
 	err := os.MkdirAll(*pbOutput, os.ModePerm)
 	if err != nil {
-		log.Err(err).Msgf("failed to initialize output directory", *pbOutput)
+		log.Err(err).Msgf("failed to initialize output directory: %s", *pbOutput)
 		os.Exit(6)
 	}
 	defer func(path string) {
@@ -103,7 +103,7 @@ func main() {
 
 	contentBytes, err := os.ReadFile(*prefix)
 	if err != nil {
-		log.Err(err).Msgf("failed to read prefix markdown document", *prefix)
+		log.Err(err).Msgf("failed to read prefix markdown document: %s", *prefix)
 		os.Exit(8)
 	}
 	content := string(contentBytes) + "\n\n"
@@ -117,7 +117,7 @@ func main() {
 	log.Info().Msgf("writing content to: %s", *output)
 	err = os.WriteFile(*output, []byte(content), 0644)
 	if err != nil {
-		log.Err(err).Msgf("cannot save results to output directory", *output)
+		log.Err(err).Msgf("cannot save results to output directory: %s", *output)
 		os.Exit(10)
 	}
 }
