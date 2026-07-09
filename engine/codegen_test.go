@@ -467,6 +467,42 @@ func TestCodegenHelpers(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestPBTypeToString(t *testing.T) {
+	typeName := ".sample.Custom"
+	tests := []struct {
+		name     string
+		typ      descriptorpb.FieldDescriptorProto_Type
+		typeName string
+		expected string
+	}{
+		{name: "int64", typ: descriptorpb.FieldDescriptorProto_TYPE_INT64, expected: "int64"},
+		{name: "int32", typ: descriptorpb.FieldDescriptorProto_TYPE_INT32, expected: "int32"},
+		{name: "uint64", typ: descriptorpb.FieldDescriptorProto_TYPE_UINT64, expected: "uint64"},
+		{name: "uint32", typ: descriptorpb.FieldDescriptorProto_TYPE_UINT32, expected: "uint32"},
+		{name: "sint64", typ: descriptorpb.FieldDescriptorProto_TYPE_SINT64, expected: "int64"},
+		{name: "sint32", typ: descriptorpb.FieldDescriptorProto_TYPE_SINT32, expected: "int32"},
+		{name: "fixed64", typ: descriptorpb.FieldDescriptorProto_TYPE_FIXED64, expected: "float64"},
+		{name: "fixed32", typ: descriptorpb.FieldDescriptorProto_TYPE_FIXED32, expected: "float32"},
+		{name: "double", typ: descriptorpb.FieldDescriptorProto_TYPE_DOUBLE, expected: "float64"},
+		{name: "float", typ: descriptorpb.FieldDescriptorProto_TYPE_FLOAT, expected: "float32"},
+		{name: "sfixed64", typ: descriptorpb.FieldDescriptorProto_TYPE_SFIXED64, expected: "float64"},
+		{name: "sfixed32", typ: descriptorpb.FieldDescriptorProto_TYPE_SFIXED32, expected: "float32"},
+		{name: "bool", typ: descriptorpb.FieldDescriptorProto_TYPE_BOOL, expected: "bool"},
+		{name: "string", typ: descriptorpb.FieldDescriptorProto_TYPE_STRING, expected: "string"},
+		{name: "bytes", typ: descriptorpb.FieldDescriptorProto_TYPE_BYTES, expected: "[]byte"},
+		{name: "enum", typ: descriptorpb.FieldDescriptorProto_TYPE_ENUM, typeName: typeName, expected: "sample.Custom"},
+		{name: "message", typ: descriptorpb.FieldDescriptorProto_TYPE_MESSAGE, typeName: "sample.Message", expected: "sample.Message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := fieldDescriptor("value", tt.typ, nil)
+			field.TypeName = &tt.typeName
+			assert.Equal(t, tt.expected, pbTypeToString(field))
+		})
+	}
+}
+
 func TestMapStringToValueType(t *testing.T) {
 	tests := map[string]ValueType{
 		"int":      ValueTypeInt,

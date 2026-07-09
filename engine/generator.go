@@ -288,7 +288,7 @@ func pbTypeToString(d *protokit.FieldDescriptor) string {
 	case descriptorpb.FieldDescriptorProto_TYPE_INT32:
 		return "int32"
 	case descriptorpb.FieldDescriptorProto_TYPE_UINT64:
-		return "uint62"
+		return "uint64"
 	case descriptorpb.FieldDescriptorProto_TYPE_UINT32:
 		return "uint32"
 	case descriptorpb.FieldDescriptorProto_TYPE_SINT64:

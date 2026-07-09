@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -104,4 +107,53 @@ func TestSmallGenericHelpers(t *testing.T) {
 	index, value = containsPredicate([]int{1}, func(v int) bool { return v > 1 })
 	assert.Equal(t, -1, index)
 	assert.Nil(t, value)
+}
+
+func TestSourceErrorFormattingAndLookup(t *testing.T) {
+	baseErr := errors.New("bad marker")
+	err := SourceError{File: "api.proto", Line: 12, Entity: "field name", Err: baseErr}
+	assert.Equal(t, "api.proto:12: field name: bad marker", err.Error())
+	assert.ErrorIs(t, err, baseErr)
+
+	err = SourceError{File: "api.proto", Err: baseErr}
+	assert.Equal(t, "api.proto: bad marker", err.Error())
+
+	markerErr := markerError{marker: "@code", err: baseErr}
+	assert.Equal(t, "bad marker", markerErr.Error())
+	assert.ErrorIs(t, markerErr, baseErr)
+
+	parser := &DescriptorParser{
+		payload: map[string]string{
+			"api.proto": "syntax = \"proto3\";\nmessage Request {\n  // @type=email\n  string email = 1;\n}\n",
+		},
+	}
+
+	assert.Equal(t, 2, parser.lineAt("api.proto", parser.findDeclaration("api.proto", "message", "Request")))
+	assert.Equal(t, 4, parser.lineAt("api.proto", parser.findFieldDeclaration("api.proto", "email")))
+	assert.Equal(t, 3, parser.lineAt("api.proto", parser.findMarker("api.proto", "@type")))
+	assert.Equal(t, -1, parser.findFieldDeclaration("api.proto", "missing"))
+	assert.Zero(t, parser.lineAt("api.proto", -1))
+	assert.Equal(t, 6, parser.lineAt("api.proto", 10_000))
+
+	sourceErr := parser.sourceError("api.proto", "field email", parser.findFieldDeclaration("api.proto", "email"), baseErr)
+	assert.Equal(t, "api.proto:4: field email: bad marker", sourceErr.Error())
+}
+
+func TestPayloadForFileReadsAndCaches(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "api.proto")
+	require.NoError(t, os.WriteFile(filePath, []byte("line1\nline2\n"), 0o600))
+	file, err := os.Open(filePath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	parser := &DescriptorParser{
+		matchedFiles: map[string]*os.File{"api.proto": file},
+		payload:      map[string]string{},
+	}
+
+	assert.Equal(t, "line1\nline2\n", parser.payloadForFile("api.proto"))
+	require.NoError(t, os.WriteFile(filePath, []byte("changed"), 0o600))
+	assert.Equal(t, "line1\nline2\n", parser.payloadForFile("api.proto"))
+	assert.Empty(t, parser.payloadForFile("missing.proto"))
 }

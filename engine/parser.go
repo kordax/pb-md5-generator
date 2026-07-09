@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -162,6 +163,41 @@ type DescriptorParser struct {
 	readOffsets map[string]int
 }
 
+type SourceError struct {
+	File   string
+	Line   int
+	Entity string
+	Err    error
+}
+
+func (e SourceError) Error() string {
+	location := e.File
+	if e.Line > 0 {
+		location = fmt.Sprintf("%s:%d", e.File, e.Line)
+	}
+	if e.Entity != "" {
+		return fmt.Sprintf("%s: %s: %s", location, e.Entity, e.Err.Error())
+	}
+	return fmt.Sprintf("%s: %s", location, e.Err.Error())
+}
+
+func (e SourceError) Unwrap() error {
+	return e.Err
+}
+
+type markerError struct {
+	marker string
+	err    error
+}
+
+func (e markerError) Error() string {
+	return e.err.Error()
+}
+
+func (e markerError) Unwrap() error {
+	return e.err
+}
+
 func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorParser {
 	cmdLine := request.GetParameter()
 	params := strings.Split(cmdLine, ";")
@@ -295,13 +331,13 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 	result.flags = p.parseMessageFlags(descriptor)
 	autocode, err := p.parseAutocode(descriptor)
 	if err != nil {
-		return nil, wrapMsgErr(descriptor, err)
+		return nil, p.messageError(descriptor, err)
 	}
 	result.autocode = OptionFromPtr(autocode)
 	if autocode == nil {
 		code, err := p.parseCode(descriptor)
 		if err != nil {
-			return nil, wrapMsgErr(descriptor, err)
+			return nil, p.messageError(descriptor, err)
 		}
 		result.code = OptionFromPtr(code)
 	}
@@ -309,7 +345,7 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 	for _, f := range descriptor.GetMessageFields() {
 		field, err := p.parseField(f, descriptor)
 		if err != nil {
-			return nil, wrapMsgErr(descriptor, err)
+			return nil, err
 		}
 		if flags := field.flags.Get(); flags != nil {
 			if contains(IgnoreMarker, flags.other) != -1 {
@@ -324,7 +360,7 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 	for i, d := range descriptor.GetMessages() {
 		nestedMsg, err := p.parseMessage(d, header)
 		if err != nil {
-			return nil, wrapMsgErr(d, err)
+			return nil, err
 		}
 
 		result.entries = append(result.entries, Entry{
@@ -362,7 +398,7 @@ func (p *DescriptorParser) parseField(descriptor *protokit.FieldDescriptor, m *p
 	description := p.parseFieldDescription(descriptor)
 	flags, err := p.parseFieldFlags(descriptor)
 	if err != nil {
-		return nil, wrapMsgErr(m, err)
+		return nil, p.fieldError(descriptor, err)
 	}
 
 	return NewMessageField(descriptor, m, description, vt, flags), nil
@@ -373,7 +409,7 @@ func (p *DescriptorParser) parseEnumValue(descriptor *protokit.EnumValueDescript
 	description := p.parseEnumValueDescription(descriptor)
 	flags, err := p.parseEnumValueFlags(descriptor)
 	if err != nil {
-		return nil, wrapEnumErr(e, err)
+		return nil, p.enumValueError(descriptor, err)
 	}
 
 	return &EnumField{
@@ -522,7 +558,7 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syn
 			var l int
 			syntax, l, err = parseSyntax(str)
 			if err != nil {
-				return nil, wrapMsgErr(descriptor, fmt.Errorf("failed to parse @code tag syntax: %s", err))
+				return nil, markerError{marker: MarkerDelimiter + CodeMarker, err: fmt.Errorf("failed to parse @code tag syntax: %w", err)}
 			}
 			block = strings.Trim(block[l:], " \n*")
 		}
@@ -531,7 +567,7 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syn
 			var indent bytes.Buffer
 			err := json.Indent(&indent, []byte(block), "", "\t")
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal and validate json code: %s, code:\n%s", err.Error(), block)
+				return nil, markerError{marker: MarkerDelimiter + CodeMarker, err: fmt.Errorf("failed to marshal and validate json code: %s, code:\n%s", err.Error(), block)}
 			}
 			block = indent.String()
 		}
@@ -555,11 +591,11 @@ func (p *DescriptorParser) parseAutocode(descriptor *protokit.Descriptor) (*Auto
 		str = strings.Split(str, "\n")[0]
 		matched, _ := regexp.MatchString(CodeSyntaxPattern, str)
 		if !matched {
-			return nil, fmt.Errorf("invalid autocode tag provided, failed to parse syntax: %s", str)
+			return nil, markerError{marker: MarkerDelimiter + AutocodeMarker, err: fmt.Errorf("invalid autocode tag provided, failed to parse syntax: %s", str)}
 		}
 		syntax, _, err := parseSyntax(str)
 		if err != nil {
-			return nil, wrapMsgErr(descriptor, fmt.Errorf("failed to parse @autocode tag syntax: %s", err))
+			return nil, markerError{marker: MarkerDelimiter + AutocodeMarker, err: fmt.Errorf("failed to parse @autocode tag syntax: %w", err)}
 		}
 		return &AutocodeOpt{syntax: syntax}, nil
 	}
@@ -721,12 +757,89 @@ func parseAutocodeChar(marker string, parameters []string) (any, error) {
 	return nil, nil
 }
 
-func wrapMsgErr(descriptor *protokit.Descriptor, err error) error {
-	return fmt.Errorf("failed to parse/process message %s\n%s", descriptor.GetName(), err.Error())
+func (p *DescriptorParser) messageError(descriptor *protokit.Descriptor, err error) error {
+	fileName := descriptor.GetFile().GetName()
+	var markerErr markerError
+	if errors.As(err, &markerErr) {
+		return p.sourceError(fileName, fmt.Sprintf("message %s marker %s", descriptor.GetName(), markerErr.marker), p.findMarker(fileName, markerErr.marker), err)
+	}
+	return p.sourceError(fileName, fmt.Sprintf("message %s", descriptor.GetName()), p.findDeclaration(fileName, "message", descriptor.GetName()), err)
 }
 
-func wrapEnumErr(descriptor *protokit.EnumDescriptor, err error) error {
-	return fmt.Errorf("failed to parse/process enum %s:%s", descriptor.GetName(), err.Error())
+func (p *DescriptorParser) fieldError(descriptor *protokit.FieldDescriptor, err error) error {
+	fileName := descriptor.GetFile().GetName()
+	return p.sourceError(fileName, fmt.Sprintf("field %s", descriptor.GetName()), p.findFieldDeclaration(fileName, descriptor.GetName()), err)
+}
+
+func (p *DescriptorParser) enumValueError(descriptor *protokit.EnumValueDescriptor, err error) error {
+	fileName := descriptor.GetFile().GetName()
+	return p.sourceError(fileName, fmt.Sprintf("enum value %s", descriptor.GetName()), p.findEnumValueDeclaration(fileName, descriptor.GetName()), err)
+}
+
+func (p *DescriptorParser) sourceError(fileName, entity string, index int, err error) error {
+	return SourceError{
+		File:   fileName,
+		Line:   p.lineAt(fileName, index),
+		Entity: entity,
+		Err:    err,
+	}
+}
+
+func (p *DescriptorParser) findDeclaration(fileName, kind, name string) int {
+	payload := p.payloadForFile(fileName)
+	return strings.Index(payload, kind+" "+name)
+}
+
+func (p *DescriptorParser) findFieldDeclaration(fileName, name string) int {
+	payload := p.payloadForFile(fileName)
+	re := regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(name) + `\b\s*=`)
+	loc := re.FindStringIndex(payload)
+	if loc == nil {
+		return -1
+	}
+	return loc[0]
+}
+
+func (p *DescriptorParser) findMarker(fileName, marker string) int {
+	return strings.Index(p.payloadForFile(fileName), marker)
+}
+
+func (p *DescriptorParser) findEnumValueDeclaration(fileName, name string) int {
+	return p.findFieldDeclaration(fileName, name)
+}
+
+func (p *DescriptorParser) lineAt(fileName string, index int) int {
+	if index < 0 {
+		return 0
+	}
+	payload := p.payloadForFile(fileName)
+	if payload == "" {
+		return 0
+	}
+	if index > len(payload) {
+		index = len(payload)
+	}
+	return strings.Count(payload[:index], "\n") + 1
+}
+
+func (p *DescriptorParser) payloadForFile(fileName string) string {
+	if payload, ok := p.payload[fileName]; ok {
+		return payload
+	}
+	file, ok := p.matchedFiles[fileName]
+	if !ok || file == nil {
+		return ""
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return ""
+	}
+	readFile, err := io.ReadAll(file)
+	if err != nil {
+		return ""
+	}
+	payload := string(readFile)
+	p.payload[fileName] = payload
+	return payload
 }
 
 func mapSlice[T, R any](values []T, mapper func(T) R) []R {
