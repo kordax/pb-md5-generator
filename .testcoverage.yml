@@ -1,0 +1,15 @@
+profile: cover.out
+local-prefix: github.com/kordax/pb-md5-generator
+
+threshold:
+  file: 0
+  package: 0
+  total: 90
+
+exclude:
+  paths:
+    - \.pb\.go$
+    - ^cmd/
+    - ^internal/app
+    - ^internal/proto
+    - ^internal/tools

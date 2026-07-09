@@ -3,12 +3,11 @@
 package pb_md5_generator_test
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/kordax/basic-utils/v3/ufile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,34 +17,9 @@ func TestCLIIntegrationGeneratesMarkdownForRealAPI(t *testing.T) {
 	requireTool(t, "protoc-gen-go")
 
 	root := t.TempDir()
-	protoDir := filepath.Join(root, "proto")
-	require.NoError(t, os.Mkdir(protoDir, 0o750))
-	writeFile(t, filepath.Join(protoDir, "api.proto"), `syntax = "proto3";
-package fixture;
-option go_package = "./fixture";
-
-// @title: Fixture API
-// @header: Users
-enum Status {
-  STATUS_UNKNOWN = 0;
-  STATUS_ACTIVE = 1;
-}
-
-/*
- * Creates a user.
- * @autocode[json]
- */
-message CreateUserRequest {
-  // @type=email
-  string email = 1;
-  // @min=18
-  // @max=100
-  int32 age = 2;
-  bool enabled = 3;
-}
-`)
+	protoDir := copyFixture(t, root, "full_api.proto")
 	prefix := filepath.Join(root, "prefix.md")
-	writeFile(t, prefix, "# Prefix")
+	ufile.MustWrite(prefix, []byte("# Prefix\n"), 0o600)
 	output := filepath.Join(root, "out.md")
 
 	run := runCLI(t,
@@ -56,15 +30,64 @@ message CreateUserRequest {
 	)
 	require.NoError(t, run.err, run.output)
 
-	result, err := os.ReadFile(output)
-	require.NoError(t, err)
-	markdown := string(result)
+	markdown := string(ufile.MustRead(output))
 	assert.Contains(t, markdown, "# Prefix")
 	assert.Contains(t, markdown, "Fixture API")
+	assert.Contains(t, markdown, "Users")
+	assert.Contains(t, markdown, "Sessions")
+	assert.Contains(t, markdown, "Billing")
+	assert.Contains(t, markdown, "Inventory")
+	assert.Contains(t, markdown, "Audit")
+	assert.Contains(t, markdown, "Notifications")
 	assert.Contains(t, markdown, "CreateUserRequest")
+	assert.Contains(t, markdown, "CreateUserResponse")
+	assert.Contains(t, markdown, "SessionResponse")
+	assert.Contains(t, markdown, "SessionAuditRequest")
+	assert.Contains(t, markdown, "Profile")
+	assert.Contains(t, markdown, "Address")
+	assert.Contains(t, markdown, "GeoPoint")
+	assert.Contains(t, markdown, "Preferences")
+	assert.Contains(t, markdown, "CreatePaymentRequest")
+	assert.Contains(t, markdown, "CreatePaymentResponse")
+	assert.Contains(t, markdown, "RefundPaymentRequest")
+	assert.Contains(t, markdown, "SearchCatalogRequest")
+	assert.Contains(t, markdown, "InventorySnapshot")
+	assert.Contains(t, markdown, "AuditQueryRequest")
+	assert.Contains(t, markdown, "AuditEnvelope")
+	assert.Contains(t, markdown, "NotificationBatch")
 	assert.Contains(t, markdown, "email")
+	assert.Contains(t, markdown, "phone")
+	assert.Contains(t, markdown, "password")
+	assert.Contains(t, markdown, "request_uuid")
+	assert.Contains(t, markdown, "access_token")
+	assert.Contains(t, markdown, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
+	assert.Contains(t, markdown, "login_count")
+	assert.Contains(t, markdown, "display_name")
+	assert.Contains(t, markdown, "fixed-nickname")
+	assert.Contains(t, markdown, "Min value")
+	assert.Contains(t, markdown, "Max value")
+	assert.Contains(t, markdown, "Max length/size")
+	assert.Contains(t, markdown, "0.5")
+	assert.Contains(t, markdown, "99.9")
+	assert.Contains(t, markdown, "12")
+	assert.Contains(t, markdown, "USER_STATUS_ACTIVE")
+	assert.Contains(t, markdown, "ROLE_ADMIN")
+	assert.Contains(t, markdown, "PAYMENT_STATUS_CAPTURED")
+	assert.Contains(t, markdown, "CURRENCY_USD")
+	assert.Contains(t, markdown, "REGION_EU_WEST")
+	assert.Contains(t, markdown, "INVENTORY_STATE_AVAILABLE")
+	assert.Contains(t, markdown, "AUDIT_ACTION_UPDATED")
+	assert.Contains(t, markdown, "NOTIFICATION_CHANNEL_EMAIL")
+	assert.Contains(t, markdown, "<session>")
+	assert.Contains(t, markdown, "<refund>")
+	assert.Contains(t, markdown, "pay_8f3c0d")
+	assert.Contains(t, markdown, "sku-keyboard")
+	assert.Contains(t, markdown, "trace_abcdef")
+	assert.Contains(t, markdown, "tpl-welcome")
 	assert.Contains(t, markdown, "Enums")
-	assert.Contains(t, markdown, "STATUS_ACTIVE")
+	assert.NotContains(t, markdown, "internal_note")
+	assert.NotContains(t, markdown, "IgnoredMessage")
+	assert.NotContains(t, markdown, "IgnoredEnum")
 }
 
 func TestCLIIntegrationReportsFieldLocation(t *testing.T) {
@@ -72,17 +95,7 @@ func TestCLIIntegrationReportsFieldLocation(t *testing.T) {
 	requireTool(t, "protoc-gen-go")
 
 	root := t.TempDir()
-	protoDir := filepath.Join(root, "proto")
-	require.NoError(t, os.Mkdir(protoDir, 0o750))
-	writeFile(t, filepath.Join(protoDir, "api.proto"), `syntax = "proto3";
-package fixture;
-option go_package = "./fixture";
-
-message BrokenRequest {
-  // @type=not_real
-  string name = 1;
-}
-`)
+	protoDir := copyFixture(t, root, "broken_field.proto")
 
 	run := runCLI(t,
 		"-d", protoDir,
@@ -90,7 +103,7 @@ message BrokenRequest {
 		"-o", filepath.Join(root, "out.md"),
 	)
 	require.Error(t, run.err)
-	assert.Contains(t, run.output, "api.proto:7")
+	assert.Contains(t, run.output, "broken_field.proto:9")
 	assert.Contains(t, run.output, "field name")
 	assert.Contains(t, run.output, "unknown custom type provided: not_real")
 }
@@ -100,20 +113,7 @@ func TestCLIIntegrationReportsCodeMarkerLocation(t *testing.T) {
 	requireTool(t, "protoc-gen-go")
 
 	root := t.TempDir()
-	protoDir := filepath.Join(root, "proto")
-	require.NoError(t, os.Mkdir(protoDir, 0o750))
-	writeFile(t, filepath.Join(protoDir, "api.proto"), `syntax = "proto3";
-package fixture;
-option go_package = "./fixture";
-
-/*
- * @code[json]:
- * {"broken":
- */
-message BrokenCode {
-  string name = 1;
-}
-`)
+	protoDir := copyFixture(t, root, "broken_code.proto")
 
 	run := runCLI(t,
 		"-d", protoDir,
@@ -121,7 +121,7 @@ message BrokenCode {
 		"-o", filepath.Join(root, "out.md"),
 	)
 	require.Error(t, run.err)
-	assert.Contains(t, run.output, "api.proto:6")
+	assert.Contains(t, run.output, "broken_code.proto:8")
 	assert.Contains(t, run.output, "message BrokenCode marker @code")
 	assert.Contains(t, run.output, "failed to marshal and validate json code")
 }
@@ -146,7 +146,10 @@ func requireTool(t *testing.T, name string) {
 	}
 }
 
-func writeFile(t *testing.T, path, content string) {
+func copyFixture(t *testing.T, root, name string) string {
 	t.Helper()
-	require.NoError(t, os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o600))
+	protoDir := filepath.Join(root, "proto")
+	require.NoError(t, ufile.EnsureDir(protoDir, 0o750))
+	ufile.MustWrite(filepath.Join(protoDir, name), ufile.MustRead(filepath.Join("testdata", "integration", name)), 0o600)
+	return protoDir
 }

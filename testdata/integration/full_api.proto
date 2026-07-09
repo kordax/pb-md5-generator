@@ -1,0 +1,592 @@
+syntax = "proto3";
+
+package fixture;
+
+option go_package = "./fixture";
+
+// @title: Fixture API
+// @header: Users
+// User status enum description.
+enum UserStatus {
+  // Unknown status description.
+  USER_STATUS_UNKNOWN = 0;
+  // Active status description.
+  USER_STATUS_ACTIVE = 1;
+  // Suspended status description.
+  USER_STATUS_SUSPENDED = 2;
+}
+
+// @ignore
+enum IgnoredEnum {
+  IGNORED_ENUM_UNSPECIFIED = 0;
+}
+
+// Role enum description.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_MEMBER = 2;
+}
+
+/*
+ * Creates a user with generated JSON example.
+ * @autocode[json]
+ */
+message CreateUserRequest {
+  // Email field description.
+  // @type=email
+  string email = 1;
+  // Phone field description.
+  // @type=phone
+  string phone = 2;
+  // Password field description.
+  // @type=password
+  string password = 3;
+  // UUID field description.
+  // @type=uuid
+  string request_uuid = 4;
+  // JWT field description.
+  // @type=jwt
+  string access_token = 5;
+  // Age field description.
+  // @min=18
+  // @max=100
+  int32 age = 6;
+  // Score field description.
+  // @min=0.5
+  // @max=99.9
+  double score = 7;
+  // Login count field description.
+  // @type=uint
+  // @min=1
+  // @max=42
+  uint64 login_count = 8;
+  // Display name field description.
+  // @len=12
+  string display_name = 9;
+  // Fixed nickname field description.
+  // @val=fixed-nickname
+  string nickname = 10;
+  // Fixed bool field description.
+  // @val=true
+  bool enabled = 11;
+  // Role enum field description.
+  Role role = 12;
+  // Repeated tags field description.
+  repeated string tags = 13;
+  // Bytes payload field description.
+  bytes raw_payload = 14;
+  // This field must not appear in generated documentation.
+  // @ignore
+  string internal_note = 15;
+}
+
+/*
+ * Explicit JSON example message.
+ * @code[json]:
+ * {
+ *   "CreateUserResponse": {
+ *     "status": "USER_STATUS_ACTIVE",
+ *     "user_id": "usr_123",
+ *     "roles": ["ROLE_ADMIN"]
+ *   }
+ * }
+ */
+message CreateUserResponse {
+  // Response status field description.
+  UserStatus status = 1;
+  // User id field description.
+  string user_id = 2;
+  // Roles field description.
+  repeated Role roles = 3;
+}
+
+// @header: Sessions
+/*
+ * XML code example message.
+ * @code[xml]:
+ * <session>
+ *   <id>session-1</id>
+ * </session>
+ */
+message SessionResponse {
+  string id = 1;
+  string expires_at = 2;
+}
+
+/*
+ * XML autocode marker coverage.
+ * @autocode[xml]
+ */
+message SessionAuditRequest {
+  // @val=session-1
+  string session_id = 1;
+  // @type=bool
+  bool active = 2;
+  // @type=float
+  float risk_score = 3;
+}
+
+// Parent message description.
+message Profile {
+  string first_name = 1;
+  string last_name = 2;
+
+  // Nested address description.
+  message Address {
+    string country = 1;
+    string city = 2;
+    string line = 3;
+
+    // Nested geo point description.
+    message GeoPoint {
+      double lat = 1;
+      double lon = 2;
+    }
+
+    GeoPoint geo = 4;
+  }
+
+  // Nested preferences description.
+  message Preferences {
+    bool marketing_enabled = 1;
+    repeated string languages = 2;
+    map<string, string> settings = 3;
+  }
+
+  Address primary_address = 3;
+  repeated Address previous_addresses = 4;
+  Preferences preferences = 5;
+}
+
+// @header: Billing
+// Payment status enum description.
+enum PaymentStatus {
+  PAYMENT_STATUS_UNKNOWN = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_CAPTURED = 2;
+  PAYMENT_STATUS_DECLINED = 3;
+  PAYMENT_STATUS_REFUNDED = 4;
+}
+
+// Currency enum description.
+enum Currency {
+  CURRENCY_UNKNOWN = 0;
+  CURRENCY_USD = 1;
+  CURRENCY_EUR = 2;
+  CURRENCY_KZT = 3;
+}
+
+/*
+ * Creates a payment using generated JSON example.
+ * @autocode[json]
+ */
+message CreatePaymentRequest {
+  // Merchant id description.
+  // @val=merchant-001
+  string merchant_id = 1;
+  // Order id description.
+  // @val=order-9001
+  string order_id = 2;
+  // Amount minor units description.
+  // @min=100
+  // @max=999999
+  int64 amount_minor = 3;
+  // Currency enum description.
+  Currency currency = 4;
+  // Capture flag description.
+  // @val=false
+  bool capture = 5;
+  // Idempotency key description.
+  // @type=uuid
+  string idempotency_key = 6;
+  // Customer email description.
+  // @type=email
+  string customer_email = 7;
+  // Risk score description.
+  // @min=0
+  // @max=1
+  float risk_score = 8;
+  // Attempt count description.
+  // @type=uint
+  // @min=1
+  // @max=5
+  uint32 attempt = 9;
+}
+
+/*
+ * Rich payment response with nested structures and arrays.
+ * @code[json]:
+ * {
+ *   "CreatePaymentResponse": {
+ *     "payment_id": "pay_8f3c0d",
+ *     "status": "PAYMENT_STATUS_CAPTURED",
+ *     "amount_minor": 125000,
+ *     "currency": "CURRENCY_USD",
+ *     "created_at": "2026-07-09T08:00:00Z",
+ *     "customer": {
+ *       "id": "cus_001",
+ *       "email": "alice@example.com",
+ *       "phones": ["+7.7000000000", "+1.5550000000"]
+ *     },
+ *     "method": {
+ *       "kind": "bank_card",
+ *       "card": {
+ *         "brand": "visa",
+ *         "last4": "4242",
+ *         "exp_month": 12,
+ *         "exp_year": 2030
+ *       }
+ *     },
+ *     "fees": [
+ *       {"type": "processing", "amount_minor": 320},
+ *       {"type": "network", "amount_minor": 25}
+ *     ],
+ *     "metadata": {
+ *       "order": "order-9001",
+ *       "tenant": "fixture",
+ *       "region": "eu-west"
+ *     }
+ *   }
+ * }
+ */
+message CreatePaymentResponse {
+  string payment_id = 1;
+  PaymentStatus status = 2;
+  int64 amount_minor = 3;
+  Currency currency = 4;
+  string created_at = 5;
+
+  message Customer {
+    string id = 1;
+    string email = 2;
+    repeated string phones = 3;
+  }
+
+  message PaymentMethod {
+    string kind = 1;
+
+    message Card {
+      string brand = 1;
+      string last4 = 2;
+      int32 exp_month = 3;
+      int32 exp_year = 4;
+    }
+
+    Card card = 2;
+  }
+
+  message Fee {
+    string type = 1;
+    int64 amount_minor = 2;
+  }
+
+  Customer customer = 6;
+  PaymentMethod method = 7;
+  repeated Fee fees = 8;
+  map<string, string> metadata = 9;
+}
+
+/*
+ * XML refund example with nested elements.
+ * @code[xml]:
+ * <refund>
+ *   <payment_id>pay_8f3c0d</payment_id>
+ *   <amount_minor>25000</amount_minor>
+ *   <reason>customer_request</reason>
+ *   <items>
+ *     <item>
+ *       <sku>sku-keyboard</sku>
+ *       <quantity>1</quantity>
+ *     </item>
+ *     <item>
+ *       <sku>sku-mouse</sku>
+ *       <quantity>2</quantity>
+ *     </item>
+ *   </items>
+ * </refund>
+ */
+message RefundPaymentRequest {
+  string payment_id = 1;
+  int64 amount_minor = 2;
+  string reason = 3;
+
+  message Item {
+    string sku = 1;
+    int32 quantity = 2;
+  }
+
+  repeated Item items = 4;
+}
+
+// @header: Inventory
+// Region enum description.
+enum Region {
+  REGION_UNKNOWN = 0;
+  REGION_US_EAST = 1;
+  REGION_EU_WEST = 2;
+  REGION_AP_SOUTH = 3;
+}
+
+// Inventory state enum description.
+enum InventoryState {
+  INVENTORY_STATE_UNKNOWN = 0;
+  INVENTORY_STATE_AVAILABLE = 1;
+  INVENTORY_STATE_RESERVED = 2;
+  INVENTORY_STATE_DAMAGED = 3;
+}
+
+/*
+ * Catalog search request with generated example.
+ * @autocode[json]
+ */
+message SearchCatalogRequest {
+  // Search query description.
+  // @val=mechanical-keyboard
+  string query = 1;
+  // Page number description.
+  // @min=1
+  // @max=20
+  int32 page = 2;
+  // Page size description.
+  // @min=10
+  // @max=100
+  int32 page_size = 3;
+  // Region description.
+  Region region = 4;
+  // Include archived description.
+  // @val=false
+  bool include_archived = 5;
+}
+
+/*
+ * Inventory snapshot with maps, repeated rows and deeply nested dimensions.
+ * @code[json]:
+ * {
+ *   "InventorySnapshot": {
+ *     "warehouse_id": "wh-eu-1",
+ *     "region": "REGION_EU_WEST",
+ *     "items": [
+ *       {
+ *         "sku": "sku-keyboard",
+ *         "state": "INVENTORY_STATE_AVAILABLE",
+ *         "quantity": 128,
+ *         "dimensions": {"width": 45.5, "height": 4.2, "depth": 15.0},
+ *         "labels": {"color": "black", "layout": "ansi"}
+ *       },
+ *       {
+ *         "sku": "sku-mouse",
+ *         "state": "INVENTORY_STATE_RESERVED",
+ *         "quantity": 64,
+ *         "dimensions": {"width": 7.2, "height": 4.0, "depth": 12.1},
+ *         "labels": {"wireless": "true", "dpi": "16000"}
+ *       }
+ *     ],
+ *     "counters": {
+ *       "available": 128,
+ *       "reserved": 64,
+ *       "damaged": 3
+ *     }
+ *   }
+ * }
+ */
+message InventorySnapshot {
+  string warehouse_id = 1;
+  Region region = 2;
+
+  message Item {
+    string sku = 1;
+    InventoryState state = 2;
+    int64 quantity = 3;
+
+    message Dimensions {
+      double width = 1;
+      double height = 2;
+      double depth = 3;
+    }
+
+    Dimensions dimensions = 4;
+    map<string, string> labels = 5;
+  }
+
+  repeated Item items = 3;
+  map<string, int64> counters = 4;
+}
+
+// @header: Audit
+// Audit action enum description.
+enum AuditAction {
+  AUDIT_ACTION_UNKNOWN = 0;
+  AUDIT_ACTION_CREATED = 1;
+  AUDIT_ACTION_UPDATED = 2;
+  AUDIT_ACTION_DELETED = 3;
+  AUDIT_ACTION_EXPORTED = 4;
+}
+
+/*
+ * Audit query request with several generated constrained values.
+ * @autocode[json]
+ */
+message AuditQueryRequest {
+  // Tenant description.
+  // @val=tenant-fixture
+  string tenant_id = 1;
+  // Actor description.
+  // @type=email
+  string actor_email = 2;
+  // Action description.
+  AuditAction action = 3;
+  // From timestamp description.
+  // @val=2026-07-09T00:00:00Z
+  string from = 4;
+  // To timestamp description.
+  // @val=2026-07-09T23:59:59Z
+  string to = 5;
+  // Limit description.
+  // @min=1
+  // @max=500
+  int32 limit = 6;
+}
+
+/*
+ * Audit envelope with nested actor, target, diff and context structures.
+ * @code[json]:
+ * {
+ *   "AuditEnvelope": {
+ *     "event_id": "evt_001",
+ *     "action": "AUDIT_ACTION_UPDATED",
+ *     "actor": {
+ *       "id": "usr_123",
+ *       "email": "admin@example.com",
+ *       "ip": "203.0.113.10",
+ *       "user_agent": "fixture-cli/1.0"
+ *     },
+ *     "target": {
+ *       "type": "payment",
+ *       "id": "pay_8f3c0d",
+ *       "display_name": "Payment pay_8f3c0d"
+ *     },
+ *     "diffs": [
+ *       {"path": "status", "before": "PAYMENT_STATUS_PENDING", "after": "PAYMENT_STATUS_CAPTURED"},
+ *       {"path": "metadata.region", "before": "us-east", "after": "eu-west"}
+ *     ],
+ *     "context": {
+ *       "request_id": "req_001",
+ *       "trace_id": "trace_abcdef",
+ *       "tags": ["integration", "audit", "fixture"]
+ *     }
+ *   }
+ * }
+ */
+message AuditEnvelope {
+  string event_id = 1;
+  AuditAction action = 2;
+
+  message Actor {
+    string id = 1;
+    string email = 2;
+    string ip = 3;
+    string user_agent = 4;
+  }
+
+  message Target {
+    string type = 1;
+    string id = 2;
+    string display_name = 3;
+  }
+
+  message Diff {
+    string path = 1;
+    string before = 2;
+    string after = 3;
+  }
+
+  message Context {
+    string request_id = 1;
+    string trace_id = 2;
+    repeated string tags = 3;
+  }
+
+  Actor actor = 3;
+  Target target = 4;
+  repeated Diff diffs = 5;
+  Context context = 6;
+}
+
+// @header: Notifications
+// Notification channel enum description.
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNKNOWN = 0;
+  NOTIFICATION_CHANNEL_EMAIL = 1;
+  NOTIFICATION_CHANNEL_SMS = 2;
+  NOTIFICATION_CHANNEL_PUSH = 3;
+}
+
+/*
+ * Notification batch with oneof payload alternatives and nested recipient details.
+ * @code[json]:
+ * {
+ *   "NotificationBatch": {
+ *     "batch_id": "batch-001",
+ *     "channel": "NOTIFICATION_CHANNEL_EMAIL",
+ *     "recipients": [
+ *       {
+ *         "user_id": "usr_123",
+ *         "email": "alice@example.com",
+ *         "variables": {"first_name": "Alice", "tier": "gold"}
+ *       },
+ *       {
+ *         "user_id": "usr_456",
+ *         "email": "bob@example.com",
+ *         "variables": {"first_name": "Bob", "tier": "silver"}
+ *       }
+ *     ],
+ *     "email": {
+ *       "subject": "Fixture notification",
+ *       "template_id": "tpl-welcome",
+ *       "reply_to": "support@example.com"
+ *     }
+ *   }
+ * }
+ */
+message NotificationBatch {
+  string batch_id = 1;
+  NotificationChannel channel = 2;
+
+  message Recipient {
+    string user_id = 1;
+    string email = 2;
+    string phone = 3;
+    map<string, string> variables = 4;
+  }
+
+  message EmailPayload {
+    string subject = 1;
+    string template_id = 2;
+    string reply_to = 3;
+  }
+
+  message SmsPayload {
+    string sender = 1;
+    string body = 2;
+  }
+
+  message PushPayload {
+    string title = 1;
+    string body = 2;
+    map<string, string> data = 3;
+  }
+
+  repeated Recipient recipients = 3;
+
+  oneof payload {
+    EmailPayload email = 4;
+    SmsPayload sms = 5;
+    PushPayload push = 6;
+  }
+}
+
+// @ignore
+message IgnoredMessage {
+  string hidden = 1;
+}

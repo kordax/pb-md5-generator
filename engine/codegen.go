@@ -156,6 +156,8 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		phone += "." + strconv.FormatInt(number, 10)
 
 		return phone, nil
+	case ValueTypeJWT:
+		return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmaXh0dXJlIn0.signature", nil
 	case ValueTypePassword:
 		return passGen.GetPassword(), nil
 	case ValueTypeUUID:

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package fixture;
+
+option go_package = "./fixture";
+
+/*
+ * @code[json]:
+ * {"broken":
+ */
+message BrokenCode {
+  string name = 1;
+}

@@ -928,6 +928,8 @@ func mapStringToValueType(customType string) (ValueType, error) {
 		return ValueTypeString, nil
 	case "enum":
 		return ValueTypeEnum, nil
+	case "jwt":
+		return ValueTypeJWT, nil
 	case "uuid":
 		return ValueTypeUUID, nil
 	case "struct":

@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package fixture;
+
+option go_package = "./fixture";
+
+message BrokenRequest {
+  // @type=not_real
+  string name = 1;
+}

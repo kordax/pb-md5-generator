@@ -387,6 +387,14 @@ func TestGenerateFromFieldRandomBranches(t *testing.T) {
 				assert.Len(t, value.(string), 36)
 			},
 		},
+		{
+			name:      "jwt",
+			valueType: ValueTypeJWT,
+			fieldName: "jwt",
+			assertion: func(t *testing.T, value any) {
+				assert.Contains(t, value.(string), ".")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -511,6 +519,7 @@ func TestMapStringToValueType(t *testing.T) {
 		"bool":     ValueTypeBool,
 		"string":   ValueTypeString,
 		"enum":     ValueTypeEnum,
+		"jwt":      ValueTypeJWT,
 		"uuid":     ValueTypeUUID,
 		"struct":   ValueTypeStruct,
 		"email":    ValueTypeEmail,
