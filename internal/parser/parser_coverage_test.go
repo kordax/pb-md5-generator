@@ -380,7 +380,7 @@ func TestPayloadHelpersAndFinders(t *testing.T) {
 	require.Equal(t, payload, parser.payloadForFile("api.proto"))
 
 	assert.Equal(t, strings.Index(payload, "message"), parser.findDeclaration("api.proto", "message", "Request"))
-	assert.True(t, strings.Index(payload, "email") > -1)
+	assert.True(t, strings.Contains(payload, "email"))
 	assert.Greater(t, parser.lineAt("api.proto", strings.Index(payload, "message")), 0)
 	assert.Equal(t, -1, parser.findFieldDeclaration("api.proto", "missing"))
 }

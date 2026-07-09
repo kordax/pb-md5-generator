@@ -331,6 +331,30 @@ There is also a snapshot of generated documentation output in
 [`EXAMPLE.md`](./EXAMPLE.md).
 Regenerate it with `task generate-example`.
 
+## Prerequisites
+
+- Go 1.26 or newer.
+- `protoc` must be available in `PATH`.
+- `protoc-gen-go` must be available in `PATH`.
+
+Install the Go protobuf plugin with:
+
+```console
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+```
+
+## Installation
+
+```console
+go install github.com/kordax/pb-md5-generator/cmd/pb-md5-generator@latest
+```
+
+For a pinned release:
+
+```console
+go install github.com/kordax/pb-md5-generator/cmd/pb-md5-generator@v1.0.0
+```
+
 ## Program Usage
 
 1. **Parsing Protobuf Files**
@@ -346,8 +370,6 @@ Regenerate it with `task generate-example`.
      configuration and user preferences.
 
 ### Example usage
-`go get -u github.com/kordax/pb-md5-generator`
-
 ```console
 pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
 ```

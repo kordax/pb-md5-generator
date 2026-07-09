@@ -28,6 +28,9 @@ func CheckDependencies() error {
 	if _, err := exec.LookPath("protoc"); err != nil {
 		return fmt.Errorf("protoc binary is required: %w", err)
 	}
+	if _, err := exec.LookPath("protoc-gen-go"); err != nil {
+		return fmt.Errorf("protoc-gen-go binary is required: %w", err)
+	}
 	return nil
 }
 

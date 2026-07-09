@@ -13,6 +13,25 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+func TestCheckDependenciesReportsMissingTools(t *testing.T) {
+	originalPath := os.Getenv("PATH")
+	t.Cleanup(func() {
+		require.NoError(t, os.Setenv("PATH", originalPath))
+	})
+
+	emptyDir := t.TempDir()
+	require.NoError(t, os.Setenv("PATH", emptyDir))
+	err := CheckDependencies()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "protoc binary is required")
+
+	protoc := filepath.Join(emptyDir, "protoc")
+	require.NoError(t, os.WriteFile(protoc, []byte("#!/bin/sh\n"), 0o700))
+	err = CheckDependencies()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "protoc-gen-go binary is required")
+}
+
 func TestRequestFromFilesRejectsInvalidFiles(t *testing.T) {
 	compiler := Compiler{ProtoDir: t.TempDir(), OutputDir: t.TempDir()}
 
