@@ -1,18 +1,17 @@
 package engine
 
 import (
-	"github.com/kordax/basic-utils/v3/uopt"
-	"github.com/kordax/basic-utils/v3/upair"
+	"github.com/kordax/pb-md5-generator/internal/parser"
 )
 
-type Option[T any] = uopt.Opt[T]
+type Option[T any] = parser.Option[T]
 
 func Some[T any](value T) Option[T] {
-	return uopt.Of(value)
+	return parser.Some(value)
 }
 
 func OptionFromPtr[T any](value *T) Option[T] {
-	return uopt.OfNullable(value)
+	return parser.OptionFromPtr(value)
 }
 
-type Pair[L, R any] = upair.Pair[L, R]
+type Pair[L, R any] = parser.Pair[L, R]

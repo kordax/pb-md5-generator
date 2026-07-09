@@ -16,30 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type Syntax int
-
-const (
-	SyntaxJson Syntax = iota
-	SyntaxXml
-)
-
-type ValueType int
-
-const (
-	ValueTypeInt ValueType = iota
-	ValueTypeUInt
-	ValueTypeFloat
-	ValueTypeBool
-	ValueTypeString
-	ValueTypeEnum
-	ValueTypeJWT
-	ValueTypeUUID
-	ValueTypeStruct
-	ValueTypeEmail
-	ValueTypePhone
-	ValueTypePassword
-)
-
 var passGen = password.NewGenerator(1, 7, 5, 1)
 
 type Codegenerator struct {
@@ -83,8 +59,32 @@ func (g *Codegenerator) generateFromMessage(files []ParsedFile, message *Message
 			}
 			jsMsg[field.d.GetName()] = value
 		} else {
-			jsMsg[field.d.GetName()] = map[string]any{}
-			return g.generateFromMessage(nil, field.isMsg, js[field.d.GetName()].(map[string]any))
+			nestedJSON, err := g.generateFromMessage(files, field.isMsg, nil)
+			if err != nil {
+				return "", err
+			}
+			var nestedParsed map[string]any
+			if err := json.Unmarshal([]byte(nestedJSON), &nestedParsed); err != nil {
+				return "", err
+			}
+
+			nestedMessageName := field.isMsg.m.GetName()
+			nestedMsgValue, ok := nestedParsed[nestedMessageName]
+			if !ok {
+				for key, value := range nestedParsed {
+					if key == "trx" {
+						continue
+					}
+					nestedMsgValue = value
+					ok = true
+					break
+				}
+			}
+
+			if !ok {
+				nestedMsgValue = map[string]any{}
+			}
+			jsMsg[field.d.GetName()] = nestedMsgValue
 		}
 	}
 	res, err := json.MarshalIndent(js, "", "\t")

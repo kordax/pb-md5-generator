@@ -1,4 +1,4 @@
-package engine
+package parser
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pseudomuto/protokit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -92,7 +93,6 @@ func TestProtoToFieldValueType(t *testing.T) {
 
 func TestSmallGenericHelpers(t *testing.T) {
 	assert.Equal(t, 5, ParsedFile{index: 5}.Index())
-	assert.Equal(t, 3, MkTable(3).GetRows())
 
 	assert.Equal(t, []int{2, 4}, mapSlice([]int{1, 2}, func(v int) int { return v * 2 }))
 	assert.Equal(t, []int{2}, filter([]int{1, 2, 3}, func(v int) bool { return v%2 == 0 }))
@@ -156,4 +156,14 @@ func TestPayloadForFileReadsAndCaches(t *testing.T) {
 	require.NoError(t, os.WriteFile(filePath, []byte("changed"), 0o600))
 	assert.Equal(t, "line1\nline2\n", parser.payloadForFile("api.proto"))
 	assert.Empty(t, parser.payloadForFile("missing.proto"))
+}
+
+func fieldDescriptor(name string, typ descriptorpb.FieldDescriptorProto_Type, message *protokit.Descriptor) *protokit.FieldDescriptor {
+	return &protokit.FieldDescriptor{
+		FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{
+			Name: &name,
+			Type: &typ,
+		},
+		Message: message,
+	}
 }

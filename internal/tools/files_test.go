@@ -45,4 +45,5 @@ func TestEnsureDirectoryAbsent(t *testing.T) {
 	assert.NoError(t, EnsureDirectoryAbsent(filepath.Join(root, "missing")))
 	assert.NoError(t, EnsureDirectoryAbsent(file))
 	assert.Error(t, EnsureDirectoryAbsent(root))
+	assert.Error(t, EnsureDirectoryAbsent(string([]byte{0})))
 }

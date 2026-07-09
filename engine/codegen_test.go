@@ -1,12 +1,19 @@
 package engine
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/kordax/pb-md5-generator/internal/parser"
 	"github.com/pseudomuto/protokit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 func TestGenerate(t *testing.T) {
@@ -546,5 +553,151 @@ func fieldDescriptor(name string, typ descriptorpb.FieldDescriptorProto_Type, me
 			Type: &typ,
 		},
 		Message: message,
+	}
+}
+
+func TestGenerateFromMessageNestedKeepsFields(t *testing.T) {
+	g := NewCodegenerator()
+
+	innerDescriptor := &protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Inner")}}
+	outerDescriptor := &protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Outer")}}
+
+	inner := Message{
+		m: innerDescriptor,
+		fields: []MessageField{
+			*NewMessageField(fieldDescriptor("innerName", descriptorpb.FieldDescriptorProto_TYPE_STRING, innerDescriptor), innerDescriptor, "", ValueTypeString, &FieldFlags{value: Some("inner")}),
+		},
+	}
+
+	nestedField := NewMessageField(fieldDescriptor("nested", descriptorpb.FieldDescriptorProto_TYPE_MESSAGE, outerDescriptor), outerDescriptor, "", ValueTypeStruct, nil)
+	nestedField.isMsg = &inner
+	plainField := NewMessageField(fieldDescriptor("plain", descriptorpb.FieldDescriptorProto_TYPE_STRING, outerDescriptor), outerDescriptor, "", ValueTypeString, &FieldFlags{value: Some("plain")})
+
+	outer := Message{
+		m: outerDescriptor,
+		fields: []MessageField{
+			*nestedField,
+			*plainField,
+		},
+	}
+
+	result, err := g.generateFromMessage(nil, &outer, nil)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result), &parsed))
+
+	rootMap, ok := parsed[outer.m.GetName()].(map[string]any)
+	require.True(t, ok)
+	innerMap, ok := rootMap["nested"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "inner", innerMap["innerName"])
+	assert.Equal(t, "plain", rootMap["plain"])
+}
+
+func TestGenerateFromFieldEnumAndErrors(t *testing.T) {
+	g := NewCodegenerator()
+
+	enum := fixtureEnum(t, "LoginStatus")
+	enumValueNames := make([]string, 0, len(enum.values))
+	for _, item := range enum.values {
+		enumValueNames = append(enumValueNames, item.d.GetName())
+	}
+	files := []ParsedFile{{
+		entries: []Entry{{
+			index: 0,
+			t:     EntryTypeEnum,
+			enum:  enum,
+		}},
+	}}
+
+	fieldWithMatch := *NewMessageField(
+		&protokit.FieldDescriptor{
+			FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{
+				TypeName: strPtr("." + enum.e.GetFullName()),
+			},
+		},
+		&protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Order")}},
+		"",
+		ValueTypeEnum,
+		nil,
+	)
+	value, err := g.generateFromField(files, fieldWithMatch)
+	require.NoError(t, err)
+	require.NotNil(t, value)
+	assert.Contains(t, enumValueNames, value.(string))
+
+	fieldMissingEnum := *NewMessageField(
+		&protokit.FieldDescriptor{FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{TypeName: strPtr(".Nope")}},
+		&protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Order")}},
+		"",
+		ValueTypeEnum,
+		nil,
+	)
+	value, err = g.generateFromField(nil, fieldMissingEnum)
+	require.NoError(t, err)
+	assert.Nil(t, value)
+
+	invalidInt := *NewMessageField(
+		&protokit.FieldDescriptor{FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{Type: descriptorType(descriptorpb.FieldDescriptorProto_TYPE_INT64)}},
+		&protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Order")}},
+		"",
+		ValueTypeInt,
+		&FieldFlags{value: Some("bad")},
+	)
+	_, err = g.generateFromField(nil, invalidInt)
+	require.ErrorContains(t, err, "invalid syntax")
+
+	invalidBool := *NewMessageField(
+		&protokit.FieldDescriptor{FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{Type: descriptorType(descriptorpb.FieldDescriptorProto_TYPE_BOOL)}},
+		&protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: strPtr("Order")}},
+		"",
+		ValueTypeBool,
+		&FieldFlags{value: Some("notBool")},
+	)
+	_, err = g.generateFromField(nil, invalidBool)
+	require.ErrorContains(t, err, "invalid syntax")
+}
+
+func descriptorType(value descriptorpb.FieldDescriptorProto_Type) *descriptorpb.FieldDescriptorProto_Type {
+	return &value
+}
+
+func fixtureEnum(t *testing.T, name string) *Enum {
+	t.Helper()
+
+	parsed, err := parser.NewDescriptorParser(codegenFixtureRequest(t)).Parse()
+	require.NoError(t, err)
+
+	for _, file := range parsed {
+		for _, entry := range file.Entries() {
+			enum := entry.Enum()
+			if enum != nil && enum.Descriptor().GetName() == name {
+				converted := convertEnum(*enum)
+				return &converted
+			}
+		}
+	}
+
+	require.Failf(t, "enum not found", "enum %q not found in fixture", name)
+	return nil
+}
+
+func codegenFixtureRequest(t *testing.T) *pluginpb.CodeGeneratorRequest {
+	t.Helper()
+	_, currentFile, _, _ := runtime.Caller(0)
+	root := filepath.Dir(filepath.Dir(currentFile))
+	path := filepath.Join(root, "testdata", "test-proto", "test.pb.desc")
+
+	blob, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	fds := &descriptorpb.FileDescriptorSet{}
+	require.NoError(t, proto.Unmarshal(blob, fds))
+
+	return &pluginpb.CodeGeneratorRequest{
+		FileToGenerate: []string{"test_proto"},
+		Parameter:      proto.String("Mtest_proto=" + filepath.Join(root, "testdata", "test-proto")),
+		ProtoFile:      fds.File,
 	}
 }

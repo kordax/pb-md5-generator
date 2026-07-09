@@ -27,8 +27,14 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 	tocSection := md.NewSectionBuilder().Build()
 	result := &md.Document{}
 
+	sortedFiles := make([]ParsedFile, len(parsedFiles))
+	copy(sortedFiles, parsedFiles)
+	sort.Slice(sortedFiles, func(i, j int) bool {
+		return sortedFiles[i].index < sortedFiles[j].index
+	})
+
 	collectedEntries := make([]Entry, 0)
-	for _, parsedFile := range parsedFiles {
+	for _, parsedFile := range sortedFiles {
 		collectedEntries = append(collectedEntries, parsedFile.entries...)
 	}
 	sort.SliceStable(collectedEntries, func(i, j int) bool {
@@ -47,12 +53,7 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 	g.tableOfContents(allEntries, enums, tocSection)
 	result.AddSection(tocSection)
 
-	sortedFiles := parsedFiles
-	sort.Slice(sortedFiles, func(i, j int) bool {
-		return sortedFiles[i].index < sortedFiles[j].index
-	})
-
-	for _, parsedFile := range parsedFiles {
+	for _, parsedFile := range sortedFiles {
 		entries := parsedFile.entries
 		section := md.NewSectionBuilder().Build()
 		sort.SliceStable(entries, func(i, j int) bool {

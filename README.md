@@ -323,6 +323,9 @@ message PublicMessage {
 
 For a larger end-to-end example, see `testdata/integration/full_api.proto`.
 
+There is also a snapshot of generated documentation output in
+[`EXAMPLE.md`](./EXAMPLE.md).
+
 ## Program Usage
 
 1. **Parsing Protobuf Files**
