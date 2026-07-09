@@ -325,6 +325,8 @@ For a larger end-to-end example, see `testdata/integration/full_api.proto`.
 
 There is also a snapshot of generated documentation output in
 [`EXAMPLE.md`](./EXAMPLE.md).
+Regenerate it with `task generate-example`. You can override identifier styling with
+`STYLE_TABLE=plain|code|bold|bold-code` and `STYLE_HEADING=plain|code|bold|bold-code`.
 
 ## Program Usage
 
@@ -346,5 +348,8 @@ There is also a snapshot of generated documentation output in
 ```console
 pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
 ```
+
+Identifier styling can be controlled with `-style-table-identifiers` and
+`-style-heading-identifiers`. Supported values are `plain`, `code`, `bold`, and `bold-code`.
 
 There's a full integration fixture in `testdata/integration/full_api.proto` for you to check out.

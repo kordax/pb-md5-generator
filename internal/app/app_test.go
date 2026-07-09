@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kordax/pb-md5-generator/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/pluginpb"
@@ -24,12 +25,20 @@ func testDeps() appDeps {
 		},
 		readFile:  func(string) ([]byte, error) { return []byte("prefix"), nil },
 		writeFile: func(string, []byte, fs.FileMode) error { return nil },
-		generate:  func(*pluginpb.CodeGeneratorRequest) (string, error) { return "generated", nil },
+		generate:  func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle) (string, error) { return "generated", nil },
 	}
 }
 
 func TestParseFlagsAndNormalizeOutput(t *testing.T) {
-	cfg, err := parseFlags([]string{"-d", "./proto", "-f", "a.proto;b.proto", "-pbo", "tmp", "-o", "out", "-p", "prefix.md"})
+	cfg, err := parseFlags([]string{
+		"-d", "./proto",
+		"-f", "a.proto;b.proto",
+		"-pbo", "tmp",
+		"-o", "out",
+		"-p", "prefix.md",
+		"-style-table-identifiers", "bold",
+		"-style-heading-identifiers", "plain",
+	})
 	require.NoError(t, err)
 
 	assert.Equal(t, "./proto", cfg.ProtoDir)
@@ -37,6 +46,8 @@ func TestParseFlagsAndNormalizeOutput(t *testing.T) {
 	assert.Equal(t, "tmp", cfg.ProtoOut)
 	assert.Equal(t, "out", cfg.Output)
 	assert.Equal(t, "prefix.md", cfg.PrefixDoc)
+	assert.Equal(t, "bold", cfg.TableIdentifierStyle)
+	assert.Equal(t, "plain", cfg.HeadingIdentifierStyle)
 	assert.Equal(t, "out.md", normalizedMarkdownOutput("out"))
 	assert.Equal(t, "out.md", normalizedMarkdownOutput("out.md"))
 
@@ -94,6 +105,7 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	var writtenPath string
 	var writtenContent string
 	var writtenMode fs.FileMode
+	var generatedStyle engine.GeneratorStyle
 
 	deps.removeAll = func(path string) error {
 		cleaned = path
@@ -105,13 +117,19 @@ func TestRunWithDepsSuccess(t *testing.T) {
 		writtenMode = mode
 		return nil
 	}
+	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, style engine.GeneratorStyle) (string, error) {
+		generatedStyle = style
+		return "generated", nil
+	}
 
 	err := runWithDeps(Config{
-		ProtoDir:  "./proto",
-		Files:     "a.proto;b.proto",
-		ProtoOut:  "./tmp",
-		Output:    "./out",
-		PrefixDoc: prefix,
+		ProtoDir:               "./proto",
+		Files:                  "a.proto;b.proto",
+		ProtoOut:               "./tmp",
+		Output:                 "./out",
+		PrefixDoc:              prefix,
+		TableIdentifierStyle:   "plain",
+		HeadingIdentifierStyle: "bold-code",
 	}, deps)
 	require.NoError(t, err)
 
@@ -119,6 +137,8 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	assert.Equal(t, "out.md", writtenPath)
 	assert.Equal(t, "prefix\n\ngenerated", writtenContent)
 	assert.Equal(t, fs.FileMode(0o600), writtenMode)
+	assert.Equal(t, engine.IdentifierStylePlain, generatedStyle.TableIdentifiers)
+	assert.Equal(t, engine.IdentifierStyleBoldCode, generatedStyle.HeadingIdentifiers)
 }
 
 func TestRunWithDepsFailures(t *testing.T) {
@@ -184,10 +204,22 @@ func TestRunWithDepsFailures(t *testing.T) {
 			name: "render failed",
 			cfg:  Config{ProtoDir: "proto", Files: "a.proto"},
 			deps: func(deps appDeps) appDeps {
-				deps.generate = func(*pluginpb.CodeGeneratorRequest) (string, error) { return "", errors.New("render") }
+				deps.generate = func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle) (string, error) {
+					return "", errors.New("render")
+				}
 				return deps
 			},
 			want: "failed to generate markdown document",
+		},
+		{
+			name: "invalid table identifier style",
+			cfg:  Config{ProtoDir: "proto", Files: "a.proto", TableIdentifierStyle: "weird", HeadingIdentifierStyle: "code"},
+			want: "invalid table identifier style",
+		},
+		{
+			name: "invalid heading identifier style",
+			cfg:  Config{ProtoDir: "proto", Files: "a.proto", TableIdentifierStyle: "code", HeadingIdentifierStyle: "weird"},
+			want: "invalid heading identifier style",
 		},
 		{
 			name: "write failed",

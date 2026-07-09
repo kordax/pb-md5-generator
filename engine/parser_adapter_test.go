@@ -279,6 +279,7 @@ func requestFromProtoContent(t *testing.T, content string) *pluginpb.CodeGenerat
 		ProtoDir:  root,
 		OutputDir: filepath.Join(root, "tmp"),
 	}
+	require.NoError(t, os.MkdirAll(compiler.OutputDir, 0o750))
 	request, err := compiler.RequestFromFiles([]string{protoFile})
 	require.NoError(t, err)
 	return request

@@ -291,6 +291,35 @@ func TestGenerateFromFieldValues(t *testing.T) {
 		assert.Equal(t, true, value)
 	})
 
+	t.Run("special string values override generated values", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			valueType ValueType
+			want      string
+		}{
+			{name: "phone", valueType: ValueTypePhone, want: "example-phone"},
+			{name: "jwt", valueType: ValueTypeJWT, want: "example-access-token"},
+			{name: "password", valueType: ValueTypePassword, want: "example-password"},
+			{name: "uuid", valueType: ValueTypeUUID, want: "example-idempotency-key"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				field := *NewMessageField(
+					fieldDescriptor(tt.name, descriptorpb.FieldDescriptorProto_TYPE_STRING, messageDescriptor),
+					messageDescriptor,
+					"",
+					tt.valueType,
+					&FieldFlags{value: Some(tt.want)},
+				)
+
+				value, err := generator.generateFromField(nil, field)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, value)
+			})
+		}
+	})
+
 	t.Run("random bool is generated", func(t *testing.T) {
 		field := *NewMessageField(
 			fieldDescriptor("enabled", descriptorpb.FieldDescriptorProto_TYPE_BOOL, messageDescriptor),

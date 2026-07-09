@@ -182,6 +182,10 @@ func TestParseFlowWithMarkers(t *testing.T) {
 						DescriptorProto: &descriptorpb.DescriptorProto{Name: ptrTo("Beta")},
 						Comments:        &protokit.Comment{Leading: "Beta message."},
 					},
+					{
+						DescriptorProto: &descriptorpb.DescriptorProto{Name: ptrTo("Gamma")},
+						Comments:        &protokit.Comment{Leading: "Gamma message."},
+					},
 				},
 				Enums: []*protokit.EnumDescriptor{
 					{
@@ -206,8 +210,9 @@ func TestParseFlowWithMarkers(t *testing.T) {
 				"// @title: My API",
 				"// @header: GroupA",
 				"message Alpha {}",
-				"// @header: GroupB",
 				"message Beta {}",
+				"// @header: GroupB",
+				"message Gamma {}",
 				"",
 			}, "\n"),
 		},
@@ -218,11 +223,12 @@ func TestParseFlowWithMarkers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, parsed, 1)
 	assert.Equal(t, "My API", parsed[0].Title())
-	assert.Len(t, parsed[0].Entries(), 3)
+	assert.Len(t, parsed[0].Entries(), 4)
 	assert.Equal(t, "GroupA", parsed[0].Entries()[0].Message().Header())
 	assert.Len(t, parsed[0].Entries()[0].Message().Fields(), 1)
-	assert.Equal(t, "GroupB", parsed[0].Entries()[1].Message().Header())
-	assert.Equal(t, EntryTypeEnum, parsed[0].Entries()[2].Type())
+	assert.Equal(t, "GroupA", parsed[0].Entries()[1].Message().Header())
+	assert.Equal(t, "GroupB", parsed[0].Entries()[2].Message().Header())
+	assert.Equal(t, EntryTypeEnum, parsed[0].Entries()[3].Type())
 
 	ignoreAll := &DescriptorParser{
 		descriptors: []*protokit.FileDescriptor{

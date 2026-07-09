@@ -46,6 +46,40 @@ func (p *DescriptorParser) nextMarker(descriptor *protokit.FileDescriptor, marke
 	return "", -1, nil
 }
 
+type markerPosition struct {
+	value string
+	index int
+}
+
+func (p *DescriptorParser) markers(descriptor *protokit.FileDescriptor, marker string) ([]markerPosition, error) {
+	payload, err := p.getPayload(descriptor)
+	if err != nil {
+		return nil, err
+	}
+
+	token := MarkerDelimiter + marker
+	offset := 0
+	result := make([]markerPosition, 0)
+	for {
+		relative := strings.Index(payload[offset:], token)
+		if relative == -1 {
+			return result, nil
+		}
+
+		index := offset + relative
+		fromStr := payload[index+len(token):]
+		to := strings.Index(fromStr, "\n")
+		if to == -1 {
+			to = len(fromStr)
+		}
+		result = append(result, markerPosition{
+			value: strings.Trim(fromStr[:to], ":\n*/ "),
+			index: index,
+		})
+		offset = index + len(token)
+	}
+}
+
 func (p *DescriptorParser) getPayload(descriptor *protokit.FileDescriptor) (string, error) {
 	if payload, ok := p.payload[descriptor.GetName()]; ok {
 		return payload, nil

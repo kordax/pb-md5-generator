@@ -143,6 +143,9 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 
 		return str, nil
 	case ValueTypePhone:
+		if value.Present() {
+			return *value.Get(), nil
+		}
 		//+NNN.NNNNNNNNNN
 		prefix, err := int64WithinRange(0, 1010)
 		if err != nil {
@@ -157,10 +160,19 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 
 		return phone, nil
 	case ValueTypeJWT:
+		if value.Present() {
+			return *value.Get(), nil
+		}
 		return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmaXh0dXJlIn0.signature", nil
 	case ValueTypePassword:
+		if value.Present() {
+			return *value.Get(), nil
+		}
 		return passGen.GetPassword(), nil
 	case ValueTypeUUID:
+		if value.Present() {
+			return *value.Get(), nil
+		}
 		return uuid.NewString(), nil
 	case ValueTypeEnum:
 		var enum *Enum

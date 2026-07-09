@@ -30,6 +30,38 @@ tasks:
     sources:
       - "**/*.go"
 
+  generate-example:
+    desc: "Generate EXAMPLE.md from the full integration fixture"
+    cmds:
+      - |
+        prefix="$(mktemp)"
+        tmp_root="$(mktemp -d)"
+        trap 'rm -f "$prefix"; rm -rf "$tmp_root"' EXIT
+        printf '%s\n' \
+          '# Example Output' \
+          '' \
+          'This file is a generated markdown example for the larger integration fixture: `testdata/integration/full_api.proto`.' \
+          '' \
+          'It demonstrates the renderer output for annotated protobuf definitions, including generated and explicit code examples, nested messages, maps, repeated fields, enums, oneof payloads, and ignored definitions.' \
+          '' \
+          '```console' \
+          'pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md' \
+          '```' \
+          '' > "$prefix"
+        go run ./cmd/pb-md5-generator \
+          -d testdata/integration \
+          -f testdata/integration/full_api.proto \
+          -pbo "$tmp_root/protobuf" \
+          -o EXAMPLE.md \
+          -p "$prefix" \
+          -style-table-identifiers "{{.STYLE_TABLE | default "bold-code"}}" \
+          -style-heading-identifiers "{{.STYLE_HEADING | default "code"}}"
+    sources:
+      - "testdata/integration/full_api.proto"
+      - "**/*.go"
+    generates:
+      - "EXAMPLE.md"
+
   check:
     desc: "Running golangci-lint"
     cmds:

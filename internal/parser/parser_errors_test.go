@@ -108,7 +108,7 @@ message BadField {
 	p := NewDescriptorParser(request)
 	_, err := p.Parse()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid custom type provided")
+	assert.Contains(t, err.Error(), "unknown custom type provided")
 }
 
 func requestFromProtoContent(t *testing.T, content string) *pluginpb.CodeGeneratorRequest {
@@ -122,6 +122,7 @@ func requestFromProtoContent(t *testing.T, content string) *pluginpb.CodeGenerat
 		ProtoDir:  root,
 		OutputDir: filepath.Join(root, "tmp"),
 	}
+	require.NoError(t, os.MkdirAll(c.OutputDir, 0o750))
 	request, err := c.RequestFromFiles([]string{protoFile})
 	require.NoError(t, err)
 	return request

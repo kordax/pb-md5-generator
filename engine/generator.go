@@ -17,10 +17,16 @@ type Generator[R any] interface {
 
 type MDGenerator struct {
 	codegen *Codegenerator
+	style   GeneratorStyle
 }
 
 func NewMDGenerator(codegen *Codegenerator) *MDGenerator {
-	return &MDGenerator{codegen: codegen}
+	return NewMDGeneratorWithStyle(codegen, DefaultGeneratorStyle())
+}
+
+func NewMDGeneratorWithStyle(codegen *Codegenerator, style GeneratorStyle) *MDGenerator {
+	style = style.WithDefaults()
+	return &MDGenerator{codegen: codegen, style: style}
 }
 
 func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
@@ -71,10 +77,12 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 		for _, entry := range entries {
 			switch entry.t {
 			case EntryTypeMessage:
-				if entry.msg.header != header {
+				if entry.msg.header != "" && entry.msg.header != header {
 					g.header(entry.msg.header, 3, section)
 				}
-				header = entry.msg.header
+				if entry.msg.header != "" {
+					header = entry.msg.header
+				}
 				if entry.msg.m != nil {
 					err := g.message(parsedFiles, entry.msg, section)
 					if err != nil {
@@ -129,6 +137,78 @@ func (g *MDGenerator) header(header string, level md.HeaderLevel, section *md.Se
 	section.AddElement(md.NewHeaderBuilder().Text(header).Level(level).Build())
 }
 
+func codeSpan(value string) string {
+	return "`" + strings.ReplaceAll(value, "`", "\\`") + "`"
+}
+
+type IdentifierStyle string
+
+const (
+	IdentifierStylePlain    IdentifierStyle = "plain"
+	IdentifierStyleCode     IdentifierStyle = "code"
+	IdentifierStyleBold     IdentifierStyle = "bold"
+	IdentifierStyleBoldCode IdentifierStyle = "bold-code"
+)
+
+type GeneratorStyle struct {
+	TableIdentifiers   IdentifierStyle
+	HeadingIdentifiers IdentifierStyle
+}
+
+func DefaultGeneratorStyle() GeneratorStyle {
+	return GeneratorStyle{
+		TableIdentifiers:   IdentifierStyleBoldCode,
+		HeadingIdentifiers: IdentifierStyleCode,
+	}
+}
+
+func (s GeneratorStyle) WithDefaults() GeneratorStyle {
+	defaults := DefaultGeneratorStyle()
+	if s.TableIdentifiers == "" {
+		s.TableIdentifiers = defaults.TableIdentifiers
+	}
+	if s.HeadingIdentifiers == "" {
+		s.HeadingIdentifiers = defaults.HeadingIdentifiers
+	}
+	return s
+}
+
+func ParseIdentifierStyle(value string) (IdentifierStyle, error) {
+	switch IdentifierStyle(value) {
+	case IdentifierStylePlain, IdentifierStyleCode, IdentifierStyleBold, IdentifierStyleBoldCode:
+		return IdentifierStyle(value), nil
+	default:
+		return "", fmt.Errorf("unknown identifier style %q, expected one of: plain, code, bold, bold-code", value)
+	}
+}
+
+func styledIdentifier(value string, style IdentifierStyle) (string, md.TextEmphasis) {
+	switch style {
+	case IdentifierStyleCode:
+		return codeSpan(value), md.TextEmphasisNormal
+	case IdentifierStyleBold:
+		return value, md.TextEmphasisBold
+	case IdentifierStyleBoldCode:
+		return codeSpan(value), md.TextEmphasisBold
+	default:
+		return value, md.TextEmphasisNormal
+	}
+}
+
+func styledInlineIdentifier(value string, style IdentifierStyle) string {
+	text, emphasis := styledIdentifier(value, style)
+	switch emphasis {
+	case md.TextEmphasisBold:
+		return "**" + text + "**"
+	case md.TextEmphasisItalic:
+		return "*" + text + "*"
+	case md.TextEmphasisBoldItalic:
+		return "***" + text + "***"
+	default:
+		return text
+	}
+}
+
 func (g *MDGenerator) list(entries []Entry, parent *md.List, ordered bool, levels int) *md.List {
 	return listRecursive(entries, ordered, parent, 0, levels)
 }
@@ -141,11 +221,11 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 	}
 	var text string
 	if message.description != "" {
-		text = name + " message description:"
+		text = fmt.Sprintf("%s message description:", styledInlineIdentifier(name, g.style.HeadingIdentifiers))
 		g.header(text, 4, section)
 		section.AddElement(md.NewTextBuilder().Text(message.description).Build())
 	} else {
-		text = name + " message:"
+		text = fmt.Sprintf("%s message:", styledInlineIdentifier(name, g.style.HeadingIdentifiers))
 		g.header(text, 4, section)
 	}
 
@@ -163,7 +243,8 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 	for i := range message.fields {
 		field := &message.fields[i]
 		fRow := MkRow()
-		fRow.AddText(MkText(field.d.GetName(), md.TextEmphasisBold))
+		fieldText, fieldEmphasis := styledIdentifier(field.d.GetName(), g.style.TableIdentifiers)
+		fRow.AddText(MkText(fieldText, fieldEmphasis))
 		colField.AddRow(fRow)
 
 		tRow := MkRow()
@@ -178,31 +259,27 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 		dRow.AddText(MkText(field.description, md.TextEmphasisNormal))
 		colDesc.AddRow(dRow)
 
+		minRow := MkRow()
+		maxRow := MkRow()
+		lenRow := MkRow()
 		if field.flags.Present() {
 			flags := field.flags.Get()
 			flags.min.IfPresent(func(min float64) {
 				minFound = true
-				row := MkRow()
-				row.AddText(MkText(strconv.FormatFloat(min, 'f', -1, 64), md.TextEmphasisNormal))
-				colMin.AddRow(row)
+				minRow.AddText(MkText(strconv.FormatFloat(min, 'f', -1, 64), md.TextEmphasisNormal))
 			})
 			flags.max.IfPresent(func(max float64) {
 				maxFound = true
-				row := MkRow()
-				row.AddText(MkText(strconv.FormatFloat(max, 'f', -1, 64), md.TextEmphasisNormal))
-				colMax.AddRow(row)
+				maxRow.AddText(MkText(strconv.FormatFloat(max, 'f', -1, 64), md.TextEmphasisNormal))
 			})
 			flags.maxLength.IfPresent(func(max int) {
 				lenFound = true
-				row := MkRow()
-				row.AddText(MkText(strconv.Itoa(max), md.TextEmphasisNormal))
-				colLen.AddRow(row)
+				lenRow.AddText(MkText(strconv.Itoa(max), md.TextEmphasisNormal))
 			})
-		} else {
-			colMin.AddRow(MkRow())
-			colMax.AddRow(MkRow())
-			colLen.AddRow(MkRow())
 		}
+		colMin.AddRow(minRow)
+		colMax.AddRow(maxRow)
+		colLen.AddRow(lenRow)
 	}
 
 	table := md.NewTableBuilder().Rows(len(message.fields)).Build()
@@ -225,17 +302,30 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 	section.AddElement(table)
 
 	message.code.IfPresent(func(code Pair[Syntax, string]) {
-		g.header(fmt.Sprintf("'%s' code example:", message.m.GetName()), 4, section)
+		g.header(fmt.Sprintf("%s code example:", styledInlineIdentifier(message.m.GetName(), g.style.HeadingIdentifiers)), 4, section)
 		g.code(code.Right, section)
 	})
 	message.autocode.IfPresent(func(ac AutocodeOpt) {
-		g.header(fmt.Sprintf("'%s' code example:", message.m.GetName()), 4, section)
+		g.header(fmt.Sprintf("%s code example:", styledInlineIdentifier(message.m.GetName(), g.style.HeadingIdentifiers)), 4, section)
 		generated, err := g.codegen.Generate(files, message)
 		if err != nil {
 			return
 		}
 		section.AddElement(generated)
 	})
+
+	entries := message.entries
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].index < entries[j].index
+	})
+	for _, entry := range entries {
+		if entry.t != EntryTypeMessage || entry.msg == nil || entry.msg.m == nil {
+			continue
+		}
+		if err := g.message(files, entry.msg, section); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -248,11 +338,11 @@ func (g *MDGenerator) enum(enum *Enum, section *md.Section) error {
 	}
 	var text string
 	if enum.description != "" {
-		text = name + "description:"
+		text = fmt.Sprintf("%s enum description:", styledInlineIdentifier(name, g.style.HeadingIdentifiers))
 		g.header(text, 4, section)
 		section.AddElement(md.NewTextBuilder().Text(enum.description).Build())
 	} else {
-		text = name + ":"
+		text = fmt.Sprintf("%s enum:", styledInlineIdentifier(name, g.style.HeadingIdentifiers))
 		g.header(text, 4, section)
 	}
 	table := md.NewTableBuilder().Rows(len(enum.e.GetValues())).Build()
@@ -262,7 +352,8 @@ func (g *MDGenerator) enum(enum *Enum, section *md.Section) error {
 
 	for _, value := range enum.values {
 		fRow := MkRow()
-		fRow.AddText(MkText(value.d.GetName(), md.TextEmphasisBold))
+		valueText, valueEmphasis := styledIdentifier(value.d.GetName(), g.style.TableIdentifiers)
+		fRow.AddText(MkText(valueText, valueEmphasis))
 		colField.AddRow(fRow)
 
 		dRow := MkRow()

@@ -18,11 +18,13 @@ import (
 )
 
 type Config struct {
-	ProtoDir  string
-	Files     string
-	ProtoOut  string
-	Output    string
-	PrefixDoc string
+	ProtoDir               string
+	Files                  string
+	ProtoOut               string
+	Output                 string
+	PrefixDoc              string
+	TableIdentifierStyle   string
+	HeadingIdentifierStyle string
 }
 
 type appDeps struct {
@@ -34,7 +36,7 @@ type appDeps struct {
 	requestFromFiles  func(Config, []string) (*pluginpb.CodeGeneratorRequest, error)
 	readFile          func(string) ([]byte, error)
 	writeFile         func(string, []byte, fs.FileMode) error
-	generate          func(*pluginpb.CodeGeneratorRequest) (string, error)
+	generate          func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle) (string, error)
 }
 
 func Run(args []string) int {
@@ -79,6 +81,8 @@ func parseFlags(args []string) (Config, error) {
 	flags.StringVar(&cfg.ProtoOut, "pbo", "doc-generator-tmp", "temporary protobuf output directory location")
 	flags.StringVar(&cfg.Output, "o", "./doc-generator-output", "markdown output file")
 	flags.StringVar(&cfg.PrefixDoc, "p", "", "prefix markdown document file that will be added to the beginning of the resulting .md file")
+	flags.StringVar(&cfg.TableIdentifierStyle, "style-table-identifiers", string(engine.IdentifierStyleBoldCode), "table identifier style: plain, code, bold, bold-code")
+	flags.StringVar(&cfg.HeadingIdentifierStyle, "style-heading-identifiers", string(engine.IdentifierStyleCode), "heading identifier style: plain, code, bold, bold-code")
 
 	if err := flags.Parse(args); err != nil {
 		return Config{}, err
@@ -112,6 +116,10 @@ func runWithDeps(cfg Config, deps appDeps) error {
 	if err := validatePrefix(cfg.PrefixDoc); err != nil {
 		return err
 	}
+	style, err := generatorStyle(cfg)
+	if err != nil {
+		return err
+	}
 	if err := deps.ensureDirectory(cfg.ProtoOut); err != nil {
 		return fmt.Errorf("temporary protobuf directory '%s' is not available: %w", cfg.ProtoOut, err)
 	}
@@ -129,7 +137,7 @@ func runWithDeps(cfg Config, deps appDeps) error {
 	if err != nil {
 		return err
 	}
-	generated, err := deps.generate(request)
+	generated, err := deps.generate(request, style)
 	if err != nil {
 		return fmt.Errorf("failed to generate markdown document: %w", err)
 	}
@@ -192,9 +200,34 @@ func prefixContent(prefix string, readFile func(string) ([]byte, error)) (string
 	return string(contentBytes) + "\n\n", nil
 }
 
-func generate(request *pluginpb.CodeGeneratorRequest) (string, error) {
+func generatorStyle(cfg Config) (engine.GeneratorStyle, error) {
+	defaults := engine.DefaultGeneratorStyle()
+	tableIdentifierStyle := cfg.TableIdentifierStyle
+	if tableIdentifierStyle == "" {
+		tableIdentifierStyle = string(defaults.TableIdentifiers)
+	}
+	headingIdentifierStyle := cfg.HeadingIdentifierStyle
+	if headingIdentifierStyle == "" {
+		headingIdentifierStyle = string(defaults.HeadingIdentifiers)
+	}
+
+	tableIdentifiers, err := engine.ParseIdentifierStyle(tableIdentifierStyle)
+	if err != nil {
+		return engine.GeneratorStyle{}, fmt.Errorf("invalid table identifier style: %w", err)
+	}
+	headingIdentifiers, err := engine.ParseIdentifierStyle(headingIdentifierStyle)
+	if err != nil {
+		return engine.GeneratorStyle{}, fmt.Errorf("invalid heading identifier style: %w", err)
+	}
+	return engine.GeneratorStyle{
+		TableIdentifiers:   tableIdentifiers,
+		HeadingIdentifiers: headingIdentifiers,
+	}, nil
+}
+
+func generate(request *pluginpb.CodeGeneratorRequest, style engine.GeneratorStyle) (string, error) {
 	parser := engine.NewDescriptorParser(request)
-	generator := engine.NewMDGenerator(engine.NewCodegenerator())
+	generator := engine.NewMDGeneratorWithStyle(engine.NewCodegenerator(), style)
 	renderer := render.NewMarkdownRenderer(render.DefaultConfig())
 
 	entries, err := parser.Parse()

@@ -72,6 +72,7 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	message := Message{
 		description: "With typed flags",
 		m:           requireMessage(t, "TokenRequest").m,
+		code:        Some(Pair[Syntax, string]{Left: SyntaxJson, Right: `{"ok":true}`}),
 		fields: []MessageField{
 			*NewMessageField(
 				protoField("id", descriptorpb.FieldDescriptorProto_TYPE_INT64, requireMessage(t, "TokenRequest").m),
@@ -98,6 +99,9 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	}
 	require.NotNil(t, fieldsTable)
 	assert.Equal(t, 7, len(fieldsTable.GetColumns()))
+	assert.Equal(t, []string{"`id`"}, columnText(t, fieldsTable, "Field"))
+	assert.Contains(t, sectionHeaderTexts(section), "`doc_generator_test.TokenRequest` message description:")
+	assert.Contains(t, sectionHeaderTexts(section), "`TokenRequest` code example:")
 
 	sectionWithoutDescription := &md.Section{}
 	messageWithoutDescription := Message{m: requireMessage(t, "TokenRequest").m}
@@ -113,6 +117,109 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	enumSection := &md.Section{}
 	require.NoError(t, generator.enum(requireEnum(t, "LoginStatus"), enumSection))
 	assert.Len(t, enumSection.GetElements(), 3)
+	assert.Contains(t, sectionHeaderTexts(enumSection), "`doc_generator_test.LoginStatus` enum:")
+	assert.Equal(t, []string{"`LS_OK`", "`LS_FAILED`", "`LS_INVALID_REQUEST`"}, columnText(t, requireTable(t, enumSection), "Value"))
+}
+
+func TestMDGeneratorMessageOptionalFlagColumnsStayAligned(t *testing.T) {
+	generator := NewMDGenerator(NewCodegenerator())
+	section := &md.Section{}
+	parent := requireMessage(t, "TokenRequest").m
+
+	message := Message{
+		description: "With mixed flags",
+		m:           parent,
+		fields: []MessageField{
+			*NewMessageField(
+				protoField("email", descriptorpb.FieldDescriptorProto_TYPE_STRING, parent),
+				parent,
+				"email field",
+				ValueTypeString,
+				&FieldFlags{customType: Some(ValueTypeEmail)},
+			),
+			*NewMessageField(
+				protoField("age", descriptorpb.FieldDescriptorProto_TYPE_INT32, parent),
+				parent,
+				"age field",
+				ValueTypeInt,
+				&FieldFlags{min: Some(18.0), max: Some(100.0)},
+			),
+			*NewMessageField(
+				protoField("display_name", descriptorpb.FieldDescriptorProto_TYPE_STRING, parent),
+				parent,
+				"display name field",
+				ValueTypeString,
+				&FieldFlags{maxLength: Some(12)},
+			),
+			*NewMessageField(
+				protoField("plain", descriptorpb.FieldDescriptorProto_TYPE_STRING, parent),
+				parent,
+				"plain field",
+				ValueTypeString,
+				nil,
+			),
+		},
+	}
+
+	require.NoError(t, generator.message(nil, &message, section))
+
+	fieldsTable := requireTable(t, section)
+	assert.Equal(t, []string{"", "18", "", ""}, columnText(t, fieldsTable, "Min value"))
+	assert.Equal(t, []string{"", "100", "", ""}, columnText(t, fieldsTable, "Max value"))
+	assert.Equal(t, []string{"", "", "12", ""}, columnText(t, fieldsTable, "Max length/size"))
+	assert.Equal(t, []string{"`email`", "`age`", "`display_name`", "`plain`"}, columnText(t, fieldsTable, "Field"))
+}
+
+func TestMDGeneratorCustomIdentifierStyle(t *testing.T) {
+	generator := NewMDGeneratorWithStyle(NewCodegenerator(), GeneratorStyle{
+		TableIdentifiers:   IdentifierStylePlain,
+		HeadingIdentifiers: IdentifierStyleBoldCode,
+	})
+	section := &md.Section{}
+
+	message := Message{
+		description: "custom style",
+		m:           requireMessage(t, "TokenRequest").m,
+		fields: []MessageField{
+			*NewMessageField(
+				protoField("plain_field", descriptorpb.FieldDescriptorProto_TYPE_STRING, requireMessage(t, "TokenRequest").m),
+				requireMessage(t, "TokenRequest").m,
+				"plain field",
+				ValueTypeString,
+				nil,
+			),
+		},
+	}
+
+	require.NoError(t, generator.message(nil, &message, section))
+
+	assert.Contains(t, sectionHeaderTexts(section), "**`doc_generator_test.TokenRequest`** message description:")
+	assert.Equal(t, []string{"plain_field"}, columnText(t, requireTable(t, section), "Field"))
+}
+
+func TestMDGeneratorSkipsEmptyHeaderAndRendersNestedMessages(t *testing.T) {
+	generator := NewMDGenerator(NewCodegenerator())
+	parent := requireMessage(t, "TokenRequest")
+	nested := requireMessage(t, "ServerResponse")
+	parent.entries = []Entry{
+		{index: 0, t: EntryTypeMessage, msg: nested},
+	}
+
+	doc, err := generator.Generate([]ParsedFile{
+		{
+			filename: "fixture.proto",
+			entries: []Entry{
+				{index: 0, t: EntryTypeMessage, msg: &Message{header: "Auth", m: requireMessage(t, "ClientRequest").m}},
+				{index: 1, t: EntryTypeMessage, msg: parent},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	headers := documentHeaderTexts(doc)
+	assert.NotContains(t, headers, "")
+	assert.Contains(t, headers, "Auth")
+	assert.Contains(t, headers, "`doc_generator_test.ServerResponse` message description:")
 }
 
 func TestMDGeneratorListHelpers(t *testing.T) {
@@ -146,6 +253,56 @@ func TestMDGeneratorListHelpers(t *testing.T) {
 	requiredField.Label = descriptorpb.FieldDescriptorProto_LABEL_REQUIRED.Enum()
 	assert.Equal(t, "", pbLabel(optionalField))
 	assert.Equal(t, "LABEL_REQUIRED", pbLabel(requiredField))
+}
+
+func documentHeaderTexts(doc *md.Document) []string {
+	result := make([]string, 0)
+	for _, section := range doc.GetSections() {
+		result = append(result, sectionHeaderTexts(&section)...)
+	}
+	return result
+}
+
+func sectionHeaderTexts(section *md.Section) []string {
+	result := make([]string, 0)
+	for _, element := range section.GetElements() {
+		if header, ok := element.(*md.Header); ok {
+			result = append(result, header.GetText())
+		}
+	}
+	return result
+}
+
+func requireTable(t *testing.T, section *md.Section) *md.Table {
+	t.Helper()
+	for _, element := range section.GetElements() {
+		if table, ok := element.(*md.Table); ok {
+			return table
+		}
+	}
+	require.Fail(t, "table not found")
+	return nil
+}
+
+func columnText(t *testing.T, table *md.Table, name string) []string {
+	t.Helper()
+	for _, column := range table.GetColumns() {
+		if column.GetName() == name {
+			result := make([]string, 0, len(column.GetRows()))
+			for _, row := range column.GetRows() {
+				if len(row.GetElements()) == 0 {
+					result = append(result, "")
+					continue
+				}
+				text, ok := row.GetElements()[0].(*md.Text)
+				require.True(t, ok)
+				result = append(result, text.GetText())
+			}
+			return result
+		}
+	}
+	require.Failf(t, "column not found", "column %q not found", name)
+	return nil
 }
 
 func protoField(name string, fieldType descriptorpb.FieldDescriptorProto_Type, message *protokit.Descriptor) *protokit.FieldDescriptor {

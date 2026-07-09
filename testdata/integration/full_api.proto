@@ -23,8 +23,11 @@ enum IgnoredEnum {
 
 // Role enum description.
 enum Role {
+  // Role is not specified.
   ROLE_UNSPECIFIED = 0;
+  // Administrator role with full access.
   ROLE_ADMIN = 1;
+  // Regular member role with limited access.
   ROLE_MEMBER = 2;
 }
 
@@ -47,6 +50,7 @@ message CreateUserRequest {
   string request_uuid = 4;
   // JWT field description.
   // @type=jwt
+  // @val=example-access-token
   string access_token = 5;
   // Age field description.
   // @min=18
@@ -110,7 +114,11 @@ message CreateUserResponse {
  * </session>
  */
 message SessionResponse {
+  // Session identifier description.
+  // @len=16
   string id = 1;
+  // Session expiration timestamp description.
+  // @val=2026-07-09T12:00:00Z
   string expires_at = 2;
 }
 
@@ -129,18 +137,34 @@ message SessionAuditRequest {
 
 // Parent message description.
 message Profile {
+  // First name description.
+  // @len=32
   string first_name = 1;
+  // Last name description.
+  // @len=64
   string last_name = 2;
 
   // Nested address description.
   message Address {
+    // Country code description.
+    // @len=2
     string country = 1;
+    // City description.
+    // @len=64
     string city = 2;
+    // Street line description.
+    // @len=128
     string line = 3;
 
     // Nested geo point description.
     message GeoPoint {
+      // Latitude description.
+      // @min=-90
+      // @max=90
       double lat = 1;
+      // Longitude description.
+      // @min=-180
+      // @max=180
       double lon = 2;
     }
 
@@ -149,8 +173,12 @@ message Profile {
 
   // Nested preferences description.
   message Preferences {
+    // Marketing enabled description.
     bool marketing_enabled = 1;
+    // Preferred languages description.
+    // @len=5
     repeated string languages = 2;
+    // Settings map description.
     map<string, string> settings = 3;
   }
 
@@ -162,18 +190,27 @@ message Profile {
 // @header: Billing
 // Payment status enum description.
 enum PaymentStatus {
+  // Payment status is unknown.
   PAYMENT_STATUS_UNKNOWN = 0;
+  // Payment is waiting for capture or confirmation.
   PAYMENT_STATUS_PENDING = 1;
+  // Payment has been captured successfully.
   PAYMENT_STATUS_CAPTURED = 2;
+  // Payment was declined by provider or issuer.
   PAYMENT_STATUS_DECLINED = 3;
+  // Payment has been refunded.
   PAYMENT_STATUS_REFUNDED = 4;
 }
 
 // Currency enum description.
 enum Currency {
+  // Currency is unknown.
   CURRENCY_UNKNOWN = 0;
+  // United States dollar.
   CURRENCY_USD = 1;
+  // Euro.
   CURRENCY_EUR = 2;
+  // Kazakhstani tenge.
   CURRENCY_KZT = 3;
 }
 
@@ -184,9 +221,11 @@ enum Currency {
 message CreatePaymentRequest {
   // Merchant id description.
   // @val=merchant-001
+  // @len=12
   string merchant_id = 1;
   // Order id description.
   // @val=order-9001
+  // @len=10
   string order_id = 2;
   // Amount minor units description.
   // @min=100
@@ -199,9 +238,11 @@ message CreatePaymentRequest {
   bool capture = 5;
   // Idempotency key description.
   // @type=uuid
+  // @val=example-idempotency-key
   string idempotency_key = 6;
   // Customer email description.
   // @type=email
+  // @len=128
   string customer_email = 7;
   // Risk score description.
   // @min=0
@@ -251,25 +292,53 @@ message CreatePaymentRequest {
  * }
  */
 message CreatePaymentResponse {
+  // Payment id description.
+  // @len=16
   string payment_id = 1;
+  // Payment status description.
   PaymentStatus status = 2;
+  // Amount minor units description.
+  // @min=1
+  // @max=999999
   int64 amount_minor = 3;
+  // Currency description.
   Currency currency = 4;
+  // Created timestamp description.
+  // @val=2026-07-09T08:00:00Z
   string created_at = 5;
 
   message Customer {
+    // Customer id description.
+    // @len=16
     string id = 1;
+    // Customer email description.
+    // @type=email
+    // @len=128
     string email = 2;
+    // Customer phone list description.
+    // @type=phone
     repeated string phones = 3;
   }
 
   message PaymentMethod {
+    // Payment method kind description.
+    // @val=bank_card
     string kind = 1;
 
     message Card {
+      // Card brand description.
+      // @val=visa
       string brand = 1;
+      // Card last four digits description.
+      // @len=4
       string last4 = 2;
+      // Expiration month description.
+      // @min=1
+      // @max=12
       int32 exp_month = 3;
+      // Expiration year description.
+      // @min=2026
+      // @max=2040
       int32 exp_year = 4;
     }
 
@@ -277,7 +346,12 @@ message CreatePaymentResponse {
   }
 
   message Fee {
+    // Fee type description.
+    // @val=processing
     string type = 1;
+    // Fee amount minor units description.
+    // @min=0
+    // @max=10000
     int64 amount_minor = 2;
   }
 
@@ -322,17 +396,25 @@ message RefundPaymentRequest {
 // @header: Inventory
 // Region enum description.
 enum Region {
+  // Region is unknown.
   REGION_UNKNOWN = 0;
+  // US East region.
   REGION_US_EAST = 1;
+  // EU West region.
   REGION_EU_WEST = 2;
+  // AP South region.
   REGION_AP_SOUTH = 3;
 }
 
 // Inventory state enum description.
 enum InventoryState {
+  // Inventory state is unknown.
   INVENTORY_STATE_UNKNOWN = 0;
+  // Inventory item is available.
   INVENTORY_STATE_AVAILABLE = 1;
+  // Inventory item is reserved.
   INVENTORY_STATE_RESERVED = 2;
+  // Inventory item is damaged.
   INVENTORY_STATE_DAMAGED = 3;
 }
 
@@ -343,6 +425,7 @@ enum InventoryState {
 message SearchCatalogRequest {
   // Search query description.
   // @val=mechanical-keyboard
+  // @len=64
   string query = 1;
   // Page number description.
   // @min=1
@@ -391,17 +474,37 @@ message SearchCatalogRequest {
  * }
  */
 message InventorySnapshot {
+  // Warehouse id description.
+  // @val=wh-eu-1
+  // @len=16
   string warehouse_id = 1;
+  // Region description.
   Region region = 2;
 
   message Item {
+    // SKU description.
+    // @val=sku-keyboard
+    // @len=32
     string sku = 1;
+    // Inventory state description.
     InventoryState state = 2;
+    // Quantity description.
+    // @min=0
+    // @max=100000
     int64 quantity = 3;
 
     message Dimensions {
+      // Width description.
+      // @min=0.1
+      // @max=999.9
       double width = 1;
+      // Height description.
+      // @min=0.1
+      // @max=999.9
       double height = 2;
+      // Depth description.
+      // @min=0.1
+      // @max=999.9
       double depth = 3;
     }
 
@@ -416,10 +519,15 @@ message InventorySnapshot {
 // @header: Audit
 // Audit action enum description.
 enum AuditAction {
+  // Audit action is unknown.
   AUDIT_ACTION_UNKNOWN = 0;
+  // Resource was created.
   AUDIT_ACTION_CREATED = 1;
+  // Resource was updated.
   AUDIT_ACTION_UPDATED = 2;
+  // Resource was deleted.
   AUDIT_ACTION_DELETED = 3;
+  // Resource was exported.
   AUDIT_ACTION_EXPORTED = 4;
 }
 
@@ -430,9 +538,11 @@ enum AuditAction {
 message AuditQueryRequest {
   // Tenant description.
   // @val=tenant-fixture
+  // @len=32
   string tenant_id = 1;
   // Actor description.
   // @type=email
+  // @len=128
   string actor_email = 2;
   // Action description.
   AuditAction action = 3;
@@ -479,31 +589,63 @@ message AuditQueryRequest {
  * }
  */
 message AuditEnvelope {
+  // Event id description.
+  // @val=evt_001
+  // @len=32
   string event_id = 1;
+  // Audit action description.
   AuditAction action = 2;
 
   message Actor {
+    // Actor id description.
+    // @len=16
     string id = 1;
+    // Actor email description.
+    // @type=email
+    // @len=128
     string email = 2;
+    // Actor IP address description.
+    // @val=203.0.113.10
     string ip = 3;
+    // Actor user agent description.
+    // @len=128
     string user_agent = 4;
   }
 
   message Target {
+    // Target type description.
+    // @val=payment
     string type = 1;
+    // Target id description.
+    // @len=32
     string id = 2;
+    // Target display name description.
+    // @len=128
     string display_name = 3;
   }
 
   message Diff {
+    // Diff path description.
+    // @len=64
     string path = 1;
+    // Previous value description.
+    // @len=128
     string before = 2;
+    // New value description.
+    // @len=128
     string after = 3;
   }
 
   message Context {
+    // Request id description.
+    // @len=32
     string request_id = 1;
+    // Trace id description.
+    // @val=trace_abcdef
+    // @len=64
     string trace_id = 2;
+    // Context tags description.
+    // @len=32
     repeated string tags = 3;
   }
 
@@ -516,9 +658,13 @@ message AuditEnvelope {
 // @header: Notifications
 // Notification channel enum description.
 enum NotificationChannel {
+  // Notification channel is unknown.
   NOTIFICATION_CHANNEL_UNKNOWN = 0;
+  // Email notification channel.
   NOTIFICATION_CHANNEL_EMAIL = 1;
+  // SMS notification channel.
   NOTIFICATION_CHANNEL_SMS = 2;
+  // Push notification channel.
   NOTIFICATION_CHANNEL_PUSH = 3;
 }
 
@@ -550,30 +696,58 @@ enum NotificationChannel {
  * }
  */
 message NotificationBatch {
+  // Batch id description.
+  // @len=32
   string batch_id = 1;
+  // Notification channel description.
   NotificationChannel channel = 2;
 
   message Recipient {
+    // Recipient user id description.
+    // @len=16
     string user_id = 1;
+    // Recipient email description.
+    // @type=email
+    // @len=128
     string email = 2;
+    // Recipient phone description.
+    // @type=phone
     string phone = 3;
+    // Recipient variables description.
     map<string, string> variables = 4;
   }
 
   message EmailPayload {
+    // Email subject description.
+    // @len=128
     string subject = 1;
+    // Email template id description.
+    // @val=tpl-welcome
+    // @len=64
     string template_id = 2;
+    // Reply-to email description.
+    // @type=email
+    // @len=128
     string reply_to = 3;
   }
 
   message SmsPayload {
+    // SMS sender description.
+    // @len=32
     string sender = 1;
+    // SMS body description.
+    // @len=160
     string body = 2;
   }
 
   message PushPayload {
+    // Push title description.
+    // @len=64
     string title = 1;
+    // Push body description.
+    // @len=256
     string body = 2;
+    // Push data description.
     map<string, string> data = 3;
   }
 

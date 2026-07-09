@@ -73,23 +73,14 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		var header string
-		var headerIndex int
+		headers, err := p.markers(descriptor, HeaderMarker)
+		if err != nil {
+			return nil, err
+		}
 
 		for _, message := range descriptor.GetMessages() {
-			h, hi, err := p.nextMarker(descriptor, HeaderMarker)
-			if err != nil {
-				return nil, err
-			}
 			sourceIndex := p.getMessageSourceIndex(descriptor, message)
-			hdrValue := ""
-			if h != "" {
-				header = h
-				headerIndex = hi
-			}
-			if headerIndex < sourceIndex {
-				hdrValue = header
-			}
+			hdrValue := headerBefore(headers, sourceIndex)
 			msg, err := p.parseMessage(message, hdrValue)
 			if err != nil {
 				return nil, err
@@ -134,6 +125,19 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 	}
 
 	return result, nil
+}
+
+func headerBefore(headers []markerPosition, sourceIndex int) string {
+	header := ""
+	for _, current := range headers {
+		if current.index >= sourceIndex {
+			break
+		}
+		if current.value != "" {
+			header = current.value
+		}
+	}
+	return header
 }
 
 func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header string) (*Message, error) {
