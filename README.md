@@ -1,4 +1,8 @@
 [![Tests](https://github.com/kordax/pb-md5-generator/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/kordax/pb-md5-generator/actions/workflows/Tests.yml)
+[![Lint](https://github.com/kordax/pb-md5-generator/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/kordax/pb-md5-generator/actions/workflows/Lint.yml)
+[![Security](https://github.com/kordax/pb-md5-generator/actions/workflows/Security.yml/badge.svg?branch=main)](https://github.com/kordax/pb-md5-generator/actions/workflows/Security.yml)
+[![gitleaks](https://github.com/kordax/pb-md5-generator/actions/workflows/gitleaks.yml/badge.svg?branch=main)](https://github.com/kordax/pb-md5-generator/actions/workflows/gitleaks.yml)
+[![Coverage](https://raw.githubusercontent.com/kordax/pb-md5-generator/badges/.badges/main/coverage.svg)](https://github.com/kordax/pb-md5-generator/tree/badges)
 
 # Introduction
 
@@ -325,8 +329,7 @@ For a larger end-to-end example, see `testdata/integration/full_api.proto`.
 
 There is also a snapshot of generated documentation output in
 [`EXAMPLE.md`](./EXAMPLE.md).
-Regenerate it with `task generate-example`. You can override identifier styling with
-`STYLE_TABLE=plain|code|bold|bold-code` and `STYLE_HEADING=plain|code|bold|bold-code`.
+Regenerate it with `task generate-example`.
 
 ## Program Usage
 
@@ -349,7 +352,28 @@ Regenerate it with `task generate-example`. You can override identifier styling 
 pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
 ```
 
-Identifier styling can be controlled with `-style-table-identifiers` and
-`-style-heading-identifiers`. Supported values are `plain`, `code`, `bold`, and `bold-code`.
+## Options
+
+### Style Options
+
+Output formatting can be adjusted without changing proto annotations.
+
+Identifier styling is controlled separately for table cells and section headings:
+
+- `-style-table-identifiers`: formats field and enum value names inside tables.
+- `-style-heading-identifiers`: formats message, enum, and code-example names inside headings.
+
+Both options support `plain`, `code`, `bold`, and `bold-code`.
+The default output uses `bold-code` for table identifiers and `code` for heading identifiers.
+
+```console
+pb-md5-generator -d protobufs/my-project/ -o ./README.md -style-table-identifiers bold-code -style-heading-identifiers code
+```
+
+The generated example can be refreshed with the same styles through Task:
+
+```console
+task generate-example STYLE_TABLE=plain STYLE_HEADING=bold-code
+```
 
 There's a full integration fixture in `testdata/integration/full_api.proto` for you to check out.
