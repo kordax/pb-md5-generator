@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kordax/basic-utils/v3/uarray"
 	"github.com/pseudomuto/protokit"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -843,39 +844,19 @@ func (p *DescriptorParser) payloadForFile(fileName string) string {
 }
 
 func mapSlice[T, R any](values []T, mapper func(T) R) []R {
-	result := make([]R, 0, len(values))
-	for _, value := range values {
-		result = append(result, mapper(value))
-	}
-	return result
+	return uarray.Map(values, mapper)
 }
 
 func filter[T any](values []T, predicate func(T) bool) []T {
-	result := make([]T, 0)
-	for _, value := range values {
-		if predicate(value) {
-			result = append(result, value)
-		}
-	}
-	return result
+	return uarray.Filter(values, predicate)
 }
 
 func contains[T comparable](needle T, values []T) int {
-	for i, value := range values {
-		if value == needle {
-			return i
-		}
-	}
-	return -1
+	return uarray.Contains(values, needle)
 }
 
 func containsPredicate[T any](values []T, predicate func(T) bool) (int, *T) {
-	for i := range values {
-		if predicate(values[i]) {
-			return i, &values[i]
-		}
-	}
-	return -1, nil
+	return uarray.ContainsPredicate(values, predicate)
 }
 
 func protoToFieldValueType(d *protokit.FieldDescriptor) ValueType {
