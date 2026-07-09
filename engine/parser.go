@@ -16,8 +16,6 @@ import (
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/pseudomuto/protokit"
 	"github.com/rs/zerolog/log"
-	arrayutils "gitlab.com/kordax/basic-utils/array-utils"
-	"gitlab.com/kordax/basic-utils/opt"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -48,30 +46,30 @@ type AutocodeOpt struct {
 }
 
 type FieldFlags struct {
-	maxLength  opt.Opt[int]
-	min, max   opt.Opt[float64]
-	value      opt.Opt[string]
-	customType opt.Opt[ValueType]
+	maxLength  Option[int]
+	min, max   Option[float64]
+	value      Option[string]
+	customType Option[ValueType]
 	other      []string
 }
 
-func (a FieldFlags) GetMaxLength() opt.Opt[int] {
+func (a FieldFlags) GetMaxLength() Option[int] {
 	return a.maxLength
 }
 
-func (a FieldFlags) GetMin() opt.Opt[float64] {
+func (a FieldFlags) GetMin() Option[float64] {
 	return a.min
 }
 
-func (a FieldFlags) GetMax() opt.Opt[float64] {
+func (a FieldFlags) GetMax() Option[float64] {
 	return a.max
 }
 
-func (a FieldFlags) GetValue() opt.Opt[string] {
+func (a FieldFlags) GetValue() Option[string] {
 	return a.value
 }
 
-func (a FieldFlags) GetCustomType() opt.Opt[ValueType] {
+func (a FieldFlags) GetCustomType() Option[ValueType] {
 	return a.customType
 }
 
@@ -122,8 +120,8 @@ type EnumField struct {
 }
 
 type Message struct {
-	autocode opt.Opt[AutocodeOpt]
-	code     opt.Opt[arrayutils.Pair[Syntax, string]]
+	autocode Option[AutocodeOpt]
+	code     Option[Pair[Syntax, string]]
 
 	header      string
 	description string
@@ -136,7 +134,7 @@ type Message struct {
 
 type MessageField struct {
 	valueType   ValueType
-	flags       opt.Opt[FieldFlags]
+	flags       Option[FieldFlags]
 	description string
 
 	d     *protokit.FieldDescriptor
@@ -150,7 +148,7 @@ func NewMessageField(d *protokit.FieldDescriptor, m *protokit.Descriptor, descri
 		m:           m,
 		description: description,
 		valueType:   valueType,
-		flags:       opt.OfNullable(flags),
+		flags:       OptionFromPtr(flags),
 	}
 }
 
@@ -178,15 +176,16 @@ func NewDescriptorParser(request *plugingo.CodeGeneratorRequest) *DescriptorPars
 	params := strings.Split(cmdLine, ";")
 	matchedFiles := make(map[string]*os.File)
 	for _, f := range request.GetFileToGenerate() {
-		pathParams := arrayutils.Filter(params, func(v *string) bool {
-			match, _ := regexp.MatchString("M.*proto=.+", *v)
+		pathParams := filter(params, func(v string) bool {
+			match, _ := regexp.MatchString("M.*proto=.+", v)
 			return match
 		})
-		paths := arrayutils.Map(pathParams, func(v *string) arrayutils.Pair[string, string] {
-			return *arrayutils.NewPair(strings.Split(*v, "=")[0], strings.Split(*v, "=")[1])
+		paths := mapSlice(pathParams, func(v string) Pair[string, string] {
+			split := strings.Split(v, "=")
+			return Pair[string, string]{Left: split[0], Right: split[1]}
 		})
-		if _, rawPath := arrayutils.ContainsPredicate(paths, func(v *arrayutils.Pair[string, string]) bool {
-			return strings.Trim((*v).Left, "M ") == path.Base(f)
+		if _, rawPath := containsPredicate(paths, func(v Pair[string, string]) bool {
+			return strings.Trim(v.Left, "M ") == path.Base(f)
 		}); rawPath == nil {
 			panic(fmt.Errorf("no path provided for file: %s", f))
 		} else {
@@ -195,7 +194,7 @@ func NewDescriptorParser(request *plugingo.CodeGeneratorRequest) *DescriptorPars
 			if err != nil {
 				panic(fmt.Errorf("no file found, even though matched path was provided, path: %s, err: %s", fullPath, err.Error()))
 			}
-			file, err := os.OpenFile(fullPath, os.O_RDONLY, lstat.Mode())
+			file, err := os.OpenFile(fullPath, os.O_RDONLY, lstat.Mode()) // #nosec G304 -- proto source path comes from the compiler request.
 			if err != nil {
 				panic(fmt.Errorf("failed to open file: %s, path: %s, err: %s", f, fullPath, err.Error()))
 			}
@@ -253,7 +252,7 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 			if err != nil {
 				return nil, err
 			}
-			if arrayutils.Contains(IgnoreMarker, msg.flags) != -1 {
+			if contains(IgnoreMarker, msg.flags) != -1 {
 				log.Warn().Msgf("ignoring message '%s'", message.GetName())
 				continue
 			}
@@ -270,7 +269,7 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 			if err != nil {
 				return nil, err
 			}
-			if arrayutils.Contains(IgnoreMarker, en.flags) != -1 {
+			if contains(IgnoreMarker, en.flags) != -1 {
 				log.Warn().Msgf("ignoring enum '%s'", enum.GetName())
 				continue
 			}
@@ -307,13 +306,13 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 	if err != nil {
 		return nil, wrapMsgErr(descriptor, err)
 	}
-	result.autocode = opt.OfNullable(autocode)
+	result.autocode = OptionFromPtr(autocode)
 	if autocode == nil {
 		code, err := p.parseCode(descriptor)
 		if err != nil {
 			return nil, wrapMsgErr(descriptor, err)
 		}
-		result.code = opt.OfNullable(code)
+		result.code = OptionFromPtr(code)
 	}
 
 	for _, f := range descriptor.GetMessageFields() {
@@ -322,7 +321,7 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 			return nil, wrapMsgErr(descriptor, err)
 		}
 		if flags := field.flags.Get(); flags != nil {
-			if arrayutils.Contains(IgnoreMarker, flags.other) != -1 {
+			if contains(IgnoreMarker, flags.other) != -1 {
 				log.Warn().Msgf("ignoring field '%s'", f.GetName())
 				continue
 			}
@@ -477,8 +476,8 @@ func (p *DescriptorParser) parseMessageFlags(descriptor *protokit.Descriptor) []
 	str := comments.String()
 	var params []string
 	if spl := strings.Split(str, MarkerDelimiter); len(spl) > 1 {
-		spl = arrayutils.Map(spl, func(v *string) string {
-			return strings.TrimSpace(*v)
+		spl = mapSlice(spl, func(v string) string {
+			return strings.TrimSpace(v)
 		})
 		params = spl[1:]
 		return params
@@ -503,8 +502,8 @@ func (p *DescriptorParser) parseEnumFlags(descriptor *protokit.EnumDescriptor) [
 	str := comments.String()
 	var params []string
 	if spl := strings.Split(str, MarkerDelimiter); len(spl) > 1 {
-		spl = arrayutils.Map(spl, func(v *string) string {
-			return strings.TrimSpace(*v)
+		spl = mapSlice(spl, func(v string) string {
+			return strings.TrimSpace(v)
 		})
 		params = spl[1:]
 		return params
@@ -513,7 +512,7 @@ func (p *DescriptorParser) parseEnumFlags(descriptor *protokit.EnumDescriptor) [
 	return nil
 }
 
-func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*arrayutils.Pair[Syntax, string], error) {
+func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syntax, string], error) {
 	marker := MarkerDelimiter + CodeMarker
 
 	comments := descriptor.GetComments()
@@ -545,7 +544,7 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*arrayuti
 			}
 			block = indent.String()
 		}
-		return &arrayutils.Pair[Syntax, string]{
+		return &Pair[Syntax, string]{
 			Left:  syntax,
 			Right: block,
 		}, nil
@@ -623,8 +622,8 @@ func (p *DescriptorParser) parseFieldFlags(descriptor *protokit.FieldDescriptor)
 	str := comments.String()
 	var params []string
 	if spl := strings.Split(str, MarkerDelimiter); len(spl) > 1 {
-		spl = arrayutils.Map(spl, func(v *string) string {
-			return strings.TrimSpace(*v)
+		spl = mapSlice(spl, func(v string) string {
+			return strings.TrimSpace(v)
 		})
 		params = spl[1:]
 
@@ -650,10 +649,10 @@ func (p *DescriptorParser) parseFieldFlags(descriptor *protokit.FieldDescriptor)
 		}
 
 		result := &FieldFlags{
-			maxLength: opt.Opt[int]{},
-			min:       opt.Opt[float64]{},
-			max:       opt.Opt[float64]{},
-			value:     opt.Opt[string]{},
+			maxLength: Option[int]{},
+			min:       Option[float64]{},
+			max:       Option[float64]{},
+			value:     Option[string]{},
 		}
 		for _, param := range params {
 			if param != AutocodeMaxMarker &&
@@ -664,23 +663,23 @@ func (p *DescriptorParser) parseFieldFlags(descriptor *protokit.FieldDescriptor)
 			}
 		}
 		if maxVal != nil {
-			result.max = opt.Of(maxVal.(float64))
+			result.max = Some(maxVal.(float64))
 		}
 		if minVal != nil {
-			result.min = opt.Of(minVal.(float64))
+			result.min = Some(minVal.(float64))
 		}
 		if length != nil {
-			result.maxLength = opt.Of(int(length.(uint64)))
+			result.maxLength = Some(length.(int))
 		}
 		if value != nil {
-			result.value = opt.Of(value.(string))
+			result.value = Some(value.(string))
 		}
 		if customType != nil {
 			t, maperr := mapStringToValueType(customType.(string))
 			if maperr != nil {
 				return nil, maperr
 			}
-			result.customType = opt.Of(t)
+			result.customType = Some(t)
 		}
 
 		return result, nil
@@ -693,8 +692,8 @@ func (p *DescriptorParser) parseEnumValueFlags(descriptor *protokit.EnumValueDes
 	comments := descriptor.GetComments()
 	str := comments.String()
 	if spl := strings.Split(str, MarkerDelimiter); len(spl) > 1 {
-		spl = arrayutils.Map(spl, func(v *string) string {
-			return strings.TrimSpace(*v)
+		spl = mapSlice(spl, func(v string) string {
+			return strings.TrimSpace(v)
 		})
 		return spl[1:], nil
 	}
@@ -703,8 +702,8 @@ func (p *DescriptorParser) parseEnumValueFlags(descriptor *protokit.EnumValueDes
 }
 
 func parseAutocodeChar(marker string, parameters []string) (any, error) {
-	if ind, _ := arrayutils.ContainsPredicate(parameters, func(v *string) bool {
-		return strings.Contains(*v, marker+"=")
+	if ind, _ := containsPredicate(parameters, func(v string) bool {
+		return strings.Contains(v, marker+"=")
 	}); ind != -1 {
 		spl := strings.Split(parameters[ind], marker+"=")
 		strVal := strings.Split(spl[1], " ")[0]
@@ -713,7 +712,7 @@ func parseAutocodeChar(marker string, parameters []string) (any, error) {
 			case AutocodeValueMarker:
 				return strVal, nil
 			case AutocodeMaxLengthMarker:
-				return strconv.ParseUint(strVal, 10, 64)
+				return strconv.Atoi(strVal)
 			case AutocodeMinMarker:
 				return strconv.ParseFloat(strVal, 64)
 			case AutocodeMaxMarker:
@@ -737,6 +736,42 @@ func wrapMsgErr(descriptor *protokit.Descriptor, err error) error {
 
 func wrapEnumErr(descriptor *protokit.EnumDescriptor, err error) error {
 	return fmt.Errorf("failed to parse/process enum %s:%s", descriptor.GetName(), err.Error())
+}
+
+func mapSlice[T, R any](values []T, mapper func(T) R) []R {
+	result := make([]R, 0, len(values))
+	for _, value := range values {
+		result = append(result, mapper(value))
+	}
+	return result
+}
+
+func filter[T any](values []T, predicate func(T) bool) []T {
+	result := make([]T, 0)
+	for _, value := range values {
+		if predicate(value) {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func contains[T comparable](needle T, values []T) int {
+	for i, value := range values {
+		if value == needle {
+			return i
+		}
+	}
+	return -1
+}
+
+func containsPredicate[T any](values []T, predicate func(T) bool) (int, *T) {
+	for i := range values {
+		if predicate(values[i]) {
+			return i, &values[i]
+		}
+	}
+	return -1, nil
 }
 
 func protoToFieldValueType(d *protokit.FieldDescriptor) ValueType {

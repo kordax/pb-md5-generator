@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test -race ./...
+
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Generate coverage profile
+        run: go test ./... -coverprofile=cover.out -covermode=atomic
+
+      - name: Check test coverage
+        id: coverage
+        uses: vladopajic/go-test-coverage@v2
+        continue-on-error: true
+        with:
+          config: ./.testcoverage.yml
+
+      - name: Post coverage report
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-tag: coverage-report
+          message: |
+            go-test-coverage report:
+            ```
+            ${{ fromJSON(steps.coverage.outputs.report) }}
+            ```
+
+      - name: Fail on coverage threshold
+        if: steps.coverage.outcome == 'failure'
+        run: exit 1
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=5m ./...
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: -no-fail -fmt sarif -out gosec.sarif ./...
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          go-package: ./...

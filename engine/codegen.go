@@ -1,9 +1,10 @@
 package engine
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -91,7 +92,6 @@ func (g *Codegenerator) generateFromMessage(files []ParsedFile, message *Message
 }
 
 func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField) (any, error) {
-	r := rand.New(rand.NewSource(time.Now().UnixNano() + rand.New(rand.NewSource(time.Now().UnixNano())).Int63()))
 	minVal := field.flags.OrElse(FieldFlags{}).GetMin()
 	maxVal := field.flags.OrElse(FieldFlags{}).GetMax()
 	maxLen := field.flags.OrElse(FieldFlags{}).GetMaxLength()
@@ -103,17 +103,17 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		if value.Present() {
 			return strconv.ParseInt(*value.Get(), 10, 64)
 		}
-		return int64WithinRange(r, int64(minVal.OrElse(0)), int64(maxVal.OrElse(1000000))), nil
+		return int64WithinRange(int64(minVal.OrElse(0)), int64(maxVal.OrElse(1000000)))
 	case ValueTypeFloat:
 		if value.Present() {
 			return strconv.ParseFloat(*value.Get(), 64)
 		}
-		return minVal.OrElse(0.0) + r.Float64()*(maxVal.OrElse(1000000)-minVal.OrElse(0.0)), nil
+		return float64WithinRange(minVal.OrElse(0), maxVal.OrElse(1000000))
 	case ValueTypeUInt:
 		if value.Present() {
 			return strconv.ParseUint(*value.Get(), 10, 64)
 		}
-		return uint64WithinRange(r, uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000))), nil
+		return uint64WithinRange(uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000)))
 	case ValueTypeEmail:
 		fallthrough
 	case ValueTypeString:
@@ -135,8 +135,16 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		return str, nil
 	case ValueTypePhone:
 		//+NNN.NNNNNNNNNN
-		phone := "+" + strconv.Itoa(int(int64WithinRange(r, 0, 1010)))
-		phone += "." + strconv.Itoa(int(int64WithinRange(r, 1000000000, 9999999999)))
+		prefix, err := int64WithinRange(0, 1010)
+		if err != nil {
+			return nil, err
+		}
+		number, err := int64WithinRange(1000000000, 9999999999)
+		if err != nil {
+			return nil, err
+		}
+		phone := "+" + strconv.FormatInt(prefix, 10)
+		phone += "." + strconv.FormatInt(number, 10)
 
 		return phone, nil
 	case ValueTypePassword:
@@ -162,8 +170,12 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		if enum != nil {
 			values := enum.values
 			l := len(values)
+			index, err := cryptoIndex(l)
+			if err != nil {
+				return nil, err
+			}
 
-			return values[rand.Intn(l)].d.GetName(), nil
+			return values[index].d.GetName(), nil
 		}
 
 		return nil, nil
@@ -174,10 +186,50 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 	}
 }
 
-func int64WithinRange(r *rand.Rand, min, max int64) int64 {
-	return min + r.Int63n(max)
+func int64WithinRange(min, max int64) (int64, error) {
+	if max <= min {
+		return min, nil
+	}
+	diff := max - min
+	value, err := rand.Int(rand.Reader, big.NewInt(diff))
+	if err != nil {
+		return 0, err
+	}
+	return min + value.Int64(), nil
 }
 
-func uint64WithinRange(r *rand.Rand, min, max uint64) uint64 {
-	return min + r.Uint64()*(max-min)
+func uint64WithinRange(min, max uint64) (uint64, error) {
+	if max <= min {
+		return min, nil
+	}
+	diff := new(big.Int).SetUint64(max - min)
+	value, err := rand.Int(rand.Reader, diff)
+	if err != nil {
+		return 0, err
+	}
+	return min + value.Uint64(), nil
+}
+
+func float64WithinRange(min, max float64) (float64, error) {
+	if max <= min {
+		return min, nil
+	}
+	maxUint64 := ^uint64(0)
+	value, err := uint64WithinRange(0, maxUint64)
+	if err != nil {
+		return 0, err
+	}
+	ratio := float64(value) / float64(maxUint64)
+	return min + ratio*(max-min), nil
+}
+
+func cryptoIndex(max int) (int, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("max should be positive")
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(value.Int64()), nil
 }

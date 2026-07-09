@@ -2,12 +2,11 @@ package password
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math"
 	"math/big"
-	mrand "math/rand"
 	"strings"
 	"sync"
-	"time"
 )
 
 const SpecialChars = "!@#$%^&*()[]"
@@ -86,17 +85,17 @@ func (g *Generator) randChar() rune {
 
 func (g *Generator) randCharLowercase() rune {
 	c, _ := rand.Int(rand.Reader, big.NewInt(26))
-	return 'a' + rune(c.Int64())
+	return rune("abcdefghijklmnopqrstuvwxyz"[c.Int64()])
 }
 
 func (g *Generator) randCharUppercase() rune {
 	c, _ := rand.Int(rand.Reader, big.NewInt(26))
-	return 'A' + rune(c.Int64())
+	return rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ"[c.Int64()])
 }
 
 func (g *Generator) randDec() rune {
 	c, _ := rand.Int(rand.Reader, big.NewInt(10))
-	return '0' + rune(c.Int64())
+	return rune("0123456789"[c.Int64()])
 }
 
 func (g *Generator) randSpec() rune {
@@ -105,13 +104,25 @@ func (g *Generator) randSpec() rune {
 }
 
 func shuffleString(str string) string {
-	shuffled := make([]rune, len(str))
-	mrand.New(mrand.NewSource(time.Now().UTC().UnixNano() * (mrand.Int63() + 1)))
-	perm := mrand.Perm(len(str))
-
-	for i, v := range perm {
-		shuffled[v] = rune(str[i])
+	shuffled := []rune(str)
+	for i := len(shuffled) - 1; i > 0; i-- {
+		j, err := cryptoIndex(i + 1)
+		if err != nil {
+			return str
+		}
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	}
 
 	return string(shuffled)
+}
+
+func cryptoIndex(max int) (int, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("max should be positive")
+	}
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(index.Int64()), nil
 }

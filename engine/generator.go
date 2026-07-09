@@ -8,7 +8,6 @@ import (
 
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/pseudomuto/protokit"
-	arrayutils "gitlab.com/kordax/basic-utils/array-utils"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -28,16 +27,17 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 	tocSection := md.NewSectionBuilder().Build()
 	result := &md.Document{}
 
-	collectedEntries := arrayutils.MapAggr(parsedFiles, func(v *ParsedFile) []Entry {
-		return v.entries
-	})
+	collectedEntries := make([]Entry, 0)
+	for _, parsedFile := range parsedFiles {
+		collectedEntries = append(collectedEntries, parsedFile.entries...)
+	}
 	sort.SliceStable(collectedEntries, func(i, j int) bool {
 		return collectedEntries[i].index < collectedEntries[j].index
 	})
-	allEntries := arrayutils.Filter(collectedEntries, func(v *Entry) bool {
+	allEntries := filter(collectedEntries, func(v Entry) bool {
 		return v.t == EntryTypeMessage || v.t == EntryTypeEnum
 	})
-	enums := arrayutils.Filter(allEntries, func(v *Entry) bool {
+	enums := filter(allEntries, func(v Entry) bool {
 		return v.t == EntryTypeEnum
 	})
 	sort.Slice(enums, func(i, j int) bool {
@@ -102,7 +102,7 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 }
 
 func (g *MDGenerator) tableOfContents(entries []Entry, enums []Entry, section *md.Section) {
-	messages := arrayutils.Filter(entries, func(v *Entry) bool {
+	messages := filter(entries, func(v Entry) bool {
 		return v.t == EntryTypeMessage
 	})
 	sort.Slice(messages, func(i, j int) bool {
@@ -159,13 +159,14 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 	minFound := false
 	maxFound := false
 	lenFound := false
-	for _, field := range message.fields {
+	for i := range message.fields {
+		field := &message.fields[i]
 		fRow := MkRow()
 		fRow.AddText(MkText(field.d.GetName(), md.TextEmphasisBold))
 		colField.AddRow(fRow)
 
 		tRow := MkRow()
-		tRow.AddLink(MkFieldTypeLink(&field))
+		tRow.AddLink(MkFieldTypeLink(field))
 		colType.AddRow(tRow)
 
 		lRow := MkRow()
@@ -222,7 +223,7 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 
 	section.AddElement(table)
 
-	message.code.IfPresent(func(code arrayutils.Pair[Syntax, string]) {
+	message.code.IfPresent(func(code Pair[Syntax, string]) {
 		g.header(fmt.Sprintf("'%s' code example:", message.m.GetName()), 4, section)
 		g.code(code.Right, section)
 	})

@@ -1,4 +1,4 @@
-package engine
+package render
 
 import (
 	"fmt"
@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/kordax/pb-md5-generator/engine/md"
-	arrayutils "gitlab.com/kordax/basic-utils/array-utils"
-	mathutils "gitlab.com/kordax/basic-utils/math-utils"
 )
 
 type Config struct {
@@ -20,7 +18,7 @@ type Config struct {
 	ListSyntax      md.ListSyntax
 }
 
-func DefaultRenderConfig() *Config {
+func DefaultConfig() *Config {
 	return &Config{
 		EmphasisSyntax:  md.EmphasisSyntaxAsterisks,
 		HeaderSyntax:    md.HeaderSyntaxNumberSigns,
@@ -264,8 +262,9 @@ func (g *MarkdownRenderer) renderBlockquote(blockquote ...*md.Blockquote) (error
 func (g *MarkdownRenderer) renderList(list ...*md.List) (error, int) {
 	chars := 0
 	for _, l := range list {
-		for _, e := range l.GetEntries() {
-			chars += g.renderListEntry(&e, l.IsOrdered(), l.GetLevel())
+		entries := l.GetEntries()
+		for i := range entries {
+			chars += g.renderListEntry(&entries[i], l.IsOrdered(), l.GetLevel())
 		}
 	}
 
@@ -387,25 +386,7 @@ func (g *MarkdownRenderer) renderColumns(tableRows int, columns ...md.Column) er
 		}
 		g.builder.WriteString(" " + column.GetName())
 		written += utf8.RuneCountInString(column.GetName()) + 1
-		maxLength := mathutils.MaxInt(arrayutils.Map(column.GetRows(), func(v *md.Row) int {
-			return mathutils.SumInt(arrayutils.Map(v.GetElements(), func(e *md.Element) int {
-				switch (*e).GetType() {
-				case md.ElementTypeText:
-					c := (*e).(*md.Text)
-					_, dellen := getEmphasisDelimiter(g.config, c.GetEmphasis())
-					return c.GetLen() + dellen*2
-				case md.ElementTypeLink:
-					c := (*e).(*md.Link)
-					return utf8.RuneCountInString(c.GetUrl()) + utf8.RuneCountInString(c.GetText()) + 4
-				case md.ElementTypeCodeblock:
-					c := (*e).(*md.Codeblock)
-					del, dellen := getCodeblockDelimiter(g.config)
-					return utf8.RuneCountInString(c.GetText()) + strings.Count(c.GetText(), del)*dellen
-				default:
-					return 0
-				}
-			}))
-		}))
+		maxLength := g.maxColumnContentLength(column.GetRows())
 		nameLen := utf8.RuneCountInString(column.GetName())
 		if maxLength < nameLen {
 			maxLength = nameLen
@@ -487,6 +468,38 @@ func (g *MarkdownRenderer) renderColumns(tableRows int, columns ...md.Column) er
 	}
 
 	return nil
+}
+
+func (g *MarkdownRenderer) maxColumnContentLength(rows []md.Row) int {
+	maxLength := 0
+	for _, row := range rows {
+		rowLength := 0
+		for _, element := range row.GetElements() {
+			rowLength += g.renderedElementLength(element)
+		}
+		if rowLength > maxLength {
+			maxLength = rowLength
+		}
+	}
+	return maxLength
+}
+
+func (g *MarkdownRenderer) renderedElementLength(element md.Element) int {
+	switch element.GetType() {
+	case md.ElementTypeText:
+		text := element.(*md.Text)
+		_, delimiterLen := getEmphasisDelimiter(g.config, text.GetEmphasis())
+		return text.GetLen() + delimiterLen*2
+	case md.ElementTypeLink:
+		link := element.(*md.Link)
+		return utf8.RuneCountInString(link.GetUrl()) + utf8.RuneCountInString(link.GetText()) + 4
+	case md.ElementTypeCodeblock:
+		codeblock := element.(*md.Codeblock)
+		delimiter, delimiterLen := getCodeblockDelimiter(g.config)
+		return utf8.RuneCountInString(codeblock.GetText()) + strings.Count(codeblock.GetText(), delimiter)*delimiterLen
+	default:
+		return 0
+	}
 }
 
 func (g *MarkdownRenderer) renderText(text ...*md.Text) int {

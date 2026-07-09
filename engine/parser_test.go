@@ -3,6 +3,7 @@ package engine
 import (
 	"testing"
 
+	"github.com/kordax/pb-md5-generator/engine/render"
 	"github.com/pseudomuto/protokit"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,7 +30,7 @@ func TestDescriptorParser_DescriptorToDocument(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, document)
 
-	renderer := NewMarkdownRenderer(DefaultRenderConfig())
+	renderer := render.NewMarkdownRenderer(render.DefaultConfig())
 	marshalled, err := renderer.Render(document)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, marshalled)

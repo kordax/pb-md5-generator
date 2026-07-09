@@ -5,13 +5,11 @@ import (
 
 	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	"github.com/pseudomuto/protokit"
-	arrayutils "gitlab.com/kordax/basic-utils/array-utils"
-	"gitlab.com/kordax/basic-utils/opt"
-	refutils "gitlab.com/kordax/basic-utils/ref-utils"
 )
 
 func TestGenerate(t *testing.T) {
 	generator := NewCodegenerator()
+	messageName := "test message"
 
 	files := []ParsedFile{
 		createMockParsedFile(),
@@ -19,24 +17,24 @@ func TestGenerate(t *testing.T) {
 
 	commonDescriptor := &protokit.Descriptor{
 		DescriptorProto: &descriptor.DescriptorProto{
-			Name: refutils.Ref("test message"),
+			Name: &messageName,
 		},
 	}
 
 	messageWithCode := &Message{
 		m:    commonDescriptor,
-		code: opt.Of(arrayutils.Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
+		code: Some(Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
 	}
 
 	messageWithAutocode := &Message{
 		m:        commonDescriptor,
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 	}
 
 	messageWithCodeAndAutocode := &Message{
 		m:        commonDescriptor,
-		code:     opt.Of(arrayutils.Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		code:     Some(Pair[Syntax, string]{Left: SyntaxJson, Right: "sample code"}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 	}
 
 	messageWithNeither := &Message{
@@ -45,7 +43,7 @@ func TestGenerate(t *testing.T) {
 
 	messageWithMultipleFields := &Message{
 		m:        commonDescriptor,
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 		fields: []MessageField{
 			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc1", ValueTypeInt, nil),
 			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc2", ValueTypeString, nil),
@@ -54,7 +52,7 @@ func TestGenerate(t *testing.T) {
 
 	messageWithEmbeddedMessage := &Message{
 		m:        commonDescriptor,
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 		fields: []MessageField{
 			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc", ValueTypeStruct, nil),
 		},
@@ -62,7 +60,7 @@ func TestGenerate(t *testing.T) {
 
 	messageWithEnum := &Message{
 		m:        commonDescriptor,
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 		fields: []MessageField{
 			*NewMessageField(&protokit.FieldDescriptor{}, commonDescriptor, "Desc", ValueTypeEnum, nil),
 		},
@@ -70,7 +68,7 @@ func TestGenerate(t *testing.T) {
 
 	messageWithNoFields := &Message{
 		m:        commonDescriptor,
-		autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson}),
+		autocode: Some(AutocodeOpt{syntax: SyntaxJson}),
 	}
 
 	tests := []struct {
@@ -137,7 +135,7 @@ func TestGenerate(t *testing.T) {
 					entries:  []Entry{ /* ... multiple entries here ... */ },
 				},
 			},
-			message: &Message{m: commonDescriptor, autocode: opt.Of(AutocodeOpt{syntax: SyntaxJson})},
+			message: &Message{m: commonDescriptor, autocode: Some(AutocodeOpt{syntax: SyntaxJson})},
 			wantErr: false,
 		},
 	}
@@ -176,19 +174,19 @@ func createMockParsedFile() ParsedFile {
 		"SampleDescription",
 		ValueTypeString,
 		&FieldFlags{
-			maxLength:  opt.Of(100),
-			min:        opt.Of(0.0),
-			max:        opt.Of(100.0),
-			value:      opt.Of("SampleValue"),
-			customType: opt.Of(ValueTypeInt),
+			maxLength:  Some(100),
+			min:        Some(0.0),
+			max:        Some(100.0),
+			value:      Some("SampleValue"),
+			customType: Some(ValueTypeInt),
 			other:      []string{"flag1", "flag2"},
 		},
 	)
 
 	// Mock Message
 	mockMessage := Message{
-		autocode:    opt.Of(AutocodeOpt{syntax: SyntaxJson}),
-		code:        opt.Of(arrayutils.Pair[Syntax, string]{Left: SyntaxJson, Right: "SampleCode"}),
+		autocode:    Some(AutocodeOpt{syntax: SyntaxJson}),
+		code:        Some(Pair[Syntax, string]{Left: SyntaxJson, Right: "SampleCode"}),
 		header:      "SampleHeader",
 		description: "SampleDescription",
 		m:           &protokit.Descriptor{},

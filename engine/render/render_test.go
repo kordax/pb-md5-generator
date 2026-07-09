@@ -1,4 +1,4 @@
-package engine
+package render
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/kordax/pb-md5-generator/engine"
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
