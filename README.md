@@ -390,11 +390,11 @@ The default output uses `bold-code` for table identifiers and `code` for heading
 
 Style examples for the identifier `CreateUserRequest`:
 
-| Style       | Markdown output              | Rendered example        |
-|-------------|------------------------------|-------------------------|
-| `plain`     | `CreateUserRequest`          | CreateUserRequest       |
-| `code`      | `` `CreateUserRequest` ``    | `CreateUserRequest`     |
-| `bold`      | `**CreateUserRequest**`      | **CreateUserRequest**   |
+| Style       | Markdown output               | Rendered example        |
+|-------------|-------------------------------|-------------------------|
+| `plain`     | `CreateUserRequest`           | CreateUserRequest       |
+| `code`      | `` `CreateUserRequest` ``     | `CreateUserRequest`     |
+| `bold`      | `**CreateUserRequest**`       | **CreateUserRequest**   |
 | `bold-code` | `` **`CreateUserRequest`** `` | **`CreateUserRequest`** |
 
 ```console
