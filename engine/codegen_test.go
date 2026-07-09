@@ -3,8 +3,10 @@ package engine
 import (
 	"testing"
 
-	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	"github.com/pseudomuto/protokit"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 func TestGenerate(t *testing.T) {
@@ -16,7 +18,7 @@ func TestGenerate(t *testing.T) {
 	}
 
 	commonDescriptor := &protokit.Descriptor{
-		DescriptorProto: &descriptor.DescriptorProto{
+		DescriptorProto: &descriptorpb.DescriptorProto{
 			Name: &messageName,
 		},
 	}
@@ -215,5 +217,289 @@ func createMockParsedFile() ParsedFile {
 			},
 			// ... Add more mock entries as needed
 		},
+	}
+}
+
+func TestGenerateFromFieldValues(t *testing.T) {
+	generator := NewCodegenerator()
+	messageName := "Message"
+	messageDescriptor := &protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: &messageName}}
+
+	t.Run("string value returns raw string", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("name", descriptorpb.FieldDescriptorProto_TYPE_STRING, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeString,
+			&FieldFlags{value: Some("fixed")},
+		)
+
+		value, err := generator.generateFromField(nil, field)
+		require.NoError(t, err)
+		assert.Equal(t, "fixed", value)
+	})
+
+	t.Run("email value returns raw string", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("email", descriptorpb.FieldDescriptorProto_TYPE_STRING, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeEmail,
+			&FieldFlags{value: Some("user@example.com")},
+		)
+
+		value, err := generator.generateFromField(nil, field)
+		require.NoError(t, err)
+		assert.Equal(t, "user@example.com", value)
+	})
+
+	t.Run("numeric values are parsed", func(t *testing.T) {
+		intField := *NewMessageField(fieldDescriptor("count", descriptorpb.FieldDescriptorProto_TYPE_INT64, messageDescriptor), messageDescriptor, "", ValueTypeInt, &FieldFlags{value: Some("42")})
+		uintField := *NewMessageField(fieldDescriptor("size", descriptorpb.FieldDescriptorProto_TYPE_UINT64, messageDescriptor), messageDescriptor, "", ValueTypeUInt, &FieldFlags{value: Some("7")})
+		floatField := *NewMessageField(fieldDescriptor("ratio", descriptorpb.FieldDescriptorProto_TYPE_FLOAT, messageDescriptor), messageDescriptor, "", ValueTypeFloat, &FieldFlags{value: Some("3.14")})
+
+		intValue, err := generator.generateFromField(nil, intField)
+		require.NoError(t, err)
+		uintValue, err := generator.generateFromField(nil, uintField)
+		require.NoError(t, err)
+		floatValue, err := generator.generateFromField(nil, floatField)
+		require.NoError(t, err)
+
+		assert.Equal(t, int64(42), intValue)
+		assert.Equal(t, uint64(7), uintValue)
+		assert.Equal(t, 3.14, floatValue)
+	})
+
+	t.Run("bool value is parsed", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("enabled", descriptorpb.FieldDescriptorProto_TYPE_BOOL, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeBool,
+			&FieldFlags{value: Some("true")},
+		)
+
+		value, err := generator.generateFromField(nil, field)
+		require.NoError(t, err)
+		assert.Equal(t, true, value)
+	})
+
+	t.Run("random bool is generated", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("enabled", descriptorpb.FieldDescriptorProto_TYPE_BOOL, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeBool,
+			nil,
+		)
+
+		value, err := generator.generateFromField(nil, field)
+		require.NoError(t, err)
+		_, ok := value.(bool)
+		assert.True(t, ok)
+	})
+}
+
+func TestGenerateFromFieldErrorsDoNotPanic(t *testing.T) {
+	generator := NewCodegenerator()
+
+	field := MessageField{
+		valueType: ValueType(999),
+		d:         fieldDescriptor("broken", descriptorpb.FieldDescriptorProto_TYPE_STRING, nil),
+	}
+
+	require.NotPanics(t, func() {
+		_, err := generator.generateFromField(nil, field)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported value type")
+	})
+}
+
+func TestGenerateFromFieldRandomBranches(t *testing.T) {
+	generator := NewCodegenerator()
+	messageName := "Message"
+	messageDescriptor := &protokit.Descriptor{DescriptorProto: &descriptorpb.DescriptorProto{Name: &messageName}}
+
+	tests := []struct {
+		name      string
+		valueType ValueType
+		fieldName string
+		assertion func(t *testing.T, value any)
+	}{
+		{
+			name:      "int range",
+			valueType: ValueTypeInt,
+			fieldName: "count",
+			assertion: func(t *testing.T, value any) {
+				v, ok := value.(int64)
+				require.True(t, ok)
+				assert.GreaterOrEqual(t, v, int64(0))
+			},
+		},
+		{
+			name:      "uint range",
+			valueType: ValueTypeUInt,
+			fieldName: "size",
+			assertion: func(t *testing.T, value any) {
+				_, ok := value.(uint64)
+				assert.True(t, ok)
+			},
+		},
+		{
+			name:      "float range",
+			valueType: ValueTypeFloat,
+			fieldName: "ratio",
+			assertion: func(t *testing.T, value any) {
+				_, ok := value.(float64)
+				assert.True(t, ok)
+			},
+		},
+		{
+			name:      "email",
+			valueType: ValueTypeEmail,
+			fieldName: "email",
+			assertion: func(t *testing.T, value any) {
+				assert.Contains(t, value.(string), "@email.com")
+			},
+		},
+		{
+			name:      "phone",
+			valueType: ValueTypePhone,
+			fieldName: "phone",
+			assertion: func(t *testing.T, value any) {
+				assert.Contains(t, value.(string), "+")
+				assert.Contains(t, value.(string), ".")
+			},
+		},
+		{
+			name:      "password",
+			valueType: ValueTypePassword,
+			fieldName: "password",
+			assertion: func(t *testing.T, value any) {
+				assert.NotEmpty(t, value.(string))
+			},
+		},
+		{
+			name:      "uuid",
+			valueType: ValueTypeUUID,
+			fieldName: "uuid",
+			assertion: func(t *testing.T, value any) {
+				assert.Len(t, value.(string), 36)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := *NewMessageField(
+				fieldDescriptor(tt.fieldName, descriptorpb.FieldDescriptorProto_TYPE_STRING, messageDescriptor),
+				messageDescriptor,
+				"",
+				tt.valueType,
+				nil,
+			)
+
+			value, err := generator.generateFromField(nil, field)
+			require.NoError(t, err)
+			tt.assertion(t, value)
+		})
+	}
+
+	t.Run("string max length", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("name", descriptorpb.FieldDescriptorProto_TYPE_STRING, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeString,
+			&FieldFlags{maxLength: Some(2)},
+		)
+		value, err := generator.generateFromField(nil, field)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(value.(string)), 2)
+	})
+
+	t.Run("struct is rejected", func(t *testing.T) {
+		field := *NewMessageField(
+			fieldDescriptor("nested", descriptorpb.FieldDescriptorProto_TYPE_MESSAGE, messageDescriptor),
+			messageDescriptor,
+			"",
+			ValueTypeStruct,
+			nil,
+		)
+		_, err := generator.generateFromField(nil, field)
+		assert.ErrorContains(t, err, "cannot generate code from struct")
+	})
+}
+
+func TestCodegenHelpers(t *testing.T) {
+	i, err := int64WithinRange(5, 5)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), i)
+
+	u, err := uint64WithinRange(3, 3)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(3), u)
+
+	f, err := float64WithinRange(2.5, 2.5)
+	require.NoError(t, err)
+	assert.Equal(t, 2.5, f)
+
+	i, err = int64WithinRange(1, 3)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, i, int64(1))
+	assert.Less(t, i, int64(3))
+
+	u, err = uint64WithinRange(1, 3)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, u, uint64(1))
+	assert.Less(t, u, uint64(3))
+
+	f, err = float64WithinRange(1, 3)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, f, 1.0)
+	assert.LessOrEqual(t, f, 3.0)
+
+	index, err := cryptoIndex(1)
+	require.NoError(t, err)
+	assert.Equal(t, 0, index)
+
+	_, err = cryptoIndex(0)
+	assert.Error(t, err)
+}
+
+func TestMapStringToValueType(t *testing.T) {
+	tests := map[string]ValueType{
+		"int":      ValueTypeInt,
+		"uint":     ValueTypeUInt,
+		"float":    ValueTypeFloat,
+		"bool":     ValueTypeBool,
+		"string":   ValueTypeString,
+		"enum":     ValueTypeEnum,
+		"uuid":     ValueTypeUUID,
+		"struct":   ValueTypeStruct,
+		"email":    ValueTypeEmail,
+		"phone":    ValueTypePhone,
+		"password": ValueTypePassword,
+	}
+
+	for input, expected := range tests {
+		t.Run(input, func(t *testing.T) {
+			actual, err := mapStringToValueType(input)
+			require.NoError(t, err)
+			assert.Equal(t, expected, actual)
+		})
+	}
+
+	_, err := mapStringToValueType("unknown")
+	assert.Error(t, err)
+}
+
+func fieldDescriptor(name string, typ descriptorpb.FieldDescriptorProto_Type, message *protokit.Descriptor) *protokit.FieldDescriptor {
+	return &protokit.FieldDescriptor{
+		FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{
+			Name: &name,
+			Type: &typ,
+		},
+		Message: message,
 	}
 }

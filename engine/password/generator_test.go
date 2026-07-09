@@ -30,3 +30,15 @@ func TestPasswordGenerator_InstancePassword(t *testing.T) {
 		assert.Equal(t, 1, uCnt, "password expected to be unique: "+u)
 	}
 }
+
+func TestPasswordGenerator_RefreshesCache(t *testing.T) {
+	gen := NewGenerator(1, 1, 1, 1)
+
+	first := gen.GetPassword()
+	second := gen.GetPassword()
+
+	assert.NotEmpty(t, first)
+	assert.NotEmpty(t, second)
+	assert.Len(t, first, 3)
+	assert.Len(t, second, 3)
+}

@@ -64,7 +64,7 @@ func (g *MarkdownRenderer) renderSection(section ...md.Section) error {
 			return elements[i].GetIndex() < elements[j].GetIndex()
 		})
 		for i, e := range elements {
-			if err, _ := g.renderElement(e); err != nil {
+			if _, err := g.renderElement(e); err != nil {
 				return err
 			}
 
@@ -123,9 +123,9 @@ func (g *MarkdownRenderer) renderSection(section ...md.Section) error {
 }
 
 // parent should always be a dereferenced pointer
-func (g *MarkdownRenderer) renderElement(element md.Element) (error, int) {
+func (g *MarkdownRenderer) renderElement(element md.Element) (int, error) {
 	if element == nil {
-		return nil, 0
+		return 0, nil
 	}
 
 	switch element.GetType() {
@@ -135,7 +135,7 @@ func (g *MarkdownRenderer) renderElement(element md.Element) (error, int) {
 		return g.renderParagraph(element.(*md.Paragraph))
 	case md.ElementTypeText:
 		w := g.renderText(element.(*md.Text))
-		return nil, w
+		return w, nil
 	case md.ElementTypeBlockquote:
 		return g.renderBlockquote(element.(*md.Blockquote))
 	case md.ElementTypeList:
@@ -149,15 +149,15 @@ func (g *MarkdownRenderer) renderElement(element md.Element) (error, int) {
 	case md.ElementTypeLink:
 		return g.renderLink(element.(*md.Link))
 	case md.ElementTypeTable:
-		return g.renderTable(element.(*md.Table)), 0
+		return 0, g.renderTable(element.(*md.Table))
 	case md.ElementTypeHtmlRef:
 		return g.renderHtmlRef(element.(*md.HtmlRef))
 	}
 
-	return fmt.Errorf("unsupported element type received"), 0
+	return 0, fmt.Errorf("unsupported element type received")
 }
 
-func (g *MarkdownRenderer) renderHeader(header ...*md.Header) (error, int) {
+func (g *MarkdownRenderer) renderHeader(header ...*md.Header) (int, error) {
 	chars := 0
 
 	for _, h := range header {
@@ -197,26 +197,26 @@ func (g *MarkdownRenderer) renderHeader(header ...*md.Header) (error, int) {
 		g.newline()
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderParagraph(paragraph ...*md.Paragraph) (error, int) {
+func (g *MarkdownRenderer) renderParagraph(paragraph ...*md.Paragraph) (int, error) {
 	chars := 0
 	for _, p := range paragraph {
 		for _, e := range p.GetElements() {
-			err, written := g.renderElement(e)
+			written, err := g.renderElement(e)
 			if err != nil {
-				return err, 0
+				return 0, err
 			}
 			chars += written
 		}
 		g.newline()
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderBlockquote(blockquote ...*md.Blockquote) (error, int) {
+func (g *MarkdownRenderer) renderBlockquote(blockquote ...*md.Blockquote) (int, error) {
 	chars := 0
 	for _, q := range blockquote {
 		for _, e := range q.GetElements() {
@@ -232,9 +232,9 @@ func (g *MarkdownRenderer) renderBlockquote(blockquote ...*md.Blockquote) (error
 			}
 			g.builder.WriteString("> ")
 			chars += 2
-			err, written := g.renderElement(e)
+			written, err := g.renderElement(e)
 			if err != nil {
-				return err, 0
+				return 0, err
 			}
 			chars += written
 
@@ -256,10 +256,10 @@ func (g *MarkdownRenderer) renderBlockquote(blockquote ...*md.Blockquote) (error
 		g.newline()
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderList(list ...*md.List) (error, int) {
+func (g *MarkdownRenderer) renderList(list ...*md.List) (int, error) {
 	chars := 0
 	for _, l := range list {
 		entries := l.GetEntries()
@@ -268,7 +268,7 @@ func (g *MarkdownRenderer) renderList(list ...*md.List) (error, int) {
 		}
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
 func (g *MarkdownRenderer) renderListEntry(entry *md.ListEntry, ordered bool, level int) int {
@@ -288,14 +288,14 @@ func (g *MarkdownRenderer) renderListEntry(entry *md.ListEntry, ordered bool, le
 	}
 	chars += utf8.RuneCountInString(del)
 	g.builder.WriteString(del)
-	err, written := g.renderElement(entry.GetElement())
+	written, err := g.renderElement(entry.GetElement())
 	if err != nil {
 		return 0
 	}
 	chars += written
 	g.newline()
 	for _, e := range entry.GetElements() {
-		err, written := g.renderElement(e)
+		written, err := g.renderElement(e)
 		if err != nil {
 			return 0
 		}
@@ -305,7 +305,7 @@ func (g *MarkdownRenderer) renderListEntry(entry *md.ListEntry, ordered bool, le
 	return chars
 }
 
-func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (error, int) {
+func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (int, error) {
 	chars := 0
 	del, delChars := getCodeblockDelimiter(g.config)
 
@@ -316,7 +316,7 @@ func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (error, i
 		if b.GetText() != "" {
 			chars += g.renderString(b.GetText())
 		} else {
-			return fmt.Errorf("empty code blocks are not supported"), 0
+			return 0, fmt.Errorf("empty code blocks are not supported")
 		}
 		if !strings.HasSuffix(b.GetText(), "\n") {
 			g.newline()
@@ -326,10 +326,10 @@ func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (error, i
 		g.newline()
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderImage(image ...*md.Image) (error, int) {
+func (g *MarkdownRenderer) renderImage(image ...*md.Image) (int, error) {
 	chars := 0
 	for _, l := range image {
 		imgStr := fmt.Sprintf("![%s](%s \"%s\")", l.GetText(), l.GetUrl(), l.GetTitle())
@@ -337,10 +337,10 @@ func (g *MarkdownRenderer) renderImage(image ...*md.Image) (error, int) {
 		g.builder.WriteString(imgStr)
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderRule(rule ...*md.Rule) (error, int) {
+func (g *MarkdownRenderer) renderRule(rule ...*md.Rule) (int, error) {
 	chars := 0
 	del, delChars := getRuleDelimiter(g.config)
 	for range rule {
@@ -349,10 +349,10 @@ func (g *MarkdownRenderer) renderRule(rule ...*md.Rule) (error, int) {
 		g.newline()
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
-func (g *MarkdownRenderer) renderLink(link ...*md.Link) (error, int) {
+func (g *MarkdownRenderer) renderLink(link ...*md.Link) (int, error) {
 	chars := 0
 	for _, l := range link {
 		urlStr := fmt.Sprintf("[%s](%s)", l.GetText(), l.GetUrl())
@@ -360,7 +360,7 @@ func (g *MarkdownRenderer) renderLink(link ...*md.Link) (error, int) {
 		g.builder.WriteString(urlStr)
 	}
 
-	return nil, chars
+	return chars, nil
 }
 
 func (g *MarkdownRenderer) renderTable(table ...*md.Table) error {
@@ -444,7 +444,7 @@ func (g *MarkdownRenderer) renderColumns(tableRows int, columns ...md.Column) er
 			if r <= len(rows)-1 {
 				row := rows[r]
 				for _, element := range row.GetElements() {
-					err, w := g.renderElement(element)
+					w, err := g.renderElement(element)
 					if err != nil {
 						return err
 					}
@@ -542,7 +542,7 @@ func (g *MarkdownRenderer) renderString(text string) int {
 	return utf8.RuneCountInString(text)
 }
 
-func (g *MarkdownRenderer) renderHtmlRef(ref ...*md.HtmlRef) (error, int) {
+func (g *MarkdownRenderer) renderHtmlRef(ref ...*md.HtmlRef) (int, error) {
 	g.newline()
 	chars := 0
 	for _, r := range ref {
@@ -552,7 +552,7 @@ func (g *MarkdownRenderer) renderHtmlRef(ref ...*md.HtmlRef) (error, int) {
 	}
 	g.newline()
 
-	return nil, chars
+	return chars, nil
 }
 
 func (g *MarkdownRenderer) newline() {

@@ -3,17 +3,18 @@ package app
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"strings"
 
-	plugingo "github.com/golang/protobuf/protoc-gen-go/plugin"
 	"github.com/kordax/pb-md5-generator/engine"
 	"github.com/kordax/pb-md5-generator/engine/render"
 	internalproto "github.com/kordax/pb-md5-generator/internal/proto"
 	"github.com/kordax/pb-md5-generator/internal/tools"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 type Config struct {
@@ -22,6 +23,18 @@ type Config struct {
 	ProtoOut  string
 	Output    string
 	PrefixDoc string
+}
+
+type appDeps struct {
+	checkDependencies func() error
+	protoFiles        func(string) ([]string, error)
+	ensureDirectory   func(string) error
+	mkdirAll          func(string, fs.FileMode) error
+	removeAll         func(string) error
+	requestFromFiles  func(Config, []string) (*pluginpb.CodeGeneratorRequest, error)
+	readFile          func(string) ([]byte, error)
+	writeFile         func(string, []byte, fs.FileMode) error
+	generate          func(*pluginpb.CodeGeneratorRequest) (string, error)
 }
 
 func Run(args []string) int {
@@ -37,6 +50,23 @@ func Run(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func defaultDeps() appDeps {
+	return appDeps{
+		checkDependencies: internalproto.CheckDependencies,
+		protoFiles:        tools.ProtoFilesRecursively,
+		ensureDirectory:   tools.EnsureDirectoryAbsent,
+		mkdirAll:          os.MkdirAll,
+		removeAll:         os.RemoveAll,
+		requestFromFiles: func(cfg Config, files []string) (*pluginpb.CodeGeneratorRequest, error) {
+			compiler := internalproto.Compiler{ProtoDir: cfg.ProtoDir, OutputDir: cfg.ProtoOut}
+			return compiler.RequestFromFiles(files)
+		},
+		readFile:  os.ReadFile,
+		writeFile: os.WriteFile,
+		generate:  generate,
+	}
 }
 
 func parseFlags(args []string) (Config, error) {
@@ -57,7 +87,11 @@ func parseFlags(args []string) (Config, error) {
 }
 
 func run(cfg Config) error {
-	if err := internalproto.CheckDependencies(); err != nil {
+	return runWithDeps(cfg, defaultDeps())
+}
+
+func runWithDeps(cfg Config, deps appDeps) error {
+	if err := deps.checkDependencies(); err != nil {
 		return err
 	}
 	if cfg.ProtoDir == "" {
@@ -68,7 +102,7 @@ func run(cfg Config) error {
 	cfg.ProtoOut = path.Clean(cfg.ProtoOut)
 	cfg.Output = normalizedMarkdownOutput(cfg.Output)
 
-	files, err := resolveProtoFiles(cfg)
+	files, err := resolveProtoFiles(cfg, deps)
 	if err != nil {
 		return err
 	}
@@ -78,32 +112,31 @@ func run(cfg Config) error {
 	if err := validatePrefix(cfg.PrefixDoc); err != nil {
 		return err
 	}
-	if err := tools.EnsureDirectoryAbsent(cfg.ProtoOut); err != nil {
+	if err := deps.ensureDirectory(cfg.ProtoOut); err != nil {
 		return fmt.Errorf("temporary protobuf directory '%s' is not available: %w", cfg.ProtoOut, err)
 	}
-	if err := os.MkdirAll(cfg.ProtoOut, 0o750); err != nil {
+	if err := deps.mkdirAll(cfg.ProtoOut, 0o750); err != nil {
 		return fmt.Errorf("failed to initialize output directory %s: %w", cfg.ProtoOut, err)
 	}
-	defer cleanup(cfg.ProtoOut)
+	defer cleanup(cfg.ProtoOut, deps.removeAll)
 
-	compiler := internalproto.Compiler{ProtoDir: cfg.ProtoDir, OutputDir: cfg.ProtoOut}
-	request, err := compiler.RequestFromFiles(files)
+	request, err := deps.requestFromFiles(cfg, files)
 	if err != nil {
 		return fmt.Errorf("failed to generate protobuf request from files: %w", err)
 	}
 
-	content, err := prefixContent(cfg.PrefixDoc)
+	content, err := prefixContent(cfg.PrefixDoc, deps.readFile)
 	if err != nil {
 		return err
 	}
-	generated, err := generate(request)
+	generated, err := deps.generate(request)
 	if err != nil {
 		return fmt.Errorf("failed to generate markdown document: %w", err)
 	}
 	content += generated
 
 	log.Info().Msgf("writing content to: %s", cfg.Output)
-	if err := os.WriteFile(cfg.Output, []byte(content), 0o600); err != nil {
+	if err := deps.writeFile(cfg.Output, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("cannot save results to output directory %s: %w", cfg.Output, err)
 	}
 	return nil
@@ -115,11 +148,11 @@ func configureLogger() {
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 }
 
-func resolveProtoFiles(cfg Config) ([]string, error) {
+func resolveProtoFiles(cfg Config, deps appDeps) ([]string, error) {
 	if cfg.Files != "" {
 		return strings.Split(cfg.Files, ";"), nil
 	}
-	files, err := tools.ProtoFilesRecursively(cfg.ProtoDir)
+	files, err := deps.protoFiles(cfg.ProtoDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list .proto files: %w", err)
 	}
@@ -148,18 +181,18 @@ func validatePrefix(prefix string) error {
 	return nil
 }
 
-func prefixContent(prefix string) (string, error) {
+func prefixContent(prefix string, readFile func(string) ([]byte, error)) (string, error) {
 	if prefix == "" {
 		return "", nil
 	}
-	contentBytes, err := os.ReadFile(prefix) // #nosec G304 -- prefix is an explicit CLI input.
+	contentBytes, err := readFile(prefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to read prefix markdown document %s: %w", prefix, err)
 	}
 	return string(contentBytes) + "\n\n", nil
 }
 
-func generate(request *plugingo.CodeGeneratorRequest) (string, error) {
+func generate(request *pluginpb.CodeGeneratorRequest) (string, error) {
 	parser := engine.NewDescriptorParser(request)
 	generator := engine.NewMDGenerator(engine.NewCodegenerator())
 	renderer := render.NewMarkdownRenderer(render.DefaultConfig())
@@ -179,8 +212,8 @@ func generate(request *plugingo.CodeGeneratorRequest) (string, error) {
 	return content, nil
 }
 
-func cleanup(directory string) {
-	if err := os.RemoveAll(directory); err != nil {
+func cleanup(directory string, removeAll func(string) error) {
+	if err := removeAll(directory); err != nil {
 		log.Warn().Err(err).Msg("failed to cleanup tmp directory")
 	}
 }

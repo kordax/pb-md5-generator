@@ -21,7 +21,7 @@ func TestNewConfigurableMDGenerator_renderHeader(t *testing.T) {
 		headerText := "test header #5 of mine"
 		header.SetText(headerText)
 
-		err, _ := generator.renderHeader(header)
+		_, err := generator.renderHeader(header)
 		assert.NoError(t, err)
 		result := generator.builder.String()
 		assert.NotEmpty(t, result)
@@ -36,7 +36,7 @@ func TestNewConfigurableMDGenerator_renderHeader(t *testing.T) {
 		headerText := "test header #1 of mine"
 		header.SetText(headerText)
 
-		err, _ := generator.renderHeader(header)
+		_, err := generator.renderHeader(header)
 		assert.NoError(t, err)
 		result := generator.builder.String()
 		assert.NotEmpty(t, result)
@@ -52,7 +52,7 @@ func TestNewConfigurableMDGenerator_renderHeader(t *testing.T) {
 
 		header.SetText(headerText)
 
-		err, _ := generator.renderHeader(header)
+		_, err := generator.renderHeader(header)
 		assert.NoError(t, err)
 		result := generator.builder.String()
 		assert.NotEmpty(t, result)

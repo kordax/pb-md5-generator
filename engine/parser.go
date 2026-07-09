@@ -12,11 +12,10 @@ import (
 	"strconv"
 	"strings"
 
-	plugingo "github.com/golang/protobuf/protoc-gen-go/plugin"
-	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/pseudomuto/protokit"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 const MarkerDelimiter = "@"
@@ -100,11 +99,6 @@ type Entry struct {
 	msg  *Message
 }
 
-type Text struct {
-	title string
-	text  string
-}
-
 type Enum struct {
 	description string
 	e           *protokit.EnumDescriptor
@@ -164,14 +158,11 @@ type DescriptorParser struct {
 	descriptors  []*protokit.FileDescriptor
 	matchedFiles map[string]*os.File
 	payload      map[string]string
-	root         string
-
-	document md.Document
 
 	readOffsets map[string]int
 }
 
-func NewDescriptorParser(request *plugingo.CodeGeneratorRequest) *DescriptorParser {
+func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorParser {
 	cmdLine := request.GetParameter()
 	params := strings.Split(cmdLine, ";")
 	matchedFiles := make(map[string]*os.File)
@@ -221,7 +212,7 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 		entries := make([]Entry, 0)
 		log.Info().Msgf("parsing file '%s' to a document", descriptor.GetName())
 		log.Info().Msgf("%d messages", len(descriptor.GetMessages()))
-		_, ignore, err := p.getMarker(descriptor, IgnoreFileMarker)
+		_, ignore, _ := p.getMarker(descriptor, IgnoreFileMarker)
 		if ignore != -1 {
 			log.Warn().Msgf("ignoring file '%s'", descriptor.GetName())
 			continue

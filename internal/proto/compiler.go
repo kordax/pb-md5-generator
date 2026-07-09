@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	plugingo "github.com/golang/protobuf/protoc-gen-go/plugin"
 	"github.com/kordax/pb-md5-generator/internal/tools"
 	"github.com/rs/zerolog/log"
 	goproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 const descriptorFilename = "protobuf.desc"
@@ -21,6 +21,7 @@ const descriptorFilename = "protobuf.desc"
 type Compiler struct {
 	ProtoDir  string
 	OutputDir string
+	runProtoc func([]string) ([]byte, string, error)
 }
 
 func CheckDependencies() error {
@@ -30,7 +31,7 @@ func CheckDependencies() error {
 	return nil
 }
 
-func (c Compiler) RequestFromFiles(files []string) (*plugingo.CodeGeneratorRequest, error) {
+func (c Compiler) RequestFromFiles(files []string) (*pluginpb.CodeGeneratorRequest, error) {
 	for _, file := range files {
 		if err := tools.RequireRegularFile(file); err != nil {
 			return nil, err
@@ -47,7 +48,7 @@ func (c Compiler) RequestFromFiles(files []string) (*plugingo.CodeGeneratorReque
 		fileNames = append(fileNames, path.Base(file))
 	}
 
-	return &plugingo.CodeGeneratorRequest{
+	return &pluginpb.CodeGeneratorRequest{
 		FileToGenerate:  fileNames,
 		Parameter:       goproto.String(strings.Join(parameters, ";")),
 		ProtoFile:       protos,
@@ -76,16 +77,15 @@ func (c Compiler) Compile(files []string) ([]*descriptorpb.FileDescriptorProto, 
 	args = append(args, fileNames...)
 	args = append(args, "--go_out="+c.OutputDir)
 
-	cmd := exec.Command("protoc", args...) // #nosec G204 -- protoc arguments are built from validated CLI file paths.
-	log.Trace().Msgf("executing cmd: protoc %s", strings.Join(args, " "))
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	runner := c.runProtoc
+	if runner == nil {
+		runner = runProtoc
+	}
+	out, stderr, err := runner(args)
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			log.Error().Err(err).Msgf("`protoc` error, return code: %d", exitError.ExitCode())
-			log.Error().Msgf("stderr: %s", stderr.String())
+			log.Error().Msgf("stderr: %s", stderr)
 		} else {
 			log.Error().Err(err).Msg("`protoc` error")
 		}
@@ -104,4 +104,14 @@ func (c Compiler) Compile(files []string) ([]*descriptorpb.FileDescriptorProto, 
 	}
 
 	return fds.File, parameters, nil
+}
+
+func runProtoc(args []string) ([]byte, string, error) {
+	cmd := exec.Command("protoc", args...) // #nosec G204 -- protoc arguments are built from validated CLI file paths.
+	log.Trace().Msgf("executing cmd: protoc %s", strings.Join(args, " "))
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	return out, stderr.String(), err
 }

@@ -1,0 +1,41 @@
+on: [push, pull_request]
+name: Go test coverage check
+
+jobs:
+  test:
+    permissions: write-all
+    strategy:
+      matrix:
+        go-version: [1.26.4]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    name: Go test coverage check
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Generate test coverage
+        run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+
+      - name: Check test coverage
+        id: coverage
+        uses: vladopajic/go-test-coverage@v2
+        with:
+          config: ./.testcoverage.yml
+
+      - name: Make coverage badge
+        uses: action-badges/core@0.4.1
+        if: contains(github.ref, 'main')
+        with:
+          message: ${{ steps.coverage.outputs.badge-text }}
+          message-color: ${{ steps.coverage.outputs.badge-color }}
+          label: Coverage
+          file-name: coverage.svg
+          badge-branch: badges
+          github-token: "${{ secrets.GITHUB_TOKEN }}"

@@ -114,11 +114,20 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 			return strconv.ParseUint(*value.Get(), 10, 64)
 		}
 		return uint64WithinRange(uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000)))
+	case ValueTypeBool:
+		if value.Present() {
+			return strconv.ParseBool(*value.Get())
+		}
+		index, err := cryptoIndex(2)
+		if err != nil {
+			return nil, err
+		}
+		return index == 1, nil
 	case ValueTypeEmail:
 		fallthrough
 	case ValueTypeString:
 		if value.Present() {
-			return value, nil
+			return *value.Get(), nil
 		}
 		str := g.namegen.Generate()
 		if maxLen.Present() {
@@ -182,7 +191,14 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 	case ValueTypeStruct:
 		return nil, fmt.Errorf("cannot generate code from struct, you need to convert it to the field first")
 	default:
-		return nil, fmt.Errorf("unsupported value type received: field '%s', message '%s', package: %s", *field.d.Name, *field.d.Message.Name, field.d.Message.GetPackage())
+		fieldName := field.d.GetName()
+		messageName := ""
+		packageName := ""
+		if field.d.Message != nil {
+			messageName = field.d.Message.GetName()
+			packageName = field.d.Message.GetPackage()
+		}
+		return nil, fmt.Errorf("unsupported value type received: field '%s', message '%s', package: %s", fieldName, messageName, packageName)
 	}
 }
 
