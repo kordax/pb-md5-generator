@@ -366,6 +366,15 @@ Identifier styling is controlled separately for table cells and section headings
 Both options support `plain`, `code`, `bold`, and `bold-code`.
 The default output uses `bold-code` for table identifiers and `code` for heading identifiers.
 
+Style examples for the identifier `CreateUserRequest`:
+
+| Style       | Markdown output              | Rendered example        |
+|-------------|------------------------------|-------------------------|
+| `plain`     | `CreateUserRequest`          | CreateUserRequest       |
+| `code`      | `` `CreateUserRequest` ``    | `CreateUserRequest`     |
+| `bold`      | `**CreateUserRequest**`      | **CreateUserRequest**   |
+| `bold-code` | `` **`CreateUserRequest`** `` | **`CreateUserRequest`** |
+
 ```console
 pb-md5-generator -d protobufs/my-project/ -o ./README.md -style-table-identifiers bold-code -style-heading-identifiers code
 ```
