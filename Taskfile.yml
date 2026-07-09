@@ -5,6 +5,15 @@ vars:
     sh: 'echo $(go env GOPATH)/bin'
 
 tasks:
+  verify:
+    desc: "Run local CI checks"
+    deps:
+      - test
+      - check
+      - check-coverage
+      - security
+      - actionlint
+
   test:
     desc: "Testing all submodules"
     cmds:
@@ -31,7 +40,27 @@ tasks:
   check-coverage:
     desc: "Checking test coverage"
     cmds:
-      - go test ./... -tags=integration_test -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
-      - go tool cover -func=cover.out
+      - go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+      - go run github.com/vladopajic/go-test-coverage/v2@latest --config=./testcoverage.yml
+      - rm -f ./cover.out
     sources:
       - "**/*.go"
+      - "testcoverage.yml"
+
+  security:
+    desc: "Running vulnerability and security checks"
+    cmds:
+      - go mod verify
+      - go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude=G103,G115,G304 ./...
+    sources:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+
+  actionlint:
+    desc: "Checking GitHub Actions workflows"
+    cmds:
+      - go run github.com/rhysd/actionlint/cmd/actionlint@latest
+    sources:
+      - ".github/workflows/*.yml"
