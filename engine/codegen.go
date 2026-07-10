@@ -179,7 +179,7 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		for _, file := range files {
 			for _, entry := range file.entries {
 				if entry.enum != nil {
-					log.Info().Msgf("reading enum descriptor: % s", entry.enum.e.GetName())
+					log.Debug().Msgf("reading enum descriptor: %s", entry.enum.e.GetName())
 					if "."+entry.enum.e.GetFullName() == field.d.GetTypeName() {
 						enum = entry.enum
 					}

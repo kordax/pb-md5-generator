@@ -5,7 +5,7 @@ This file is a generated markdown example for the larger integration fixture: `t
 It demonstrates the renderer output for annotated protobuf definitions, including generated and explicit code examples, nested messages, maps, repeated fields, enums, oneof payloads, and ignored definitions.
 
 ```console
-pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md
+./build/pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md
 ```
 
 
@@ -34,6 +34,7 @@ pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto 
      * [InventoryState](#fixture.InventoryState)
      * [AuditAction](#fixture.AuditAction)
      * [NotificationChannel](#fixture.NotificationChannel)
+
 # Fixture API
 
 ## API Description
@@ -781,6 +782,7 @@ Notification batch with oneof payload alternatives and nested recipient details.
 |-------------|-------------------|-------|-------------|
 | **`key`**   | [string](#string) |       |             |
 | **`value`** | [string](#string) |       |             |
+
 ## Enums
 
 <a name="fixture.UserStatus"></a>

@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -176,10 +175,6 @@ func TestConvertMessageFieldNested(t *testing.T) {
 }
 
 func TestConvertFieldFlagsVariants(t *testing.T) {
-	if _, err := exec.LookPath("protoc"); err != nil {
-		t.Skip("protoc not installed in test environment")
-	}
-
 	request := requestFromProtoContent(t, `
 syntax = "proto3";
 
@@ -275,12 +270,8 @@ func requestFromProtoContent(t *testing.T, content string) *pluginpb.CodeGenerat
 	protoFile := filepath.Join(root, "flagged.proto")
 	require.NoError(t, os.WriteFile(protoFile, []byte(content), 0o600))
 
-	compiler := internalproto.Compiler{
-		ProtoDir:  root,
-		OutputDir: filepath.Join(root, "tmp"),
-	}
-	require.NoError(t, os.MkdirAll(compiler.OutputDir, 0o750))
-	request, err := compiler.RequestFromFiles([]string{protoFile})
+	sourceParser := internalproto.SourceParser{ProtoDir: root}
+	request, err := sourceParser.RequestFromFiles([]string{protoFile})
 	require.NoError(t, err)
 	return request
 }

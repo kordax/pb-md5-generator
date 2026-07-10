@@ -3,6 +3,7 @@
 package pb_md5_generator_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -13,9 +14,6 @@ import (
 )
 
 func TestCLIIntegrationGeneratesMarkdownForRealAPI(t *testing.T) {
-	requireTool(t, "protoc")
-	requireTool(t, "protoc-gen-go")
-
 	root := t.TempDir()
 	protoDir := copyFixture(t, root, "full_api.proto")
 	prefix := filepath.Join(root, "prefix.md")
@@ -24,7 +22,6 @@ func TestCLIIntegrationGeneratesMarkdownForRealAPI(t *testing.T) {
 
 	run := runCLI(t,
 		"-d", protoDir,
-		"-pbo", filepath.Join(root, "tmp-pb"),
 		"-o", output,
 		"-p", prefix,
 	)
@@ -101,16 +98,67 @@ func TestCLIIntegrationGeneratesMarkdownForRealAPI(t *testing.T) {
 	assert.NotContains(t, markdown, "IgnoredEnum")
 }
 
-func TestCLIIntegrationReportsFieldLocation(t *testing.T) {
-	requireTool(t, "protoc")
-	requireTool(t, "protoc-gen-go")
+func TestCLIIntegrationGeneratesNestedPackages(t *testing.T) {
+	root := t.TempDir()
+	protoDir := filepath.Join(root, "proto")
+	require.NoError(t, os.MkdirAll(filepath.Join(protoDir, "common"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(protoDir, "example", "v1"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(protoDir, "example", "v2"), 0o750))
 
+	ufile.MustWrite(filepath.Join(protoDir, "common", "types.proto"), []byte(`syntax = "proto3";
+package example.common;
+// Shared value.
+message Shared { string value = 1; }
+`), 0o600)
+	ufile.MustWrite(filepath.Join(protoDir, "example", "v1", "service.proto"), []byte(`syntax = "proto3";
+package example.v1;
+import "common/types.proto";
+// V1 request.
+message Request {
+  enum State { STATE_UNSPECIFIED = 0; STATE_READY = 1; }
+  example.common.Shared shared = 1;
+  State state = 2;
+}
+`), 0o600)
+	ufile.MustWrite(filepath.Join(protoDir, "example", "v1", "admin.proto"), []byte(`syntax = "proto3";
+package example.v1;
+// Administrative state.
+enum AdminState { ADMIN_STATE_UNSPECIFIED = 0; ADMIN_STATE_READY = 1; }
+`), 0o600)
+	ufile.MustWrite(filepath.Join(protoDir, "example", "v2", "service.proto"), []byte(`syntax = "proto3";
+package example.v2;
+// V2 request.
+message Request { string value = 1; }
+`), 0o600)
+
+	output := filepath.Join(root, "docs")
+	run := runCLI(t,
+		"-d", protoDir,
+		"-o", output,
+		"-split-by-package",
+	)
+	require.NoError(t, run.err, run.output)
+
+	index := string(ufile.MustRead(filepath.Join(output, "README.md")))
+	assert.Contains(t, index, "example/common/README.md")
+	assert.Contains(t, index, "example/v1/README.md")
+	assert.Contains(t, index, "example/v2/README.md")
+
+	v1 := string(ufile.MustRead(filepath.Join(output, "example", "v1", "README.md")))
+	assert.Contains(t, v1, "# Package `example.v1`")
+	assert.Contains(t, v1, "example/v1/admin.proto")
+	assert.Contains(t, v1, "example/v1/service.proto")
+	assert.Contains(t, v1, "example.v1.Request")
+	assert.Contains(t, v1, `<a name="example.v1.Request.State"></a>`)
+	assert.Contains(t, v1, "AdminState")
+}
+
+func TestCLIIntegrationReportsFieldLocation(t *testing.T) {
 	root := t.TempDir()
 	protoDir := copyFixture(t, root, "broken_field.proto")
 
 	run := runCLI(t,
 		"-d", protoDir,
-		"-pbo", filepath.Join(root, "tmp-pb"),
 		"-o", filepath.Join(root, "out.md"),
 	)
 	require.Error(t, run.err)
@@ -120,15 +168,11 @@ func TestCLIIntegrationReportsFieldLocation(t *testing.T) {
 }
 
 func TestCLIIntegrationReportsCodeMarkerLocation(t *testing.T) {
-	requireTool(t, "protoc")
-	requireTool(t, "protoc-gen-go")
-
 	root := t.TempDir()
 	protoDir := copyFixture(t, root, "broken_code.proto")
 
 	run := runCLI(t,
 		"-d", protoDir,
-		"-pbo", filepath.Join(root, "tmp-pb"),
 		"-o", filepath.Join(root, "out.md"),
 	)
 	require.Error(t, run.err)
@@ -148,13 +192,6 @@ func runCLI(t *testing.T, args ...string) cliRun {
 	cmd := exec.Command("go", cmdArgs...)
 	out, err := cmd.CombinedOutput()
 	return cliRun{output: string(out), err: err}
-}
-
-func requireTool(t *testing.T, name string) {
-	t.Helper()
-	if _, err := exec.LookPath(name); err != nil {
-		t.Skipf("%s is required for CLI integration tests", name)
-	}
 }
 
 func copyFixture(t *testing.T, root, name string) string {

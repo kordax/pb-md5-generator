@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,8 +18,11 @@ type Generator[R any] interface {
 }
 
 type MDGenerator struct {
-	codegen *Codegenerator
-	style   GeneratorStyle
+	codegen        *Codegenerator
+	style          GeneratorStyle
+	packageMode    bool
+	currentPackage string
+	knownPackages  []string
 }
 
 func NewMDGenerator(codegen *Codegenerator) *MDGenerator {
@@ -107,6 +112,63 @@ func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
 	}
 	result.AddSection(enumSection)
 
+	return result, nil
+}
+
+// GeneratePackage renders a package-scoped document. It keeps Generate's
+// output intact while adding a package title and nesting all generated
+// headings below it.
+func (g *MDGenerator) GeneratePackage(parsedFiles []ParsedFile, packageName string, knownPackages ...string) (*md.Document, error) {
+	packageGenerator := *g
+	packageGenerator.packageMode = true
+	packageGenerator.currentPackage = packageName
+	packageGenerator.knownPackages = append([]string(nil), knownPackages...)
+
+	document, err := packageGenerator.Generate(parsedFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	sections := document.GetSections()
+	for i := range sections {
+		hasGroupHeader := false
+		for _, element := range sections[i].GetElements() {
+			header, ok := element.(*md.Header)
+			if !ok {
+				continue
+			}
+			switch header.GetLevel() {
+			case md.HeaderLevelOne:
+				header.SetLevel(md.HeaderLevelTwo)
+			case md.HeaderLevelTwo:
+				header.SetLevel(md.HeaderLevelThree)
+			case md.HeaderLevelThree:
+				hasGroupHeader = true
+				header.SetLevel(md.HeaderLevelFour)
+			case md.HeaderLevelFour:
+				level := md.HeaderLevelFour
+				if hasGroupHeader {
+					level = md.HeaderLevelFive
+				}
+				if strings.HasSuffix(header.GetText(), " code example:") {
+					level++
+				}
+				header.SetLevel(level)
+			}
+		}
+	}
+
+	if packageName == "" {
+		packageName = "(default)"
+	}
+	title := md.NewSectionBuilder().Build()
+	packageGenerator.header("Package "+codeSpan(packageName), md.HeaderLevelOne, title)
+
+	result := &md.Document{}
+	result.AddSection(title)
+	for i := range sections {
+		result.AddSection(&sections[i])
+	}
 	return result, nil
 }
 
@@ -248,7 +310,12 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 		colField.AddRow(fRow)
 
 		tRow := MkRow()
-		tRow.AddLink(MkFieldTypeLink(field))
+		switch value := g.fieldTypeElement(field).(type) {
+		case *md.Link:
+			tRow.AddLink(value)
+		case *md.Text:
+			tRow.AddText(value)
+		}
 		colType.AddRow(tRow)
 
 		lRow := MkRow()
@@ -256,7 +323,7 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 		colLabel.AddRow(lRow)
 
 		dRow := MkRow()
-		dRow.AddText(MkText(field.description, md.TextEmphasisNormal))
+		dRow.AddText(MkText(markdownTableText(field.description), md.TextEmphasisNormal))
 		colDesc.AddRow(dRow)
 
 		minRow := MkRow()
@@ -319,11 +386,21 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 		return entries[i].index < entries[j].index
 	})
 	for _, entry := range entries {
-		if entry.t != EntryTypeMessage || entry.msg == nil || entry.msg.m == nil {
-			continue
-		}
-		if err := g.message(files, entry.msg, section); err != nil {
-			return err
+		switch entry.t {
+		case EntryTypeMessage:
+			if entry.msg == nil || entry.msg.m == nil {
+				continue
+			}
+			if err := g.message(files, entry.msg, section); err != nil {
+				return err
+			}
+		case EntryTypeEnum:
+			if entry.enum == nil || entry.enum.e == nil {
+				continue
+			}
+			if err := g.enum(entry.enum, section); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -357,7 +434,7 @@ func (g *MDGenerator) enum(enum *Enum, section *md.Section) error {
 		colField.AddRow(fRow)
 
 		dRow := MkRow()
-		dRow.AddText(MkText(value.description, md.TextEmphasisNormal))
+		dRow.AddText(MkText(markdownTableText(value.description), md.TextEmphasisNormal))
 		colDesc.AddRow(dRow)
 	}
 
@@ -371,6 +448,55 @@ func (g *MDGenerator) enum(enum *Enum, section *md.Section) error {
 
 func (g *MDGenerator) code(code string, section *md.Section) {
 	section.AddElement(md.NewCodeblockBuilder().Text(code).Build())
+}
+
+func markdownTableText(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "|", "\\|")
+	value = strings.ReplaceAll(value, "\r\n", "<br>")
+	value = strings.ReplaceAll(value, "\n", "<br>")
+	return value
+}
+
+func (g *MDGenerator) fieldTypeElement(field *MessageField) md.Element {
+	if !g.packageMode {
+		return MkFieldTypeLink(field)
+	}
+
+	typeName := pbTypeToString(field.d)
+	switch field.d.GetType() {
+	case descriptorpb.FieldDescriptorProto_TYPE_MESSAGE,
+		descriptorpb.FieldDescriptorProto_TYPE_ENUM,
+		descriptorpb.FieldDescriptorProto_TYPE_GROUP:
+		targetPackage := packageForType(typeName, g.knownPackages)
+		if targetPackage == g.currentPackage {
+			return MkLink(typeName, typeName)
+		}
+		if targetPackage != "" {
+			from := strings.ReplaceAll(g.currentPackage, ".", "/")
+			to := strings.ReplaceAll(targetPackage, ".", "/")
+			relative, err := filepath.Rel(filepath.FromSlash(from), filepath.FromSlash(to))
+			if err == nil {
+				url := path.Join(filepath.ToSlash(relative), "README.md") + "#" + typeName
+				return md.NewLinkBuilder().Text(typeName).Url(url).Build()
+			}
+		}
+	}
+
+	return MkText(codeSpan(typeName), md.TextEmphasisNormal)
+}
+
+func packageForType(typeName string, packages []string) string {
+	best := ""
+	for _, packageName := range packages {
+		if packageName == "" || len(packageName) <= len(best) {
+			continue
+		}
+		if strings.HasPrefix(typeName, packageName+".") {
+			best = packageName
+		}
+	}
+	return best
 }
 
 func pbTypeToString(d *protokit.FieldDescriptor) string {

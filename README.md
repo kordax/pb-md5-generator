@@ -333,48 +333,89 @@ Regenerate it with `task generate-example`.
 
 ## Prerequisites
 
-- Go 1.26 or newer.
-- `protoc` must be available in `PATH`.
-- `protoc-gen-go` must be available in `PATH`.
+- A downloaded binary needs no external programs.
+- Building from source requires Go 1.26 or newer.
 
-Install the Go protobuf plugin with:
-
-```console
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-```
+The binary parses each `.proto` source directly. It does not invoke `protoc`,
+resolve or download imports, run `buf`, use a language plugin, or require Docker.
 
 ## Installation
 
-```console
-go install github.com/kordax/pb-md5-generator/cmd/pb-md5-generator@latest
-```
-
-For a pinned release:
+Build the current checkout into the ignored `build/` directory:
 
 ```console
-go install github.com/kordax/pb-md5-generator/cmd/pb-md5-generator@v1.0.0
+task build
+./build/pb-md5-generator -help
 ```
 
 ## Program Usage
 
-1. **Parsing Protobuf Files**
-   - Run the program specifying the path to the `.proto` file as an argument.
-   - The program will parse the file, extracting annotations and associated definitions.
+### One document
 
-2. **Generating Markdown Documentation**
-   - Upon successful parsing, the program generates Markdown documentation.
-   - The documentation is based on the annotated comments and the protobuf elements they describe.
+`-d` is the protobuf source root. Every `.proto` below it is discovered
+recursively, and nested source paths are preserved.
 
-3. **Output**
-   - The generated documentation is either displayed to the user, saved to a file, or both, depending on the program
-     configuration and user preferences.
-
-### Example usage
 ```console
-pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
+./build/pb-md5-generator -d protobufs/my-project/ -o ./README.md -p ./my-prefix-doc.md
 ```
 
+Use `-f` when only selected source files should be documented. Values are
+semicolon-separated and may be absolute, relative to the current directory, or
+relative to one of the configured proto paths:
+
+```console
+./build/pb-md5-generator -d ./api/proto -f 'example/v1/service.proto;example/v1/types.proto' -o ./README.md
+```
+
+### Additional source roots
+
+Additional local source roots can be supplied with repeatable
+`-I`/`-proto-path` options. The source root from `-d` is searched first.
+
+```console
+./build/pb-md5-generator \
+  -d ./api/proto \
+  -I ./third_party/proto \
+  -I /usr/local/include \
+  -o ./README.md
+```
+
+Imports do not need to be downloaded for documentation generation. `-I` is only
+needed when selected source files live under an additional local source root.
+
+### One README per protobuf package
+
+With `-split-by-package`, `-o` is an output directory. The generator writes a
+root package index and maps protobuf package names to nested directories:
+
+```console
+./build/pb-md5-generator -d ./api/proto -o ./proto-docs -split-by-package
+```
+
+For packages `example.auth.v2` and `example.session`, the result is:
+
+```text
+proto-docs/
+├── README.md
+├── example/auth/v2/README.md
+└── example/session/README.md
+```
+
+Files that declare the same protobuf package are combined in that package's
+README. If `-p` is supplied, its content is prepended to every package document.
+References to types from another generated package link to that package's
+README; scalar and external dependency types are rendered as inline code.
+
 ## Options
+
+| Option                | Description                                                                       |
+|-----------------------|-----------------------------------------------------------------------------------|
+| `-d`, `-proto-dir`    | Source root scanned recursively for `.proto` files.                               |
+| `-I`, `-proto-path`   | Additional local source root; may be repeated or contain an OS path list.          |
+| `-f`, `-files`        | Semicolon-separated source file list instead of recursive discovery.              |
+| `-o`, `-output`       | Markdown file, or output directory with `-split-by-package`.                      |
+| `-p`                  | Markdown file prepended to generated document(s).                                 |
+| `-split-by-package`   | Write an index and one `README.md` per protobuf package.                           |
 
 ### Style Options
 
@@ -398,7 +439,7 @@ Style examples for the identifier `CreateUserRequest`:
 | `bold-code` | `` **`CreateUserRequest`** `` | **`CreateUserRequest`** |
 
 ```console
-pb-md5-generator -d protobufs/my-project/ -o ./README.md -style-table-identifiers bold-code -style-heading-identifiers code
+./build/pb-md5-generator -d protobufs/my-project/ -o ./README.md -style-table-identifiers bold-code -style-heading-identifiers code
 ```
 
 The generated example can be refreshed with the same styles through Task:

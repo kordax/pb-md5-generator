@@ -3,7 +3,6 @@ package parser
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -88,10 +87,6 @@ func TestMapStringToValueTypeNormalizesCaseAndValidates(t *testing.T) {
 }
 
 func TestParserParseInvalidFieldTypeError(t *testing.T) {
-	if _, err := exec.LookPath("protoc"); err != nil {
-		t.Skip("protoc not installed in test environment")
-	}
-
 	request := requestFromProtoContent(t, `
 syntax = "proto3";
 
@@ -118,12 +113,8 @@ func requestFromProtoContent(t *testing.T, content string) *pluginpb.CodeGenerat
 	protoFile := filepath.Join(root, "broken.proto")
 	require.NoError(t, os.WriteFile(protoFile, []byte(content), 0o600))
 
-	c := internalproto.Compiler{
-		ProtoDir:  root,
-		OutputDir: filepath.Join(root, "tmp"),
-	}
-	require.NoError(t, os.MkdirAll(c.OutputDir, 0o750))
-	request, err := c.RequestFromFiles([]string{protoFile})
+	p := internalproto.SourceParser{ProtoDir: root}
+	request, err := p.RequestFromFiles([]string{protoFile})
 	require.NoError(t, err)
 	return request
 }

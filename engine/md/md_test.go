@@ -149,7 +149,7 @@ func TestSettersAndBlockedElements(t *testing.T) {
 	htmlRef.SetName("ref")
 	assert.Equal(t, "ref", htmlRef.GetName())
 
-	requirePanic(t, func() { NewTextBuilder().Text("bad#text").Build() })
+	assert.Equal(t, "formula: a * b & c#d", NewTextBuilder().Text("formula: a * b & c#d").Build().GetText())
 
 	header.Block()
 	requirePanic(t, func() { header.SetLevel(HeaderLevelOne) })

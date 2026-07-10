@@ -48,9 +48,12 @@ func (g *MarkdownRenderer) Render(doc *md.Document) (string, error) {
 	sort.Slice(sections, func(i, j int) bool {
 		return sections[i].GetIndex() < sections[j].GetIndex()
 	})
-	for _, section := range sections {
+	for i, section := range sections {
 		if err := g.renderSection(section); err != nil {
 			return "", err
+		}
+		if i+1 < len(sections) && !strings.HasSuffix(g.builder.String(), "\n\n") {
+			g.newline()
 		}
 	}
 

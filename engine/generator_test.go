@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/kordax/pb-md5-generator/engine/md"
@@ -65,6 +66,39 @@ func TestMDGeneratorGenerateAndTOC(t *testing.T) {
 	assert.Equal(t, "LoginStatus", enumValues.GetEntries()[0].GetElement().(*md.Link).GetText())
 }
 
+func TestMDGeneratorGeneratePackageAddsTitleAndNestsHeadings(t *testing.T) {
+	generator := NewMDGenerator(NewCodegenerator())
+	clientRequest := requireMessage(t, "ClientRequest")
+	clientRequest.header = ""
+	doc, err := generator.GeneratePackage([]ParsedFile{
+		{
+			filename: "example/v1/service.proto",
+			entries: []Entry{
+				{index: 0, t: EntryTypeMessage, msg: clientRequest},
+			},
+		},
+	}, "example.v1")
+	require.NoError(t, err)
+
+	sections := doc.GetSections()
+	require.Len(t, sections, 4)
+	title := sections[0].GetElements()[0].(*md.Header)
+	assert.Equal(t, "Package `example.v1`", title.GetText())
+	assert.Equal(t, md.HeaderLevelOne, title.GetLevel())
+
+	fileHeader := sections[2].GetElements()[0].(*md.Header)
+	assert.Equal(t, "example/v1/service.proto", fileHeader.GetText())
+	assert.Equal(t, md.HeaderLevelTwo, fileHeader.GetLevel())
+	messageHeaders := sectionHeaderTexts(&sections[2])
+	assert.Contains(t, messageHeaders, "`doc_generator_test.ClientRequest` message description:")
+	for _, element := range sections[2].GetElements() {
+		header, ok := element.(*md.Header)
+		if ok && strings.Contains(header.GetText(), "ClientRequest") {
+			assert.Equal(t, md.HeaderLevelFour, header.GetLevel())
+		}
+	}
+}
+
 func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	generator := NewMDGenerator(NewCodegenerator())
 	section := &md.Section{}
@@ -77,7 +111,7 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 			*NewMessageField(
 				protoField("id", descriptorpb.FieldDescriptorProto_TYPE_INT64, requireMessage(t, "TokenRequest").m),
 				requireMessage(t, "TokenRequest").m,
-				"order id",
+				"order | id * count",
 				ValueTypeInt,
 				&FieldFlags{
 					min:       Some(1.0),
@@ -100,6 +134,7 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	require.NotNil(t, fieldsTable)
 	assert.Equal(t, 7, len(fieldsTable.GetColumns()))
 	assert.Equal(t, []string{"`id`"}, columnText(t, fieldsTable, "Field"))
+	assert.Equal(t, []string{`order \| id * count`}, columnText(t, fieldsTable, "Description"))
 	assert.Contains(t, sectionHeaderTexts(section), "`doc_generator_test.TokenRequest` message description:")
 	assert.Contains(t, sectionHeaderTexts(section), "`TokenRequest` code example:")
 
@@ -119,6 +154,51 @@ func TestMDGeneratorMessageAndEnum(t *testing.T) {
 	assert.Len(t, enumSection.GetElements(), 3)
 	assert.Contains(t, sectionHeaderTexts(enumSection), "`doc_generator_test.LoginStatus` enum:")
 	assert.Equal(t, []string{"`LS_OK`", "`LS_FAILED`", "`LS_INVALID_REQUEST`"}, columnText(t, requireTable(t, enumSection), "Value"))
+}
+
+func TestMarkdownTableTextEscapesStructuralCharacters(t *testing.T) {
+	assert.Equal(t, `left \| right`, markdownTableText("left | right"))
+	assert.Equal(t, `path\\name`, markdownTableText(`path\name`))
+	assert.Equal(t, "first<br>second", markdownTableText("first\nsecond"))
+}
+
+func TestPackageFieldTypeLinks(t *testing.T) {
+	generator := NewMDGenerator(NewCodegenerator())
+	generator.packageMode = true
+	generator.currentPackage = "alpha.v1"
+	generator.knownPackages = []string{"alpha.v1", "beta.v1"}
+
+	messageField := func(typeName string) *MessageField {
+		fieldType := descriptorpb.FieldDescriptorProto_TYPE_MESSAGE
+		name := "value"
+		return &MessageField{d: &protokit.FieldDescriptor{
+			FieldDescriptorProto: &descriptorpb.FieldDescriptorProto{
+				Name:     &name,
+				Type:     &fieldType,
+				TypeName: &typeName,
+			},
+		}}
+	}
+
+	local := generator.fieldTypeElement(messageField(".alpha.v1.Target")).(*md.Link)
+	assert.Equal(t, "#alpha.v1.Target", local.GetUrl())
+
+	crossPackage := generator.fieldTypeElement(messageField(".beta.v1.Target")).(*md.Link)
+	assert.Equal(t, "../../beta/v1/README.md#beta.v1.Target", crossPackage.GetUrl())
+
+	external := generator.fieldTypeElement(messageField(".google.protobuf.Timestamp")).(*md.Text)
+	assert.Equal(t, "`google.protobuf.Timestamp`", external.GetText())
+
+	scalar := generator.fieldTypeElement(&MessageField{
+		d: protoField("id", descriptorpb.FieldDescriptorProto_TYPE_INT64, nil),
+	}).(*md.Text)
+	assert.Equal(t, "`int64`", scalar.GetText())
+}
+
+func TestPackageForTypeUsesLongestPackagePrefix(t *testing.T) {
+	packages := []string{"example", "example.auth", "example.auth.v2"}
+	assert.Equal(t, "example.auth.v2", packageForType("example.auth.v2.Token", packages))
+	assert.Empty(t, packageForType("google.protobuf.Timestamp", packages))
 }
 
 func TestMDGeneratorMessageOptionalFlagColumnsStayAligned(t *testing.T) {
@@ -197,12 +277,13 @@ func TestMDGeneratorCustomIdentifierStyle(t *testing.T) {
 	assert.Equal(t, []string{"plain_field"}, columnText(t, requireTable(t, section), "Field"))
 }
 
-func TestMDGeneratorSkipsEmptyHeaderAndRendersNestedMessages(t *testing.T) {
+func TestMDGeneratorSkipsEmptyHeaderAndRendersNestedEntries(t *testing.T) {
 	generator := NewMDGenerator(NewCodegenerator())
 	parent := requireMessage(t, "TokenRequest")
 	nested := requireMessage(t, "ServerResponse")
 	parent.entries = []Entry{
 		{index: 0, t: EntryTypeMessage, msg: nested},
+		{index: 1, t: EntryTypeEnum, enum: requireEnum(t, "LoginStatus")},
 	}
 
 	doc, err := generator.Generate([]ParsedFile{
@@ -220,6 +301,7 @@ func TestMDGeneratorSkipsEmptyHeaderAndRendersNestedMessages(t *testing.T) {
 	assert.NotContains(t, headers, "")
 	assert.Contains(t, headers, "Auth")
 	assert.Contains(t, headers, "`doc_generator_test.ServerResponse` message description:")
+	assert.Contains(t, headers, "`doc_generator_test.LoginStatus` enum:")
 }
 
 func TestMDGeneratorListHelpers(t *testing.T) {

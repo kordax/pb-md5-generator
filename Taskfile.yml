@@ -5,6 +5,18 @@ vars:
     sh: 'echo $(go env GOPATH)/bin'
 
 tasks:
+  build:
+    desc: "Build the standalone binary into build/"
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o build/pb-md5-generator ./cmd/pb-md5-generator
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - build/pb-md5-generator
+
   verify:
     desc: "Run local CI checks"
     deps:
@@ -35,8 +47,7 @@ tasks:
     cmds:
       - |
         prefix="$(mktemp)"
-        tmp_root="$(mktemp -d)"
-        trap 'rm -f "$prefix"; rm -rf "$tmp_root"' EXIT
+        trap 'rm -f "$prefix"' EXIT
         printf '%s\n' \
           '# Example Output' \
           '' \
@@ -45,13 +56,12 @@ tasks:
           'It demonstrates the renderer output for annotated protobuf definitions, including generated and explicit code examples, nested messages, maps, repeated fields, enums, oneof payloads, and ignored definitions.' \
           '' \
           '```console' \
-          'pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md' \
+          './build/pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md' \
           '```' \
           '' > "$prefix"
         go run ./cmd/pb-md5-generator \
           -d testdata/integration \
           -f testdata/integration/full_api.proto \
-          -pbo "$tmp_root/protobuf" \
           -o EXAMPLE.md \
           -p "$prefix" \
           -style-table-identifiers "{{.STYLE_TABLE | default "bold-code"}}" \

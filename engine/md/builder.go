@@ -1,10 +1,5 @@
 package md
 
-import (
-	"fmt"
-	"strings"
-)
-
 // ColumnBuilder Column builder pattern code
 type ColumnBuilder struct {
 	column *Column
@@ -317,10 +312,6 @@ func (b *TextBuilder) Emphasis(emphasis TextEmphasis) *TextBuilder {
 }
 
 func (b *TextBuilder) Build() *Text {
-	if strings.ContainsAny(b.text.GetText(), "#^&*") {
-		panic(fmt.Errorf("text cannot contain special characters: %s, string: '%s'", "#^&*", b.text.GetText()))
-	}
-
 	return b.text
 }
 

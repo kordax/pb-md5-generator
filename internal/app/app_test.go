@@ -5,47 +5,52 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kordax/pb-md5-generator/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	goproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
 func testDeps() appDeps {
 	return appDeps{
-		checkDependencies: func() error { return nil },
-		protoFiles:        func(string) ([]string, error) { return []string{"service.proto"}, nil },
-		ensureDirectory:   func(string) error { return nil },
-		mkdirAll:          func(string, fs.FileMode) error { return nil },
-		removeAll:         func(string) error { return nil },
+		protoFiles: func(string) ([]string, error) { return []string{"service.proto"}, nil },
+		mkdirAll:   func(string, fs.FileMode) error { return nil },
 		requestFromFiles: func(Config, []string) (*pluginpb.CodeGeneratorRequest, error) {
 			return &pluginpb.CodeGeneratorRequest{}, nil
 		},
 		readFile:  func(string) ([]byte, error) { return []byte("prefix"), nil },
 		writeFile: func(string, []byte, fs.FileMode) error { return nil },
-		generate:  func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle) (string, error) { return "generated", nil },
+		generate: func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, string, []string) (string, error) {
+			return "generated", nil
+		},
 	}
 }
 
 func TestParseFlagsAndNormalizeOutput(t *testing.T) {
 	cfg, err := parseFlags([]string{
 		"-d", "./proto",
+		"-I", "./vendor-one",
+		"-proto-path", "./vendor-two",
 		"-f", "a.proto;b.proto",
-		"-pbo", "tmp",
 		"-o", "out",
 		"-p", "prefix.md",
+		"-split-by-package",
 		"-style-table-identifiers", "bold",
 		"-style-heading-identifiers", "plain",
 	})
 	require.NoError(t, err)
 
 	assert.Equal(t, "./proto", cfg.ProtoDir)
+	assert.Equal(t, []string{"./vendor-one", "./vendor-two"}, cfg.ProtoPaths)
 	assert.Equal(t, "a.proto;b.proto", cfg.Files)
-	assert.Equal(t, "tmp", cfg.ProtoOut)
 	assert.Equal(t, "out", cfg.Output)
 	assert.Equal(t, "prefix.md", cfg.PrefixDoc)
+	assert.True(t, cfg.SplitByPackage)
 	assert.Equal(t, "bold", cfg.TableIdentifierStyle)
 	assert.Equal(t, "plain", cfg.HeadingIdentifierStyle)
 	assert.Equal(t, "out.md", normalizedMarkdownOutput("out"))
@@ -57,6 +62,7 @@ func TestParseFlagsAndNormalizeOutput(t *testing.T) {
 
 func TestRunReturnsFailureForInvalidFlags(t *testing.T) {
 	assert.Equal(t, 1, Run([]string{"-unknown"}))
+	assert.Equal(t, 0, Run([]string{"-help"}))
 }
 
 func TestResolveProtoFiles(t *testing.T) {
@@ -101,23 +107,20 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	root := t.TempDir()
 	prefix := filepath.Join(root, "prefix.md")
 	require.NoError(t, os.WriteFile(prefix, []byte("prefix"), 0o600))
-	var cleaned string
 	var writtenPath string
 	var writtenContent string
 	var writtenMode fs.FileMode
 	var generatedStyle engine.GeneratorStyle
 
-	deps.removeAll = func(path string) error {
-		cleaned = path
-		return nil
-	}
 	deps.writeFile = func(path string, content []byte, mode fs.FileMode) error {
 		writtenPath = path
 		writtenContent = string(content)
 		writtenMode = mode
 		return nil
 	}
-	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, style engine.GeneratorStyle) (string, error) {
+	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, style engine.GeneratorStyle, packageName string, knownPackages []string) (string, error) {
+		assert.Empty(t, packageName)
+		assert.Nil(t, knownPackages)
 		generatedStyle = style
 		return "generated", nil
 	}
@@ -125,7 +128,6 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	err := runWithDeps(Config{
 		ProtoDir:               "./proto",
 		Files:                  "a.proto;b.proto",
-		ProtoOut:               "./tmp",
 		Output:                 "./out",
 		PrefixDoc:              prefix,
 		TableIdentifierStyle:   "plain",
@@ -133,9 +135,8 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	}, deps)
 	require.NoError(t, err)
 
-	assert.Equal(t, "tmp", cleaned)
 	assert.Equal(t, "out.md", writtenPath)
-	assert.Equal(t, "prefix\n\ngenerated", writtenContent)
+	assert.Equal(t, "prefix\n\ngenerated\n", writtenContent)
 	assert.Equal(t, fs.FileMode(0o600), writtenMode)
 	assert.Equal(t, engine.IdentifierStylePlain, generatedStyle.TableIdentifiers)
 	assert.Equal(t, engine.IdentifierStyleBoldCode, generatedStyle.HeadingIdentifiers)
@@ -154,15 +155,6 @@ func TestRunWithDepsFailures(t *testing.T) {
 			want: "empty proto files",
 		},
 		{
-			name: "dependency check",
-			cfg:  Config{ProtoDir: "proto"},
-			deps: func(deps appDeps) appDeps {
-				deps.checkDependencies = func() error { return errors.New("no protoc") }
-				return deps
-			},
-			want: "no protoc",
-		},
-		{
 			name: "no files",
 			cfg:  Config{ProtoDir: "proto"},
 			deps: func(deps appDeps) appDeps {
@@ -170,15 +162,6 @@ func TestRunWithDepsFailures(t *testing.T) {
 				return deps
 			},
 			want: "no files specified",
-		},
-		{
-			name: "tmp dir unavailable",
-			cfg:  Config{ProtoDir: "proto", Files: "a.proto"},
-			deps: func(deps appDeps) appDeps {
-				deps.ensureDirectory = func(string) error { return errors.New("exists") }
-				return deps
-			},
-			want: "temporary protobuf directory",
 		},
 		{
 			name: "request failed",
@@ -198,13 +181,13 @@ func TestRunWithDepsFailures(t *testing.T) {
 				deps.mkdirAll = func(string, fs.FileMode) error { return errors.New("permission denied") }
 				return deps
 			},
-			want: "failed to initialize output directory",
+			want: "failed to initialize markdown output directory",
 		},
 		{
 			name: "render failed",
 			cfg:  Config{ProtoDir: "proto", Files: "a.proto"},
 			deps: func(deps appDeps) appDeps {
-				deps.generate = func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle) (string, error) {
+				deps.generate = func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, string, []string) (string, error) {
 					return "", errors.New("render")
 				}
 				return deps
@@ -245,12 +228,73 @@ func TestRunWithDepsFailures(t *testing.T) {
 	}
 }
 
-func TestRunAndCleanupWrappers(t *testing.T) {
-	assert.Error(t, runWithDeps(Config{ProtoDir: "proto", Files: "a.proto"}, appDeps{
-		checkDependencies: func() error { return errors.New("dependency") },
-	}))
+func TestSplitRequestByPackage(t *testing.T) {
+	request := &pluginpb.CodeGeneratorRequest{
+		FileToGenerate: []string{"z.proto", "nested/b.proto", "a.proto"},
+		ProtoFile: []*descriptorpb.FileDescriptorProto{
+			{Name: goproto.String("a.proto"), Package: goproto.String("alpha.v1")},
+			{Name: goproto.String("nested/b.proto"), Package: goproto.String("beta")},
+			{Name: goproto.String("z.proto"), Package: goproto.String("alpha.v1")},
+		},
+	}
 
-	assert.NotPanics(t, func() {
-		cleanup("tmp", func(string) error { return errors.New("cleanup failed") })
-	})
+	packages, err := splitRequestByPackage(request)
+	require.NoError(t, err)
+	require.Len(t, packages, 2)
+	assert.Equal(t, "alpha.v1", packages[0].name)
+	assert.Equal(t, []string{"a.proto", "z.proto"}, packages[0].request.GetFileToGenerate())
+	assert.Equal(t, "beta", packages[1].name)
+	assert.Equal(t, []string{"nested/b.proto"}, packages[1].request.GetFileToGenerate())
+
+	_, err = splitRequestByPackage(&pluginpb.CodeGeneratorRequest{FileToGenerate: []string{"missing.proto"}})
+	assert.ErrorContains(t, err, "descriptor for source file")
+}
+
+func TestWritePackageDocuments(t *testing.T) {
+	deps := testDeps()
+	written := make(map[string]string)
+	deps.writeFile = func(path string, content []byte, _ fs.FileMode) error {
+		written[path] = string(content)
+		return nil
+	}
+	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, _ engine.GeneratorStyle, packageName string, knownPackages []string) (string, error) {
+		assert.ElementsMatch(t, []string{"alpha.v1", "beta"}, knownPackages)
+		return "generated " + packageName, nil
+	}
+
+	root := filepath.Join(t.TempDir(), "docs")
+	request := &pluginpb.CodeGeneratorRequest{
+		FileToGenerate: []string{"alpha.proto", "beta.proto"},
+		ProtoFile: []*descriptorpb.FileDescriptorProto{
+			{Name: goproto.String("alpha.proto"), Package: goproto.String("alpha.v1")},
+			{Name: goproto.String("beta.proto"), Package: goproto.String("beta")},
+		},
+	}
+	require.NoError(t, writePackageDocuments(
+		Config{Output: root},
+		request,
+		"prefix\n\n",
+		engine.DefaultGeneratorStyle(),
+		deps,
+	))
+
+	assert.Equal(t, "prefix\n\ngenerated alpha.v1\n", written[filepath.Join(root, "alpha", "v1", "README.md")])
+	assert.Equal(t, "prefix\n\ngenerated beta\n", written[filepath.Join(root, "beta", "README.md")])
+	index := written[filepath.Join(root, "README.md")]
+	assert.Contains(t, index, "[`alpha.v1`](alpha/v1/README.md)")
+	assert.Contains(t, index, "[`beta`](beta/README.md)")
+	assert.True(t, strings.HasSuffix(index, "\n"))
+}
+
+func TestPackageDirectory(t *testing.T) {
+	path, err := packageDirectory("example.auth.v2")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("example", "auth", "v2"), path)
+
+	path, err = packageDirectory("")
+	require.NoError(t, err)
+	assert.Equal(t, "_default", path)
+
+	_, err = packageDirectory("bad..package")
+	assert.Error(t, err)
 }

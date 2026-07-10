@@ -3,8 +3,7 @@ package parser
 import (
 	"fmt"
 	"os"
-	"path"
-	"regexp"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,34 +13,37 @@ import (
 )
 
 func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorParser {
-	cmdLine := request.GetParameter()
-	params := strings.Split(cmdLine, ";")
+	sourceRoots := make(map[string]string)
+	for _, parameter := range strings.Split(request.GetParameter(), ";") {
+		mapping := strings.SplitN(parameter, "=", 2)
+		if len(mapping) != 2 || !strings.HasPrefix(mapping[0], "M") {
+			continue
+		}
+		sourceRoots[strings.TrimPrefix(mapping[0], "M")] = mapping[1]
+	}
+
 	matchedFiles := make(map[string]*os.File)
 	for _, f := range request.GetFileToGenerate() {
-		pathParams := filter(params, func(v string) bool {
-			match, _ := regexp.MatchString("M.*proto=.+", v)
-			return match
-		})
-		paths := mapSlice(pathParams, func(v string) Pair[string, string] {
-			split := strings.Split(v, "=")
-			return Pair[string, string]{Left: split[0], Right: split[1]}
-		})
-		if _, rawPath := containsPredicate(paths, func(v Pair[string, string]) bool {
-			return strings.Trim(v.Left, "M ") == path.Base(f)
-		}); rawPath == nil {
-			panic(fmt.Errorf("no path provided for file: %s", f))
-		} else {
-			fullPath := path.Join(rawPath.Right, f)
-			lstat, err := os.Stat(fullPath)
-			if err != nil {
-				panic(fmt.Errorf("no file found, even though matched path was provided, path: %s, err: %s", fullPath, err.Error()))
-			}
-			file, err := os.OpenFile(fullPath, os.O_RDONLY, lstat.Mode()) // #nosec G304 -- proto source path comes from the compiler request.
-			if err != nil {
-				panic(fmt.Errorf("failed to open file: %s, path: %s, err: %s", f, fullPath, err.Error()))
-			}
-			matchedFiles[f] = file
+		root, ok := sourceRoots[f]
+		if !ok {
+			// Accept requests produced by older versions, where nested files were
+			// mapped by basename and the mapped root was their containing directory.
+			root, ok = sourceRoots[filepath.Base(filepath.FromSlash(f))]
 		}
+		if !ok {
+			panic(fmt.Errorf("no path provided for file: %s", f))
+		}
+
+		fullPath := filepath.Join(root, filepath.FromSlash(f))
+		lstat, err := os.Stat(fullPath)
+		if err != nil {
+			panic(fmt.Errorf("no file found, even though matched path was provided, path: %s, err: %s", fullPath, err.Error()))
+		}
+		file, err := os.OpenFile(fullPath, os.O_RDONLY, lstat.Mode()) // #nosec G304 -- proto source path comes from the compiler request.
+		if err != nil {
+			panic(fmt.Errorf("failed to open file: %s, path: %s, err: %s", f, fullPath, err.Error()))
+		}
+		matchedFiles[f] = file
 	}
 
 	return &DescriptorParser{
@@ -61,15 +63,15 @@ func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 	enumInd := 0
 	for i, descriptor := range p.descriptors {
 		entries := make([]Entry, 0)
-		log.Info().Msgf("parsing file '%s' to a document", descriptor.GetName())
-		log.Info().Msgf("%d messages", len(descriptor.GetMessages()))
+		log.Debug().Msgf("parsing file '%s' to a document", descriptor.GetName())
+		log.Debug().Msgf("%d messages", len(descriptor.GetMessages()))
 		_, ignore, _ := p.getMarker(descriptor, IgnoreFileMarker)
 		if ignore != -1 {
 			log.Warn().Msgf("ignoring file '%s'", descriptor.GetName())
 			continue
 		}
 		title, _, err := p.getMarker(descriptor, TitleMarker)
-		log.Info().Msgf("title: %s", title)
+		log.Debug().Msgf("title: %s", title)
 		if err != nil {
 			return nil, err
 		}
@@ -176,16 +178,32 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 		result.fields = append(result.fields, *field)
 	}
 
-	for i, d := range descriptor.GetMessages() {
+	for _, d := range descriptor.GetMessages() {
 		nestedMsg, err := p.parseMessage(d, header)
 		if err != nil {
 			return nil, err
 		}
 
 		result.entries = append(result.entries, Entry{
-			index: i,
+			index: len(result.entries),
 			t:     EntryTypeMessage,
 			msg:   nestedMsg,
+		})
+	}
+
+	for _, enumDescriptor := range descriptor.GetEnums() {
+		nestedEnum, err := p.parseEnum(enumDescriptor)
+		if err != nil {
+			return nil, err
+		}
+		if contains(IgnoreMarker, nestedEnum.flags) != -1 {
+			log.Warn().Msgf("ignoring enum '%s'", enumDescriptor.GetName())
+			continue
+		}
+		result.entries = append(result.entries, Entry{
+			index: len(result.entries),
+			t:     EntryTypeEnum,
+			enum:  nestedEnum,
 		})
 	}
 
