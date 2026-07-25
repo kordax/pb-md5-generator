@@ -19,15 +19,32 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
+const (
+	commandGenerate = "generate"
+	commandLint     = "lint"
+)
+
 type Config struct {
+	Command                string
 	ProtoDir               string
 	ProtoPaths             []string
 	Files                  string
 	Output                 string
 	PrefixDoc              string
 	SplitByPackage         bool
+	Check                  bool
+	Seed                   int64
+	StrictAnnotations      bool
 	TableIdentifierStyle   string
 	HeadingIdentifierStyle string
+}
+
+type generationOptions struct {
+	style             engine.GeneratorStyle
+	packageName       string
+	knownPackages     []string
+	seed              int64
+	strictAnnotations bool
 }
 
 type appDeps struct {
@@ -36,7 +53,7 @@ type appDeps struct {
 	requestFromFiles func(Config, []string) (*pluginpb.CodeGeneratorRequest, error)
 	readFile         func(string) ([]byte, error)
 	writeFile        func(string, []byte, fs.FileMode) error
-	generate         func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, string, []string) (string, error)
+	generate         func(*pluginpb.CodeGeneratorRequest, generationOptions) (string, error)
 }
 
 func Run(args []string) int {
@@ -51,7 +68,7 @@ func Run(args []string) int {
 		return 1
 	}
 	if err := run(cfg); err != nil {
-		log.Err(err).Msg("generation failed")
+		log.Err(err).Msg("command failed")
 		return 1
 	}
 	return 0
@@ -75,10 +92,19 @@ func defaultDeps() appDeps {
 }
 
 func parseFlags(args []string) (Config, error) {
-	flags := flag.NewFlagSet("pb-md5-generator", flag.ContinueOnError)
+	command := commandGenerate
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		command = args[0]
+		args = args[1:]
+	}
+	if command != commandGenerate && command != commandLint {
+		return Config{}, fmt.Errorf("unknown command %q", command)
+	}
+
+	flags := flag.NewFlagSet("pb-md5-generator "+command, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 
-	cfg := Config{}
+	cfg := Config{Command: command, Seed: engine.DefaultCodegenSeed}
 	protoPaths := &stringListFlag{}
 	flags.StringVar(&cfg.ProtoDir, "d", "", ".proto files directory, e.g.: ./test/test-protos")
 	flags.StringVar(&cfg.ProtoDir, "proto-dir", "", "alias for -d")
@@ -90,11 +116,23 @@ func parseFlags(args []string) (Config, error) {
 	flags.StringVar(&cfg.Output, "output", "./doc-generator-output", "alias for -o")
 	flags.StringVar(&cfg.PrefixDoc, "p", "", "prefix markdown document file that will be added to the beginning of the resulting .md file")
 	flags.BoolVar(&cfg.SplitByPackage, "split-by-package", false, "write <output>/<package path>/README.md for every protobuf package")
+	flags.BoolVar(&cfg.Check, "check", false, "verify generated documentation without writing files")
+	flags.Int64Var(&cfg.Seed, "seed", 1, "seed used for deterministic generated examples")
+	flags.BoolVar(&cfg.StrictAnnotations, "strict-annotations", false, "reject unknown, duplicate, or misplaced annotations")
 	flags.StringVar(&cfg.TableIdentifierStyle, "style-table-identifiers", string(engine.IdentifierStyleBoldCode), "table identifier style: plain, code, bold, bold-code")
 	flags.StringVar(&cfg.HeadingIdentifierStyle, "style-heading-identifiers", string(engine.IdentifierStyleCode), "heading identifier style: plain, code, bold, bold-code")
 
 	if err := flags.Parse(args); err != nil {
 		return Config{}, err
+	}
+	if flags.NArg() != 0 {
+		return Config{}, fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	if command == commandLint {
+		if cfg.Check {
+			return Config{}, fmt.Errorf("lint does not support -check")
+		}
+		cfg.StrictAnnotations = true
 	}
 	cfg.ProtoPaths = protoPaths.values
 	return cfg, nil
@@ -123,8 +161,37 @@ func run(cfg Config) error {
 }
 
 func runWithDeps(cfg Config, deps appDeps) error {
+	cfg, err := normalizeConfig(cfg)
+	if err != nil {
+		return err
+	}
+	request, style, err := prepareRequest(cfg, deps)
+	if err != nil {
+		return err
+	}
+	options := generationOptions{
+		style:             style,
+		seed:              cfg.Seed,
+		strictAnnotations: cfg.StrictAnnotations || cfg.Command == commandLint,
+	}
+	if cfg.Command == commandLint {
+		return lintRequest(request, options, deps)
+	}
+	return generateDocuments(cfg, request, options, deps)
+}
+
+func normalizeConfig(cfg Config) (Config, error) {
+	if cfg.Command == "" {
+		cfg.Command = commandGenerate
+	}
+	if cfg.Command != commandGenerate && cfg.Command != commandLint {
+		return Config{}, fmt.Errorf("unknown command %q", cfg.Command)
+	}
+	if cfg.Command == commandLint && cfg.Check {
+		return Config{}, fmt.Errorf("lint does not support -check")
+	}
 	if cfg.ProtoDir == "" {
-		return fmt.Errorf("empty proto files directory/string specified")
+		return Config{}, fmt.Errorf("empty proto files directory/string specified")
 	}
 
 	cfg.ProtoDir = filepath.Clean(cfg.ProtoDir)
@@ -136,46 +203,82 @@ func runWithDeps(cfg Config, deps appDeps) error {
 	} else {
 		cfg.Output = normalizedMarkdownOutput(cfg.Output)
 	}
+	return cfg, nil
+}
 
+func prepareRequest(cfg Config, deps appDeps) (*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, error) {
 	files, err := resolveProtoFiles(cfg, deps)
 	if err != nil {
-		return err
+		return nil, engine.GeneratorStyle{}, err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no files specified")
+		return nil, engine.GeneratorStyle{}, fmt.Errorf("no files specified")
 	}
-	if err := validatePrefix(cfg.PrefixDoc); err != nil {
-		return err
+	if cfg.Command == commandGenerate {
+		if err := validatePrefix(cfg.PrefixDoc); err != nil {
+			return nil, engine.GeneratorStyle{}, err
+		}
 	}
 	style, err := generatorStyle(cfg)
 	if err != nil {
-		return err
+		return nil, engine.GeneratorStyle{}, err
 	}
 	request, err := deps.requestFromFiles(cfg, files)
 	if err != nil {
-		return fmt.Errorf("failed to generate protobuf request from files: %w", err)
+		return nil, engine.GeneratorStyle{}, fmt.Errorf("failed to generate protobuf request from files: %w", err)
 	}
+	return request, style, nil
+}
 
+func lintRequest(request *pluginpb.CodeGeneratorRequest, options generationOptions, deps appDeps) error {
+	if _, err := deps.generate(request, options); err != nil {
+		return fmt.Errorf("lint failed: %w", err)
+	}
+	log.Info().Msg("protobuf documentation annotations are valid")
+	return nil
+}
+
+func generateDocuments(
+	cfg Config,
+	request *pluginpb.CodeGeneratorRequest,
+	options generationOptions,
+	deps appDeps,
+) error {
 	content, err := prefixContent(cfg.PrefixDoc, deps.readFile)
 	if err != nil {
 		return err
 	}
 	if cfg.SplitByPackage {
-		return writePackageDocuments(cfg, request, content, style, deps)
+		return writePackageDocuments(cfg, request, content, options.style, deps)
 	}
 
-	generated, err := deps.generate(request, style, "", nil)
+	generated, err := deps.generate(request, options)
 	if err != nil {
 		return fmt.Errorf("failed to generate markdown document: %w", err)
 	}
-	content += generated
+	return writeDocument(cfg.Output, content+generated, cfg.Check, deps)
+}
 
-	if err := deps.mkdirAll(filepath.Dir(cfg.Output), 0o755); err != nil {
-		return fmt.Errorf("failed to initialize markdown output directory %s: %w", filepath.Dir(cfg.Output), err)
+func writeDocument(path, content string, check bool, deps appDeps) error {
+	expected := withTrailingNewline(content)
+	if check {
+		actual, err := deps.readFile(path)
+		if err != nil {
+			return fmt.Errorf("documentation is out of date at %s: %w", path, err)
+		}
+		if string(actual) != expected {
+			return fmt.Errorf("documentation is out of date: %s", path)
+		}
+		log.Info().Msgf("documentation is up to date: %s", path)
+		return nil
 	}
-	log.Info().Msgf("writing content to: %s", cfg.Output)
-	if err := deps.writeFile(cfg.Output, []byte(withTrailingNewline(content)), 0o644); err != nil {
-		return fmt.Errorf("cannot save results to output file %s: %w", cfg.Output, err)
+
+	if err := deps.mkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to initialize markdown output directory %s: %w", filepath.Dir(path), err)
+	}
+	log.Info().Msgf("writing content to: %s", path)
+	if err := deps.writeFile(path, []byte(expected), 0o644); err != nil {
+		return fmt.Errorf("cannot save results to output file %s: %w", path, err)
 	}
 	return nil
 }
@@ -253,7 +356,7 @@ func prefixContent(prefix string, readFile func(string) ([]byte, error)) (string
 	if err != nil {
 		return "", fmt.Errorf("failed to read prefix markdown document %s: %w", prefix, err)
 	}
-	return string(contentBytes) + "\n\n", nil
+	return strings.TrimRight(string(contentBytes), "\r\n") + "\n\n", nil
 }
 
 func generatorStyle(cfg Config) (engine.GeneratorStyle, error) {
@@ -281,14 +384,11 @@ func generatorStyle(cfg Config) (engine.GeneratorStyle, error) {
 	}, nil
 }
 
-func generate(
-	request *pluginpb.CodeGeneratorRequest,
-	style engine.GeneratorStyle,
-	packageName string,
-	knownPackages []string,
-) (string, error) {
-	parser := engine.NewDescriptorParser(request)
-	generator := engine.NewMDGeneratorWithStyle(engine.NewCodegenerator(), style)
+func generate(request *pluginpb.CodeGeneratorRequest, options generationOptions) (string, error) {
+	parser := engine.NewDescriptorParserWithOptions(request, engine.ParserOptions{
+		StrictAnnotations: options.strictAnnotations,
+	})
+	generator := engine.NewMDGeneratorWithStyle(engine.NewCodegeneratorWithSeed(options.seed), options.style)
 	renderer := render.NewMarkdownRenderer(render.DefaultConfig())
 
 	entries, err := parser.Parse()
@@ -296,10 +396,10 @@ func generate(
 		return "", fmt.Errorf("[parser error] %w", err)
 	}
 	var document *md.Document
-	if knownPackages == nil {
+	if options.knownPackages == nil {
 		document, err = generator.Generate(entries)
 	} else {
-		document, err = generator.GeneratePackage(entries, packageName, knownPackages...)
+		document, err = generator.GeneratePackage(entries, options.packageName, options.knownPackages...)
 	}
 	if err != nil {
 		return "", fmt.Errorf("[generator error] %w", err)

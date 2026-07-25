@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/kordax/pb-md5-generator/engine"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
@@ -65,9 +64,6 @@ func writePackageDocuments(
 	if err != nil {
 		return fmt.Errorf("failed to split protobuf request by package: %w", err)
 	}
-	if err := deps.mkdirAll(cfg.Output, 0o755); err != nil {
-		return fmt.Errorf("failed to initialize markdown output directory %s: %w", cfg.Output, err)
-	}
 	knownPackages := make([]string, 0, len(packages))
 	for _, current := range packages {
 		knownPackages = append(knownPackages, current.name)
@@ -79,27 +75,28 @@ func writePackageDocuments(
 			return err
 		}
 		output := filepath.Join(cfg.Output, relativeDir, "README.md")
-		if err := deps.mkdirAll(filepath.Dir(output), 0o755); err != nil {
-			return fmt.Errorf("failed to initialize package output directory %s: %w", filepath.Dir(output), err)
-		}
-
 		packageTitle := current.name
 		if packageTitle == "" {
 			packageTitle = "(default)"
 		}
-		generated, err := deps.generate(current.request, style, current.name, knownPackages)
+		generated, err := deps.generate(current.request, generationOptions{
+			style:             style,
+			packageName:       current.name,
+			knownPackages:     knownPackages,
+			seed:              cfg.Seed,
+			strictAnnotations: cfg.StrictAnnotations,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to generate markdown document for package %s: %w", packageTitle, err)
 		}
-		log.Info().Msgf("writing package %s to: %s", packageTitle, output)
-		if err := deps.writeFile(output, []byte(withTrailingNewline(prefix+generated)), 0o644); err != nil {
-			return fmt.Errorf("cannot save package %s to output file %s: %w", packageTitle, output, err)
+		if err := writeDocument(output, prefix+generated, cfg.Check, deps); err != nil {
+			return fmt.Errorf("failed to save package %s: %w", packageTitle, err)
 		}
 	}
 
 	indexPath := filepath.Join(cfg.Output, "README.md")
-	if err := deps.writeFile(indexPath, []byte(packageIndex(packages)), 0o644); err != nil {
-		return fmt.Errorf("cannot save package index to output file %s: %w", indexPath, err)
+	if err := writeDocument(indexPath, packageIndex(packages), cfg.Check, deps); err != nil {
+		return fmt.Errorf("failed to save package index: %w", err)
 	}
 	return nil
 }

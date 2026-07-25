@@ -1,12 +1,13 @@
 package engine
 
 import (
-	"crypto/rand"
+	cryptoRand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	mathRand "math/rand"
 	"strconv"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -16,15 +17,26 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var passGen = password.NewGenerator(1, 7, 5, 1)
+// DefaultCodegenSeed is the reproducible seed used by NewCodegenerator.
+const DefaultCodegenSeed int64 = 1
 
 type Codegenerator struct {
 	namegen namegenerator.Generator
+	random  *mathRand.Rand
+	passgen *password.Generator
 }
 
 func NewCodegenerator() *Codegenerator {
+	return NewCodegeneratorWithSeed(DefaultCodegenSeed)
+}
+
+// NewCodegeneratorWithSeed creates a generator whose examples are repeatable for the same seed.
+func NewCodegeneratorWithSeed(seed int64) *Codegenerator {
+	random := mathRand.New(mathRand.NewSource(seed)) // #nosec G404 -- generated examples require reproducibility, not cryptographic randomness.
 	return &Codegenerator{
-		namegen: namegenerator.NewNameGenerator(time.Now().UnixNano()),
+		namegen: namegenerator.NewNameGenerator(seed),
+		random:  random,
+		passgen: password.NewGeneratorWithReader(random, 1, 7, 5, 1),
 	}
 }
 
@@ -48,7 +60,11 @@ func (g *Codegenerator) generateFromMessage(files []ParsedFile, message *Message
 	if js == nil {
 		js = make(map[string]any)
 	}
-	js["trx"] = uuid.NewString()
+	transactionID, err := g.uuidString()
+	if err != nil {
+		return "", err
+	}
+	js["trx"] = transactionID
 	js[message.m.GetName()] = map[string]any{}
 	jsMsg := js[message.m.GetName()].(map[string]any)
 	for _, field := range message.fields {
@@ -103,22 +119,22 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		if value.Present() {
 			return strconv.ParseInt(*value.Get(), 10, 64)
 		}
-		return int64WithinRange(int64(minVal.OrElse(0)), int64(maxVal.OrElse(1000000)))
+		return int64WithinRangeFrom(g.random, int64(minVal.OrElse(0)), int64(maxVal.OrElse(1000000)))
 	case ValueTypeFloat:
 		if value.Present() {
 			return strconv.ParseFloat(*value.Get(), 64)
 		}
-		return float64WithinRange(minVal.OrElse(0), maxVal.OrElse(1000000))
+		return float64WithinRangeFrom(g.random, minVal.OrElse(0), maxVal.OrElse(1000000))
 	case ValueTypeUInt:
 		if value.Present() {
 			return strconv.ParseUint(*value.Get(), 10, 64)
 		}
-		return uint64WithinRange(uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000)))
+		return uint64WithinRangeFrom(g.random, uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000)))
 	case ValueTypeBool:
 		if value.Present() {
 			return strconv.ParseBool(*value.Get())
 		}
-		index, err := cryptoIndex(2)
+		index, err := cryptoIndexFrom(g.random, 2)
 		if err != nil {
 			return nil, err
 		}
@@ -147,11 +163,11 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 			return *value.Get(), nil
 		}
 		//+NNN.NNNNNNNNNN
-		prefix, err := int64WithinRange(0, 1010)
+		prefix, err := int64WithinRangeFrom(g.random, 0, 1010)
 		if err != nil {
 			return nil, err
 		}
-		number, err := int64WithinRange(1000000000, 9999999999)
+		number, err := int64WithinRangeFrom(g.random, 1000000000, 9999999999)
 		if err != nil {
 			return nil, err
 		}
@@ -168,12 +184,12 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		if value.Present() {
 			return *value.Get(), nil
 		}
-		return passGen.GetPassword(), nil
+		return g.passgen.GetPassword(), nil
 	case ValueTypeUUID:
 		if value.Present() {
 			return *value.Get(), nil
 		}
-		return uuid.NewString(), nil
+		return g.uuidString()
 	case ValueTypeEnum:
 		var enum *Enum
 		for _, file := range files {
@@ -193,7 +209,7 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 		if enum != nil {
 			values := enum.values
 			l := len(values)
-			index, err := cryptoIndex(l)
+			index, err := cryptoIndexFrom(g.random, l)
 			if err != nil {
 				return nil, err
 			}
@@ -216,12 +232,24 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 	}
 }
 
+func (g *Codegenerator) uuidString() (string, error) {
+	value, err := uuid.NewRandomFromReader(g.random)
+	if err != nil {
+		return "", err
+	}
+	return value.String(), nil
+}
+
 func int64WithinRange(min, max int64) (int64, error) {
+	return int64WithinRangeFrom(cryptoRand.Reader, min, max)
+}
+
+func int64WithinRangeFrom(reader io.Reader, min, max int64) (int64, error) {
 	if max <= min {
 		return min, nil
 	}
 	diff := max - min
-	value, err := rand.Int(rand.Reader, big.NewInt(diff))
+	value, err := cryptoRand.Int(reader, big.NewInt(diff))
 	if err != nil {
 		return 0, err
 	}
@@ -229,11 +257,15 @@ func int64WithinRange(min, max int64) (int64, error) {
 }
 
 func uint64WithinRange(min, max uint64) (uint64, error) {
+	return uint64WithinRangeFrom(cryptoRand.Reader, min, max)
+}
+
+func uint64WithinRangeFrom(reader io.Reader, min, max uint64) (uint64, error) {
 	if max <= min {
 		return min, nil
 	}
 	diff := new(big.Int).SetUint64(max - min)
-	value, err := rand.Int(rand.Reader, diff)
+	value, err := cryptoRand.Int(reader, diff)
 	if err != nil {
 		return 0, err
 	}
@@ -241,11 +273,15 @@ func uint64WithinRange(min, max uint64) (uint64, error) {
 }
 
 func float64WithinRange(min, max float64) (float64, error) {
+	return float64WithinRangeFrom(cryptoRand.Reader, min, max)
+}
+
+func float64WithinRangeFrom(reader io.Reader, min, max float64) (float64, error) {
 	if max <= min {
 		return min, nil
 	}
 	maxUint64 := ^uint64(0)
-	value, err := uint64WithinRange(0, maxUint64)
+	value, err := uint64WithinRangeFrom(reader, 0, maxUint64)
 	if err != nil {
 		return 0, err
 	}
@@ -254,10 +290,14 @@ func float64WithinRange(min, max float64) (float64, error) {
 }
 
 func cryptoIndex(max int) (int, error) {
+	return cryptoIndexFrom(cryptoRand.Reader, max)
+}
+
+func cryptoIndexFrom(reader io.Reader, max int) (int, error) {
 	if max <= 0 {
 		return 0, fmt.Errorf("max should be positive")
 	}
-	value, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	value, err := cryptoRand.Int(reader, big.NewInt(int64(max)))
 	if err != nil {
 		return 0, err
 	}

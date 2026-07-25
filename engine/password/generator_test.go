@@ -31,6 +31,11 @@ func TestPasswordGenerator_InstancePassword(t *testing.T) {
 	}
 }
 
+func TestPasswordGenerator_NilReaderUsesSecureDefault(t *testing.T) {
+	gen := NewGeneratorWithReader(nil, 1, 1, 1, 1)
+	assert.Len(t, gen.GetPassword(), 3)
+}
+
 func TestPasswordGenerator_RefreshesCache(t *testing.T) {
 	gen := NewGenerator(1, 1, 1, 1)
 

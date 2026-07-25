@@ -25,7 +25,7 @@ func testDeps() appDeps {
 		},
 		readFile:  func(string) ([]byte, error) { return []byte("prefix"), nil },
 		writeFile: func(string, []byte, fs.FileMode) error { return nil },
-		generate: func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, string, []string) (string, error) {
+		generate: func(*pluginpb.CodeGeneratorRequest, generationOptions) (string, error) {
 			return "generated", nil
 		},
 	}
@@ -83,7 +83,7 @@ func TestResolveProtoFiles(t *testing.T) {
 func TestPrefixValidationAndContent(t *testing.T) {
 	root := t.TempDir()
 	prefix := filepath.Join(root, "prefix.md")
-	require.NoError(t, os.WriteFile(prefix, []byte("hello"), 0o600))
+	require.NoError(t, os.WriteFile(prefix, []byte("hello\n\n"), 0o600))
 
 	assert.NoError(t, validatePrefix(""))
 	assert.NoError(t, validatePrefix(prefix))
@@ -123,10 +123,10 @@ func TestRunWithDepsSuccess(t *testing.T) {
 		writtenMode = mode
 		return nil
 	}
-	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, style engine.GeneratorStyle, packageName string, knownPackages []string) (string, error) {
-		assert.Empty(t, packageName)
-		assert.Nil(t, knownPackages)
-		generatedStyle = style
+	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, options generationOptions) (string, error) {
+		assert.Empty(t, options.packageName)
+		assert.Nil(t, options.knownPackages)
+		generatedStyle = options.style
 		return "generated", nil
 	}
 
@@ -193,7 +193,7 @@ func TestRunWithDepsFailures(t *testing.T) {
 			name: "render failed",
 			cfg:  Config{ProtoDir: "proto", Files: "a.proto"},
 			deps: func(deps appDeps) appDeps {
-				deps.generate = func(*pluginpb.CodeGeneratorRequest, engine.GeneratorStyle, string, []string) (string, error) {
+				deps.generate = func(*pluginpb.CodeGeneratorRequest, generationOptions) (string, error) {
 					return "", errors.New("render")
 				}
 				return deps
@@ -270,9 +270,9 @@ func TestWritePackageDocuments(t *testing.T) {
 		writtenModes[path] = mode
 		return nil
 	}
-	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, _ engine.GeneratorStyle, packageName string, knownPackages []string) (string, error) {
-		assert.ElementsMatch(t, []string{"alpha.v1", "beta"}, knownPackages)
-		return "generated " + packageName, nil
+	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, options generationOptions) (string, error) {
+		assert.ElementsMatch(t, []string{"alpha.v1", "beta"}, options.knownPackages)
+		return "generated " + options.packageName, nil
 	}
 
 	root := filepath.Join(t.TempDir(), "docs")
@@ -304,6 +304,24 @@ func TestWritePackageDocuments(t *testing.T) {
 	assert.Contains(t, index, "[`alpha.v1`](alpha/v1/README.md)")
 	assert.Contains(t, index, "[`beta`](beta/README.md)")
 	assert.True(t, strings.HasSuffix(index, "\n"))
+
+	checkDeps := deps
+	checkDeps.readFile = func(path string) ([]byte, error) {
+		return []byte(written[path]), nil
+	}
+	checkDeps.mkdirAll = func(string, fs.FileMode) error {
+		return errors.New("mkdir must not be called in check mode")
+	}
+	checkDeps.writeFile = func(string, []byte, fs.FileMode) error {
+		return errors.New("write must not be called in check mode")
+	}
+	require.NoError(t, writePackageDocuments(
+		Config{Output: root, Check: true},
+		request,
+		"prefix\n\n",
+		engine.DefaultGeneratorStyle(),
+		checkDeps,
+	))
 }
 
 func TestPackageDirectory(t *testing.T) {

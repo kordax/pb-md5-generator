@@ -181,6 +181,64 @@ func TestCLIIntegrationReportsCodeMarkerLocation(t *testing.T) {
 	assert.Contains(t, run.output, "failed to marshal and validate json code")
 }
 
+func TestCLIIntegrationLintAndDeterministicCheck(t *testing.T) {
+	root := t.TempDir()
+	protoDir := filepath.Join(root, "proto")
+	require.NoError(t, ufile.EnsureDir(protoDir, 0o750))
+	ufile.MustWrite(filepath.Join(protoDir, "service.proto"), []byte(`syntax = "proto3";
+package example.v1;
+
+// @autocode[json]
+message CreateUserRequest {
+  // Primary contact address.
+  // @doc type=email example="Alice Doe <alice@example.com>" max_len=255
+  string email = 1;
+  // @doc type=uuid
+  string request_id = 2;
+}
+`), 0o600)
+
+	lintOutput := filepath.Join(root, "lint.md")
+	run := runCLI(t, "lint", "-d", protoDir, "-o", lintOutput)
+	require.NoError(t, run.err, run.output)
+	assert.NoFileExists(t, lintOutput)
+
+	firstOutput := filepath.Join(root, "first.md")
+	secondOutput := filepath.Join(root, "second.md")
+	for _, output := range []string{firstOutput, secondOutput} {
+		run = runCLI(t, "generate", "-d", protoDir, "-o", output, "-seed", "42")
+		require.NoError(t, run.err, run.output)
+	}
+	assert.Equal(t, ufile.MustRead(firstOutput), ufile.MustRead(secondOutput))
+
+	run = runCLI(t, "generate", "-d", protoDir, "-o", firstOutput, "-seed", "42", "-check")
+	require.NoError(t, run.err, run.output)
+
+	ufile.MustWrite(firstOutput, []byte("stale\n"), 0o600)
+	run = runCLI(t, "generate", "-d", protoDir, "-o", firstOutput, "-seed", "42", "-check")
+	require.Error(t, run.err)
+	assert.Contains(t, run.output, "documentation is out of date")
+}
+
+func TestCLIIntegrationLintReportsUnknownAnnotation(t *testing.T) {
+	root := t.TempDir()
+	protoDir := filepath.Join(root, "proto")
+	require.NoError(t, ufile.EnsureDir(protoDir, 0o750))
+	ufile.MustWrite(filepath.Join(protoDir, "broken.proto"), []byte(`syntax = "proto3";
+package example.v1;
+
+message Broken {
+  // @doc typo=value
+  string value = 1;
+}
+`), 0o600)
+
+	run := runCLI(t, "lint", "-d", protoDir)
+	require.Error(t, run.err)
+	assert.Contains(t, run.output, "broken.proto:6")
+	assert.Contains(t, run.output, "unknown @doc attribute")
+}
+
 type cliRun struct {
 	output string
 	err    error

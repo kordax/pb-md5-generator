@@ -3,6 +3,7 @@ package password
 import (
 	"crypto/rand"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"strings"
@@ -12,6 +13,7 @@ import (
 const SpecialChars = "!@#$%^&*()[]"
 
 type Generator struct {
+	reader       io.Reader
 	passwords    []string
 	queries      int
 	maxCacheSize int
@@ -24,7 +26,17 @@ type Generator struct {
 }
 
 func NewGenerator(cacheSize, minDec, minChar, minSpec int) *Generator {
+	return NewGeneratorWithReader(rand.Reader, cacheSize, minDec, minChar, minSpec)
+}
+
+// NewGeneratorWithReader uses the supplied reader as its entropy source.
+// Use NewGenerator when passwords are not deterministic fixtures.
+func NewGeneratorWithReader(reader io.Reader, cacheSize, minDec, minChar, minSpec int) *Generator {
+	if reader == nil {
+		reader = rand.Reader
+	}
 	generator := &Generator{
+		reader:       reader,
 		passwords:    make([]string, 0),
 		maxCacheSize: cacheSize,
 		minDec:       minDec,
@@ -71,11 +83,11 @@ func (g *Generator) genPass() string {
 		builder.WriteRune(g.randSpec())
 	}
 
-	return shuffleString(builder.String())
+	return g.shuffleString(builder.String())
 }
 
 func (g *Generator) randChar() rune {
-	c, _ := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+	c, _ := rand.Int(g.reader, big.NewInt(math.MaxInt64))
 	if c.Int64()%2 == 0 {
 		return g.randCharLowercase()
 	} else {
@@ -84,29 +96,29 @@ func (g *Generator) randChar() rune {
 }
 
 func (g *Generator) randCharLowercase() rune {
-	c, _ := rand.Int(rand.Reader, big.NewInt(26))
+	c, _ := rand.Int(g.reader, big.NewInt(26))
 	return rune("abcdefghijklmnopqrstuvwxyz"[c.Int64()])
 }
 
 func (g *Generator) randCharUppercase() rune {
-	c, _ := rand.Int(rand.Reader, big.NewInt(26))
+	c, _ := rand.Int(g.reader, big.NewInt(26))
 	return rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ"[c.Int64()])
 }
 
 func (g *Generator) randDec() rune {
-	c, _ := rand.Int(rand.Reader, big.NewInt(10))
+	c, _ := rand.Int(g.reader, big.NewInt(10))
 	return rune("0123456789"[c.Int64()])
 }
 
 func (g *Generator) randSpec() rune {
-	ind, _ := rand.Int(rand.Reader, big.NewInt(int64(len(SpecialChars))))
+	ind, _ := rand.Int(g.reader, big.NewInt(int64(len(SpecialChars))))
 	return rune(SpecialChars[ind.Int64()])
 }
 
-func shuffleString(str string) string {
+func (g *Generator) shuffleString(str string) string {
 	shuffled := []rune(str)
 	for i := len(shuffled) - 1; i > 0; i-- {
-		j, err := cryptoIndex(i + 1)
+		j, err := g.cryptoIndex(i + 1)
 		if err != nil {
 			return str
 		}
@@ -116,11 +128,11 @@ func shuffleString(str string) string {
 	return string(shuffled)
 }
 
-func cryptoIndex(max int) (int, error) {
+func (g *Generator) cryptoIndex(max int) (int, error) {
 	if max <= 0 {
 		return 0, fmt.Errorf("max should be positive")
 	}
-	index, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	index, err := rand.Int(g.reader, big.NewInt(int64(max)))
 	if err != nil {
 		return 0, err
 	}
