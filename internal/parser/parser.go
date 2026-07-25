@@ -56,6 +56,7 @@ const AutocodeMinMarker = "min"
 const AutocodeMaxLengthMarker = "len"
 const AutocodeValueMarker = "val"
 const AutocodeTypeMarker = "type"
+const DocumentAnnotationMarker = "doc"
 
 const CodeSyntaxPattern = "(" + CodeMarker + "(\\[[a-zA-Z]+\\])" + "|" + AutocodeMarker + ")"
 
@@ -284,10 +285,16 @@ func (f *MessageField) Descriptor() *protokit.FieldDescriptor {
 	return f.d
 }
 
+// ParserOptions configures descriptor parsing behavior.
+type ParserOptions struct {
+	StrictAnnotations bool
+}
+
 type DescriptorParser struct {
 	descriptors  []*protokit.FileDescriptor
 	matchedFiles map[string]*os.File
 	payload      map[string]string
 
-	readOffsets map[string]int
+	readOffsets       map[string]int
+	strictAnnotations bool
 }

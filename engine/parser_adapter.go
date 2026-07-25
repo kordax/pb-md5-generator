@@ -5,13 +5,25 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
+// ParserOptions configures protobuf documentation parsing.
+type ParserOptions struct {
+	StrictAnnotations bool
+}
+
 type DescriptorParser struct {
 	delegate *parser.DescriptorParser
 }
 
 func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorParser {
+	return NewDescriptorParserWithOptions(request, ParserOptions{})
+}
+
+// NewDescriptorParserWithOptions creates a descriptor parser with explicit validation options.
+func NewDescriptorParserWithOptions(request *pluginpb.CodeGeneratorRequest, options ParserOptions) *DescriptorParser {
 	return &DescriptorParser{
-		delegate: parser.NewDescriptorParser(request),
+		delegate: parser.NewDescriptorParserWithOptions(request, parser.ParserOptions{
+			StrictAnnotations: options.StrictAnnotations,
+		}),
 	}
 }
 

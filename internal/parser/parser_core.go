@@ -13,6 +13,11 @@ import (
 )
 
 func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorParser {
+	return NewDescriptorParserWithOptions(request, ParserOptions{})
+}
+
+// NewDescriptorParserWithOptions creates a parser with explicit annotation validation options.
+func NewDescriptorParserWithOptions(request *pluginpb.CodeGeneratorRequest, options ParserOptions) *DescriptorParser {
 	sourceRoots := make(map[string]string)
 	for _, parameter := range strings.Split(request.GetParameter(), ";") {
 		mapping := strings.SplitN(parameter, "=", 2)
@@ -47,17 +52,18 @@ func NewDescriptorParser(request *pluginpb.CodeGeneratorRequest) *DescriptorPars
 	}
 
 	return &DescriptorParser{
-		descriptors:  protokit.ParseCodeGenRequest(request),
-		matchedFiles: matchedFiles,
-		readOffsets:  make(map[string]int),
-		payload:      make(map[string]string),
+		descriptors:       protokit.ParseCodeGenRequest(request),
+		matchedFiles:      matchedFiles,
+		readOffsets:       make(map[string]int),
+		payload:           make(map[string]string),
+		strictAnnotations: options.StrictAnnotations,
 	}
 }
 
 func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
 	result := make([]ParsedFile, 0)
 	sort.Slice(p.descriptors, func(i, j int) bool {
-		return p.descriptors[i].GetName()[0] < p.descriptors[j].GetName()[0]
+		return p.descriptors[i].GetName() < p.descriptors[j].GetName()
 	})
 	msgInd := 0
 	enumInd := 0
@@ -144,6 +150,9 @@ func headerBefore(headers []markerPosition, sourceIndex int) string {
 
 func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header string) (*Message, error) {
 	log.Debug().Msgf("parsing message: %s", descriptor.GetName())
+	if err := validateCommentAnnotations(descriptor.GetComments().String(), p.strictAnnotations, messageAnnotationNames); err != nil {
+		return nil, p.messageError(descriptor, err)
+	}
 	result := &Message{
 		m:      descriptor,
 		header: header,
@@ -212,6 +221,9 @@ func (p *DescriptorParser) parseMessage(descriptor *protokit.Descriptor, header 
 
 func (p *DescriptorParser) parseEnum(descriptor *protokit.EnumDescriptor) (*Enum, error) {
 	log.Debug().Msgf("parsing enum: %s", descriptor.GetName())
+	if err := validateCommentAnnotations(descriptor.GetComments().String(), p.strictAnnotations, enumAnnotationNames); err != nil {
+		return nil, p.enumError(descriptor, err)
+	}
 	result := &Enum{
 		e: descriptor,
 	}
@@ -243,6 +255,9 @@ func (p *DescriptorParser) parseField(descriptor *protokit.FieldDescriptor, m *p
 
 func (p *DescriptorParser) parseEnumValue(descriptor *protokit.EnumValueDescriptor, e *protokit.EnumDescriptor) (*EnumField, error) {
 	log.Debug().Msgf("parsing message field: %s", descriptor.GetFullName())
+	if err := validateCommentAnnotations(descriptor.GetComments().String(), p.strictAnnotations, enumValueAnnotationNames); err != nil {
+		return nil, p.enumValueError(descriptor, err)
+	}
 	description := p.parseEnumValueDescription(descriptor)
 	flags, err := p.parseEnumValueFlags(descriptor)
 	if err != nil {

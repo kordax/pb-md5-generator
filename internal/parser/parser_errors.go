@@ -54,6 +54,11 @@ func (p *DescriptorParser) messageError(descriptor *protokit.Descriptor, err err
 	return p.sourceError(fileName, fmt.Sprintf("message %s", descriptor.GetName()), p.findDeclaration(fileName, "message", descriptor.GetName()), err)
 }
 
+func (p *DescriptorParser) enumError(descriptor *protokit.EnumDescriptor, err error) error {
+	fileName := descriptor.GetFile().GetName()
+	return p.sourceError(fileName, fmt.Sprintf("enum %s", descriptor.GetName()), p.findDeclaration(fileName, "enum", descriptor.GetName()), err)
+}
+
 func (p *DescriptorParser) fieldError(descriptor *protokit.FieldDescriptor, err error) error {
 	fileName := descriptor.GetFile().GetName()
 	return p.sourceError(fileName, fmt.Sprintf("field %s", descriptor.GetName()), p.findFieldDeclaration(fileName, descriptor.GetName()), err)
