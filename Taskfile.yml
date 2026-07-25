@@ -28,6 +28,8 @@ tasks:
       - test
       - check
       - check-coverage
+      - lint-docs
+      - check-example
       - security
       - actionlint
 
@@ -47,35 +49,51 @@ tasks:
     sources:
       - "**/*.go"
 
+  lint-docs:
+    desc: "Validate documentation annotations in the integration fixture"
+    cmds:
+      - go run ./cmd/pb-md5-generator lint -d testdata/integration -f testdata/integration/full_api.proto
+    sources:
+      - "testdata/integration/full_api.proto"
+      - "**/*.go"
+
   generate-example:
     desc: "Generate EXAMPLE.md from the full integration fixture"
     cmds:
       - |
-        prefix="$(mktemp)"
-        trap 'rm -f "$prefix"' EXIT
-        printf '%s\n' \
-          '# Example Output' \
-          '' \
-          'This file is a generated markdown example for the larger integration fixture: `testdata/integration/full_api.proto`.' \
-          '' \
-          'It demonstrates the renderer output for annotated protobuf definitions, including generated and explicit code examples, nested messages, maps, repeated fields, enums, oneof payloads, and ignored definitions.' \
-          '' \
-          '```console' \
-          './build/pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md' \
-          '```' \
-          '' > "$prefix"
-        go run ./cmd/pb-md5-generator \
+        go run ./cmd/pb-md5-generator generate \
           -d testdata/integration \
           -f testdata/integration/full_api.proto \
           -o EXAMPLE.md \
-          -p "$prefix" \
+          -p testdata/integration/example_prefix.md \
+          -seed 1 \
           -style-table-identifiers "{{.STYLE_TABLE | default "bold-code"}}" \
           -style-heading-identifiers "{{.STYLE_HEADING | default "code"}}"
     sources:
       - "testdata/integration/full_api.proto"
+      - "testdata/integration/example_prefix.md"
       - "**/*.go"
     generates:
       - "EXAMPLE.md"
+
+  check-example:
+    desc: "Verify that EXAMPLE.md is current"
+    cmds:
+      - |
+        go run ./cmd/pb-md5-generator generate \
+          -d testdata/integration \
+          -f testdata/integration/full_api.proto \
+          -o EXAMPLE.md \
+          -p testdata/integration/example_prefix.md \
+          -seed 1 \
+          -check \
+          -style-table-identifiers "{{.STYLE_TABLE | default "bold-code"}}" \
+          -style-heading-identifiers "{{.STYLE_HEADING | default "code"}}"
+    sources:
+      - "EXAMPLE.md"
+      - "testdata/integration/full_api.proto"
+      - "testdata/integration/example_prefix.md"
+      - "**/*.go"
 
   check:
     desc: "Running golangci-lint"

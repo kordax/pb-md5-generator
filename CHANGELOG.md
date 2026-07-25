@@ -1,5 +1,31 @@
 # Changelog
 
+## [v1.2.0] - 2026-07-26
+
+Annotation validation and reproducible documentation generation.
+
+### Added
+
+- Added the canonical `@doc` field annotation with typed attributes, quoted
+  values, and compatibility aliases for existing field metadata.
+- Added a `lint` command that validates annotations without writing Markdown.
+- Added `generate -check` for detecting missing or stale generated documents in
+  CI without changing the worktree.
+- Added `-seed` for stable, configurable generated examples and
+  `-strict-annotations` for opt-in validation during generation.
+
+### Changed
+
+- Generated examples are deterministic by default, including names, numbers,
+  booleans, passwords, and UUIDs.
+- Annotation names are matched exactly. Email addresses and ordinary `@` text
+  are preserved in descriptions.
+- Unsupported code block syntaxes and inconsistent numeric or length constraints
+  now produce contextual parser errors.
+- Proto files are ordered by their full source path before document generation.
+- Existing `@min`, `@max`, `@len`, `@val`, and `@type` annotations remain fully
+  supported.
+
 ## [v1.1.1] - 2026-07-25
 
 Maintenance release with release automation and reproducible project checks.
@@ -52,5 +78,6 @@ Changes since `v1.0.0`.
 
 - Removed the runtime dependency on `protoc` and `protoc-gen-go`.
 
+[v1.2.0]: https://github.com/kordax/pb-md5-generator/compare/v1.1.1...v1.2.0
 [v1.1.1]: https://github.com/kordax/pb-md5-generator/compare/v1.1.0...v1.1.1
 [v1.1.0]: https://github.com/kordax/pb-md5-generator/compare/v1.0.0...v1.1.0

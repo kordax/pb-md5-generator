@@ -84,8 +84,24 @@ syntax:
 
 ## Extended Comment Annotations
 
-In addition to the previously mentioned comment annotations, the program also supports the following annotations for
-enhancing the detail and constraints in the protobuf file documentation:
+In addition to the previously mentioned comment annotations, the program also supports field metadata for generated
+examples and documented constraints.
+
+`@doc` is the canonical field annotation. It groups typed attributes on one line:
+
+```protobuf
+message CreateUserRequest {
+  // Primary contact address.
+  // @doc type=email example="Alice Doe <alice@example.com>" max_len=255
+  string email = 1;
+}
+```
+
+Supported attributes are `min`, `max`, `max_len`, `example`, and `type`. The `ignore` flag omits a field. Quote values
+that contain spaces or `@`. Email addresses and ordinary mentions in prose remain part of the description.
+
+The legacy `@min`, `@max`, `@len`, `@val`, and `@type` forms remain supported, so existing proto files do not need a
+migration. `max_len` maps to `@len`, and `example` maps to `@val`.
 
 1. **Max Annotation**
    - Syntax: `@max=<value>`
@@ -170,22 +186,21 @@ enum Role {
  * @autocode[json]
  */
 message CreateUserRequest {
-  // @type=email
+  // @doc type=email
   string email = 1;
-  // @type=phone
+  // @doc type=phone
   string phone = 2;
-  // @type=password
+  // @doc type=password
   string password = 3;
-  // @type=uuid
+  // @doc type=uuid
   string request_uuid = 4;
-  // @type=jwt
+  // @doc type=jwt
   string access_token = 5;
-  // @min=18
-  // @max=100
+  // @doc min=18 max=100
   int32 age = 6;
-  // @len=12
+  // @doc max_len=12
   string display_name = 7;
-  // @val=fixed-nickname
+  // @doc example=fixed-nickname
   string nickname = 8;
   Role role = 9;
   repeated string tags = 10;
@@ -355,6 +370,28 @@ task build
 
 ## Program Usage
 
+Running the binary without a command keeps the original generation behavior. The explicit form is equivalent:
+
+```console
+./build/pb-md5-generator generate -d ./api/proto -o ./README.md
+```
+
+Use `lint` in CI to parse every selected proto with strict annotation validation without writing Markdown:
+
+```console
+./build/pb-md5-generator lint -d ./api/proto
+```
+
+Use `generate -check` to compare deterministic output with files already on disk. It exits with an error when a document
+is missing or stale and never creates directories or writes files:
+
+```console
+./build/pb-md5-generator generate -d ./api/proto -o ./README.md -check
+```
+
+Generated examples use seed `1` by default. Pass `-seed` when a project needs a different stable fixture. The same input
+and seed produce the same Markdown across repeated runs.
+
 ### One document
 
 `-d` is the protobuf source root. Every `.proto` below it is discovered
@@ -413,14 +450,19 @@ README; scalar and external dependency types are rendered as inline code.
 
 ## Options
 
-| Option                | Description                                                                       |
-|-----------------------|-----------------------------------------------------------------------------------|
-| `-d`, `-proto-dir`    | Source root scanned recursively for `.proto` files.                               |
-| `-I`, `-proto-path`   | Additional local source root; may be repeated or contain an OS path list.          |
-| `-f`, `-files`        | Semicolon-separated source file list instead of recursive discovery.              |
-| `-o`, `-output`       | Markdown file, or output directory with `-split-by-package`.                      |
-| `-p`                  | Markdown file prepended to generated document(s).                                 |
-| `-split-by-package`   | Write an index and one `README.md` per protobuf package.                           |
+| Option                  | Description                                                                       |
+|-------------------------|-----------------------------------------------------------------------------------|
+| `-d`, `-proto-dir`      | Source root scanned recursively for `.proto` files.                               |
+| `-I`, `-proto-path`     | Additional local source root; may be repeated or contain an OS path list.         |
+| `-f`, `-files`          | Semicolon-separated source file list instead of recursive discovery.              |
+| `-o`, `-output`         | Markdown file, or output directory with `-split-by-package`.                      |
+| `-p`                    | Markdown file prepended to generated document(s).                                 |
+| `-split-by-package`     | Write an index and one `README.md` per protobuf package.                           |
+| `-check`                | Compare generated content with existing files without writing.                    |
+| `-seed`                 | Set the deterministic example seed. Defaults to `1`.                              |
+| `-strict-annotations`   | Reject unknown, duplicate, malformed, or misplaced annotations.                   |
+
+The `lint` command always enables strict annotation validation.
 
 ### Style Options
 

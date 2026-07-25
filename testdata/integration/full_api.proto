@@ -37,42 +37,37 @@ enum Role {
  */
 message CreateUserRequest {
   // Email field description.
-  // @type=email
+  // @doc type=email
   string email = 1;
   // Phone field description.
-  // @type=phone
+  // @doc type=phone
   string phone = 2;
   // Password field description.
-  // @type=password
+  // @doc type=password
   string password = 3;
   // UUID field description.
-  // @type=uuid
+  // @doc type=uuid
   string request_uuid = 4;
   // JWT field description.
-  // @type=jwt
-  // @val=example-access-token
+  // @doc type=jwt example=example-access-token
   string access_token = 5;
   // Age field description.
-  // @min=18
-  // @max=100
+  // @doc min=18 max=100
   int32 age = 6;
   // Score field description.
-  // @min=0.5
-  // @max=99.9
+  // @doc min=0.5 max=99.9
   double score = 7;
   // Login count field description.
-  // @type=uint
-  // @min=1
-  // @max=42
+  // @doc type=uint min=1 max=42
   uint64 login_count = 8;
   // Display name field description.
-  // @len=12
+  // @doc max_len=12
   string display_name = 9;
   // Fixed nickname field description.
-  // @val=fixed-nickname
+  // @doc example=fixed-nickname
   string nickname = 10;
   // Fixed bool field description.
-  // @val=true
+  // @doc example=true
   bool enabled = 11;
   // Role enum field description.
   Role role = 12;
@@ -81,7 +76,7 @@ message CreateUserRequest {
   // Bytes payload field description.
   bytes raw_payload = 14;
   // This field must not appear in generated documentation.
-  // @ignore
+  // @doc ignore
   string internal_note = 15;
 }
 

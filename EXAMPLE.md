@@ -5,10 +5,8 @@ This file is a generated markdown example for the larger integration fixture: `t
 It demonstrates the renderer output for annotated protobuf definitions, including generated and explicit code examples, nested messages, maps, repeated fields, enums, oneof payloads, and ignored definitions.
 
 ```console
-./build/pb-md5-generator -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md
+./build/pb-md5-generator generate -d testdata/integration -f testdata/integration/full_api.proto -o EXAMPLE.md -seed 1
 ```
-
-
 
 * Table Of Contents
      * [CreateUserRequest](#fixture.CreateUserRequest)
@@ -70,21 +68,21 @@ Creates a user with generated JSON example.
 {
 	"CreateUserRequest": {
 		"access_token": "example-access-token",
-		"age": 59,
-		"display_name": "purple-reson",
-		"email": "dawn-star@email.com",
+		"age": 56,
+		"display_name": "dark-voice",
+		"email": "bold-glitter@email.com",
 		"enabled": true,
-		"login_count": 11,
+		"login_count": 12,
 		"nickname": "fixed-nickname",
-		"password": "C4VYA#220b108",
-		"phone": "+991.3027123964",
-		"raw_payload": "cool-frost",
-		"request_uuid": "cb68c0a9-1348-415a-81f7-5809056cf53e",
-		"role": "ROLE_ADMIN",
-		"score": 15.923665950010314,
-		"tags": "wispy-paper"
+		"password": "wE29y9G4#26W4",
+		"phone": "+633.8426211692",
+		"raw_payload": "restless-surf",
+		"request_uuid": "d471c483-f15f-490b-adb3-7c5821b6d955",
+		"role": "ROLE_MEMBER",
+		"score": 64.21844269698448,
+		"tags": "hidden-sea"
 	},
-	"trx": "3bd733e6-c5c8-4336-a6fe-2e525df3e70d"
+	"trx": "4784045d-87f3-467c-b227-46e995af5a25"
 }
 ```
 
@@ -152,11 +150,11 @@ XML autocode marker coverage.
 ```
 {
 	"SessionAuditRequest": {
-		"active": false,
-		"risk_score": 354174.87737456034,
+		"active": true,
+		"risk_score": 842435.9885913228,
 		"session_id": "session-1"
 	},
-	"trx": "668f0416-0408-47a8-8d9b-ae2f7b120645"
+	"trx": "3a1b1d49-d495-4c84-8621-6325253fec73"
 }
 ```
 
@@ -244,17 +242,17 @@ Creates a payment using generated JSON example.
 ```
 {
 	"CreatePaymentRequest": {
-		"amount_minor": 10867,
-		"attempt": 3,
+		"amount_minor": 134233,
+		"attempt": 1,
 		"capture": false,
-		"currency": "CURRENCY_KZT",
-		"customer_email": "summer-fire@email.com",
+		"currency": "CURRENCY_USD",
+		"customer_email": "summer-night@email.com",
 		"idempotency_key": "example-idempotency-key",
 		"merchant_id": "merchant-001",
 		"order_id": "order-9001",
-		"risk_score": 0.8420787705465779
+		"risk_score": 0.595543987676629
 	},
-	"trx": "1250a8f8-2641-4b73-83b5-b57eef30cffc"
+	"trx": "160f0702-4486-45bb-9a08-313f6a8eb668"
 }
 ```
 
@@ -434,12 +432,12 @@ Catalog search request with generated example.
 {
 	"SearchCatalogRequest": {
 		"include_archived": false,
-		"page": 15,
-		"page_size": 43,
+		"page": 3,
+		"page_size": 90,
 		"query": "mechanical-keyboard",
-		"region": "REGION_US_EAST"
+		"region": "REGION_AP_SOUTH"
 	},
-	"trx": "13cf38e6-eec0-48da-b487-ff5ea34375ac"
+	"trx": "7fc48445-92d2-472b-8d06-68d2d6c52f50"
 }
 ```
 
@@ -564,14 +562,14 @@ Audit query request with several generated constrained values.
 ```
 {
 	"AuditQueryRequest": {
-		"action": "AUDIT_ACTION_CREATED",
-		"actor_email": "broken-forest@email.com",
+		"action": "AUDIT_ACTION_UNKNOWN",
+		"actor_email": "dry-water@email.com",
 		"from": "2026-07-09T00:00:00Z",
-		"limit": 168,
+		"limit": 405,
 		"tenant_id": "tenant-fixture",
 		"to": "2026-07-09T23:59:59Z"
 	},
-	"trx": "4c9a6909-656e-429f-8293-fc3e4a662cb9"
+	"trx": "6bf84c71-74cb-4476-b64c-c3dbd968b0f7"
 }
 ```
 
@@ -787,7 +785,9 @@ Notification batch with oneof payload alternatives and nested recipient details.
 
 <a name="fixture.UserStatus"></a>
 
-#### `fixture.UserStatus` enum:
+#### `fixture.UserStatus` enum description:
+
+User status enum description.
 
 | Value                       | Description                   |
 |-----------------------------|-------------------------------|
@@ -809,7 +809,9 @@ Role enum description.
 
 <a name="fixture.PaymentStatus"></a>
 
-#### `fixture.PaymentStatus` enum:
+#### `fixture.PaymentStatus` enum description:
+
+Payment status enum description.
 
 | Value                         | Description                                     |
 |-------------------------------|-------------------------------------------------|
@@ -834,7 +836,9 @@ Currency enum description.
 
 <a name="fixture.Region"></a>
 
-#### `fixture.Region` enum:
+#### `fixture.Region` enum description:
+
+Region enum description.
 
 | Value                 | Description        |
 |-----------------------|--------------------|
@@ -858,7 +862,9 @@ Inventory state enum description.
 
 <a name="fixture.AuditAction"></a>
 
-#### `fixture.AuditAction` enum:
+#### `fixture.AuditAction` enum description:
+
+Audit action enum description.
 
 | Value                       | Description              |
 |-----------------------------|--------------------------|
@@ -870,7 +876,9 @@ Inventory state enum description.
 
 <a name="fixture.NotificationChannel"></a>
 
-#### `fixture.NotificationChannel` enum:
+#### `fixture.NotificationChannel` enum description:
+
+Notification channel enum description.
 
 | Value                              | Description                      |
 |------------------------------------|----------------------------------|

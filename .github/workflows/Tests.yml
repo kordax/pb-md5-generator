@@ -26,3 +26,9 @@ jobs:
 
       - name: Integration test
         run: task integration-test
+
+      - name: Lint documentation annotations
+        run: task lint-docs
+
+      - name: Check generated example
+        run: task check-example
