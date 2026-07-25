@@ -65,7 +65,7 @@ func writePackageDocuments(
 	if err != nil {
 		return fmt.Errorf("failed to split protobuf request by package: %w", err)
 	}
-	if err := deps.mkdirAll(cfg.Output, 0o750); err != nil {
+	if err := deps.mkdirAll(cfg.Output, 0o755); err != nil {
 		return fmt.Errorf("failed to initialize markdown output directory %s: %w", cfg.Output, err)
 	}
 	knownPackages := make([]string, 0, len(packages))
@@ -79,7 +79,7 @@ func writePackageDocuments(
 			return err
 		}
 		output := filepath.Join(cfg.Output, relativeDir, "README.md")
-		if err := deps.mkdirAll(filepath.Dir(output), 0o750); err != nil {
+		if err := deps.mkdirAll(filepath.Dir(output), 0o755); err != nil {
 			return fmt.Errorf("failed to initialize package output directory %s: %w", filepath.Dir(output), err)
 		}
 
@@ -92,13 +92,13 @@ func writePackageDocuments(
 			return fmt.Errorf("failed to generate markdown document for package %s: %w", packageTitle, err)
 		}
 		log.Info().Msgf("writing package %s to: %s", packageTitle, output)
-		if err := deps.writeFile(output, []byte(withTrailingNewline(prefix+generated)), 0o600); err != nil {
+		if err := deps.writeFile(output, []byte(withTrailingNewline(prefix+generated)), 0o644); err != nil {
 			return fmt.Errorf("cannot save package %s to output file %s: %w", packageTitle, output, err)
 		}
 	}
 
 	indexPath := filepath.Join(cfg.Output, "README.md")
-	if err := deps.writeFile(indexPath, []byte(packageIndex(packages)), 0o600); err != nil {
+	if err := deps.writeFile(indexPath, []byte(packageIndex(packages)), 0o644); err != nil {
 		return fmt.Errorf("cannot save package index to output file %s: %w", indexPath, err)
 	}
 	return nil

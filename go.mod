@@ -2,7 +2,7 @@ module github.com/kordax/pb-md5-generator
 
 go 1.26
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require (
 	github.com/bufbuild/protocompile v0.14.1

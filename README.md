@@ -341,7 +341,12 @@ resolve or download imports, run `buf`, use a language plugin, or require Docker
 
 ## Installation
 
-Build the current checkout into the ignored `build/` directory:
+Download a ready-to-run archive for Linux, macOS, or Windows from the
+[GitHub Releases](https://github.com/kordax/pb-md5-generator/releases) page.
+Archives are published for `amd64` and `arm64`; verify the download against the
+release checksum file.
+
+To build the current checkout into the ignored `build/` directory:
 
 ```console
 task build

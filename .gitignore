@@ -27,5 +27,6 @@ keys/
 .gortex/
 cover.out
 /build/
+/dist/
 /proto-docs/
 /pb-md5-generator

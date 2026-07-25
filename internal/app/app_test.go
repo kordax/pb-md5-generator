@@ -110,8 +110,13 @@ func TestRunWithDepsSuccess(t *testing.T) {
 	var writtenPath string
 	var writtenContent string
 	var writtenMode fs.FileMode
+	var directoryMode fs.FileMode
 	var generatedStyle engine.GeneratorStyle
 
+	deps.mkdirAll = func(_ string, mode fs.FileMode) error {
+		directoryMode = mode
+		return nil
+	}
 	deps.writeFile = func(path string, content []byte, mode fs.FileMode) error {
 		writtenPath = path
 		writtenContent = string(content)
@@ -137,7 +142,8 @@ func TestRunWithDepsSuccess(t *testing.T) {
 
 	assert.Equal(t, "out.md", writtenPath)
 	assert.Equal(t, "prefix\n\ngenerated\n", writtenContent)
-	assert.Equal(t, fs.FileMode(0o600), writtenMode)
+	assert.Equal(t, fs.FileMode(0o644), writtenMode)
+	assert.Equal(t, fs.FileMode(0o755), directoryMode)
 	assert.Equal(t, engine.IdentifierStylePlain, generatedStyle.TableIdentifiers)
 	assert.Equal(t, engine.IdentifierStyleBoldCode, generatedStyle.HeadingIdentifiers)
 }
@@ -253,8 +259,15 @@ func TestSplitRequestByPackage(t *testing.T) {
 func TestWritePackageDocuments(t *testing.T) {
 	deps := testDeps()
 	written := make(map[string]string)
-	deps.writeFile = func(path string, content []byte, _ fs.FileMode) error {
+	writtenModes := make(map[string]fs.FileMode)
+	var directoryModes []fs.FileMode
+	deps.mkdirAll = func(_ string, mode fs.FileMode) error {
+		directoryModes = append(directoryModes, mode)
+		return nil
+	}
+	deps.writeFile = func(path string, content []byte, mode fs.FileMode) error {
 		written[path] = string(content)
+		writtenModes[path] = mode
 		return nil
 	}
 	deps.generate = func(_ *pluginpb.CodeGeneratorRequest, _ engine.GeneratorStyle, packageName string, knownPackages []string) (string, error) {
@@ -277,6 +290,13 @@ func TestWritePackageDocuments(t *testing.T) {
 		engine.DefaultGeneratorStyle(),
 		deps,
 	))
+
+	for path := range written {
+		assert.Equal(t, fs.FileMode(0o644), writtenModes[path])
+	}
+	for _, mode := range directoryModes {
+		assert.Equal(t, fs.FileMode(0o755), mode)
+	}
 
 	assert.Equal(t, "prefix\n\ngenerated alpha.v1\n", written[filepath.Join(root, "alpha", "v1", "README.md")])
 	assert.Equal(t, "prefix\n\ngenerated beta\n", written[filepath.Join(root, "beta", "README.md")])

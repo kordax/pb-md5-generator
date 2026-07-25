@@ -10,7 +10,21 @@ import (
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestMarkdownRendererRenderHTMLRef(t *testing.T) {
+	renderer := NewMarkdownRenderer(DefaultConfig())
+	anchor := `<a name="c27.auth.v2.Request"></a>`
+
+	chars, err := renderer.renderHtmlRef(
+		md.NewHtmlRefBuilder().Name("c27.auth.v2.Request").Build(),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(anchor), chars)
+	assert.Equal(t, "\n"+anchor+"\n", renderer.builder.String())
+}
 
 func TestNewConfigurableMDGenerator_renderHeader(t *testing.T) {
 	logger := log.With().Str("test", "TestNewConfigurableMDGenerator_renderHeader").Logger()

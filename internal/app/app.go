@@ -170,11 +170,11 @@ func runWithDeps(cfg Config, deps appDeps) error {
 	}
 	content += generated
 
-	if err := deps.mkdirAll(filepath.Dir(cfg.Output), 0o750); err != nil {
+	if err := deps.mkdirAll(filepath.Dir(cfg.Output), 0o755); err != nil {
 		return fmt.Errorf("failed to initialize markdown output directory %s: %w", filepath.Dir(cfg.Output), err)
 	}
 	log.Info().Msgf("writing content to: %s", cfg.Output)
-	if err := deps.writeFile(cfg.Output, []byte(withTrailingNewline(content)), 0o600); err != nil {
+	if err := deps.writeFile(cfg.Output, []byte(withTrailingNewline(content)), 0o644); err != nil {
 		return fmt.Errorf("cannot save results to output file %s: %w", cfg.Output, err)
 	}
 	return nil
