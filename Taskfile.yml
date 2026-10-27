@@ -10,6 +10,18 @@ vars:
   ACTIONLINT_VERSION: v1.7.12
 
 tasks:
+  docker:up:
+    desc: "Build and start the Docker documentation preview"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose up --build -d --wait
+
+  docker:down:
+    desc: "Stop the Docker documentation preview"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose down
+
   build:
     desc: "Build the standalone binary into build/"
     cmds:
