@@ -470,7 +470,7 @@ func (r *apiRenderer) operation(operation document.Operation) {
 	}
 	r.securityRequirements(operation.Security, "Effective authentication")
 	r.rawPreview("Original operation metadata", string(operation.Raw))
-	if r.api.Protocol == "http" && (operation.Interaction == "" || operation.Interaction == "request") {
+	if (r.manifest.API == nil || r.manifest.API.Enabled) && r.api.Protocol == "http" && (operation.Interaction == "" || operation.Interaction == "request") {
 		r.raw(`<button type="button" data-api-operation="`)
 		r.text(operation.ID)
 		r.raw(`" data-api-url="`)

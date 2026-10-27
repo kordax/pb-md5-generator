@@ -32,12 +32,21 @@ const (
 
 // Manifest is the v1 project contract. Paths use forward slashes on every OS.
 type Manifest struct {
-	Schema      string   `json:"$schema,omitempty"`
-	Version     int      `json:"version"`
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Pages       []Page   `json:"pages"`
-	Assets      []string `json:"assets,omitempty"`
+	Schema      string                       `json:"$schema,omitempty"`
+	Version     int                          `json:"version"`
+	Title       string                       `json:"title"`
+	Description string                       `json:"description,omitempty"`
+	Pages       []Page                       `json:"pages"`
+	Assets      []string                     `json:"assets,omitempty"`
+	Logo        string                       `json:"logo,omitempty"`
+	Favicon     string                       `json:"favicon,omitempty"`
+	Footer      string                       `json:"footer,omitempty"`
+	ThemeID     string                       `json:"themeId,omitempty"`
+	Theme       *document.Theme              `json:"theme,omitempty"`
+	Navigation  *document.NavigationSettings `json:"navigation,omitempty"`
+	Editor      *document.EditorSettings     `json:"editor,omitempty"`
+	API         *document.APISettings        `json:"api,omitempty"`
+	Publishing  *document.PublishingSettings `json:"publishing,omitempty"`
 }
 
 // Page declares a Markdown, protobuf or OpenAPI source and an explicit HTML destination.
@@ -53,6 +62,16 @@ func loadManifest(root *os.Root, name string) (Manifest, error) {
 	data, err := readLimited(root, name, maxManifestBytes)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("read manifest: %w", err)
+	}
+	return DecodeManifest(data)
+}
+
+// DecodeManifest applies the authoring source contract used by static builds
+// and the CMS. Null optional pointer groups follow omitted-group defaults;
+// HTTP request payloads have their own stricter decoding rules.
+func DecodeManifest(data []byte) (Manifest, error) {
+	if len(data) > maxManifestBytes {
+		return Manifest{}, fmt.Errorf("manifest exceeds %d bytes", maxManifestBytes)
 	}
 	if !utf8.Valid(data) {
 		return Manifest{}, fmt.Errorf("manifest is not valid UTF-8")
@@ -116,7 +135,7 @@ func (m *Manifest) validate() error {
 		if page.Kind == "" {
 			page.Kind = "markdown"
 		}
-		if page.Kind != "markdown" && page.Kind != "protobuf" && page.Kind != "openapi" {
+		if page.Kind != "markdown" && page.Kind != "html" && page.Kind != "protobuf" && page.Kind != "openapi" {
 			return fmt.Errorf("page %d: unsupported kind %q", i+1, page.Kind)
 		}
 	}
@@ -138,11 +157,24 @@ func (m *Manifest) validate() error {
 		}
 		seenAssets[strings.ToLower(asset)] = true
 	}
-	return nil
+	return m.ValidateAppearance()
+}
+
+// ReadManifest reads and validates a confined portable project manifest.
+func ReadManifest(root *os.Root, name string) (Manifest, error) {
+	return loadManifest(root, name)
+}
+
+// ValidateManifest validates and normalizes IDs and source kinds in a manifest.
+func ValidateManifest(manifest *Manifest) error {
+	if manifest == nil {
+		return fmt.Errorf("manifest is required")
+	}
+	return manifest.validate()
 }
 
 func localPath(value string) bool {
-	if !fs.ValidPath(value) || value == "." || !utf8.ValidString(value) {
+	if len(value) > 4096 || !fs.ValidPath(value) || value == "." || !utf8.ValidString(value) {
 		return false
 	}
 	for _, r := range value {

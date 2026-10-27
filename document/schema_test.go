@@ -154,7 +154,7 @@ func TestManifestSchemaStructure(t *testing.T) {
 		{"empty pages", func(value map[string]any) { value["pages"] = []any{} }},
 		{"null assets", func(value map[string]any) { value["assets"] = nil }},
 		{"missing page source", func(value map[string]any) { delete(value["pages"].([]any)[0].(map[string]any), "source") }},
-		{"unknown page kind", func(value map[string]any) { value["pages"].([]any)[0].(map[string]any)["kind"] = "html" }},
+		{"unknown page kind", func(value map[string]any) { value["pages"].([]any)[0].(map[string]any)["kind"] = "unknown-format" }},
 		{"unknown page field", func(value map[string]any) { value["pages"].([]any)[0].(map[string]any)["url"] = "x" }},
 		{"invalid explicit ID", func(value map[string]any) { value["pages"].([]any)[0].(map[string]any)["id"] = "Guide/Unsafe" }},
 	}

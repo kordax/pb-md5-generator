@@ -100,7 +100,8 @@ func BuildContext(ctx context.Context, configPath, output string, options Option
 		}
 		return stageFile(stage, name, data)
 	}
-	project := document.Project{Schema: "schema/project-v1.json", Format: "pb-docs/project", Version: document.FormatVersion, Title: manifest.Title, Description: manifest.Description, Source: document.Location{File: filepath.Base(configPath)}, Root: "../", Pages: make([]document.PageReference, 0, len(manifest.Pages))}
+	project := ProjectModel(manifest)
+	project.Source = document.Location{File: filepath.Base(configPath)}
 	hasAPI, interactive := false, false
 	metadata := make([]pageContent, len(manifest.Pages))
 	search := make([]searchEntry, 0, len(manifest.Pages))
@@ -139,7 +140,6 @@ func BuildContext(ctx context.Context, configPath, output string, options Option
 		if err := write(pageDataPath(page), data); err != nil {
 			return err
 		}
-		project.Pages = append(project.Pages, document.PageReference{ID: page.ID, Title: page.Title, Path: page.Path, Source: pageModel.Source, Kind: page.Kind, Data: strings.TrimPrefix(pageDataPath(page), "_docs/")})
 		hasAPI, interactive = hasAPI || api != nil, interactive || content.Interactive
 		entry := searchEntry{Title: page.Title, URL: page.Path, Text: content.Text}
 		searchSize += len(entry.Text) + len(entry.Title) + len(entry.URL)
@@ -193,6 +193,9 @@ func BuildContext(ctx context.Context, configPath, output string, options Option
 		if err := write("_docs/api-client.js", []byte(apiClientJS)); err != nil {
 			return err
 		}
+	}
+	if err := write("_docs/appearance.css", []byte(appearanceCSS(manifest))); err != nil {
+		return err
 	}
 	for name, content := range map[string]string{"_docs/site.css": siteCSS, "_docs/site.js": siteJS} {
 		if err := write(name, []byte(content)); err != nil {

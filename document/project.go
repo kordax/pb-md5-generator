@@ -20,14 +20,23 @@ type Location struct {
 // Project is a small index. Each page has its own data artifact, so a compiler or
 // reader can process a large project without retaining every page and API graph.
 type Project struct {
-	Schema      string          `json:"$schema"`
-	Format      string          `json:"format"`
-	Version     int             `json:"version"`
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	Source      Location        `json:"source"`
-	Root        string          `json:"root"`
-	Pages       []PageReference `json:"pages"`
+	Schema      string              `json:"$schema"`
+	Format      string              `json:"format"`
+	Version     int                 `json:"version"`
+	Title       string              `json:"title"`
+	Description string              `json:"description,omitempty"`
+	Source      Location            `json:"source"`
+	Root        string              `json:"root"`
+	Pages       []PageReference     `json:"pages"`
+	Logo        string              `json:"logo,omitempty"`
+	Favicon     string              `json:"favicon,omitempty"`
+	Footer      string              `json:"footer,omitempty"`
+	ThemeID     string              `json:"themeId,omitempty"`
+	Theme       *Theme              `json:"theme,omitempty"`
+	Navigation  *NavigationSettings `json:"navigation,omitempty"`
+	Editor      *EditorSettings     `json:"editor,omitempty"`
+	API         *APISettings        `json:"api,omitempty"`
+	Publishing  *PublishingSettings `json:"publishing,omitempty"`
 }
 
 type PageReference struct {
@@ -87,6 +96,7 @@ type Block struct {
 	ID            string    `json:"id,omitempty"`
 	Level         int       `json:"level,omitempty"`
 	Text          string    `json:"text,omitempty"`
+	HTML          string    `json:"html,omitempty"`
 	Language      string    `json:"language,omitempty"`
 	Title         string    `json:"title,omitempty"`
 	Variant       string    `json:"variant,omitempty"`

@@ -1,13 +1,13 @@
 # Documentation system design
 
 Status: draft standard and implementation roadmap. The project is growing from a
-protobuf Markdown generator into a documentation compiler. The standard covers
-guides, reference material, tutorials, runbooks, architecture records and APIs.
-Protobuf is one input format.
+protobuf Markdown generator into a documentation compiler and a self-hosted CMS.
+The standard covers guides, reference material, tutorials, runbooks, architecture
+records and APIs. Protobuf is one input format.
 
-This document separates the initial static site foundation from the capabilities
-still needed for a complete system. It is not a claim of compatibility with every
-MkDocs plugin or Scalar feature.
+This document records the compiler and CMS foundation and the capabilities still
+needed for the complete product. Compatibility with every MkDocs plugin, Scalar
+feature or Wiki.js connector remains outside the verified implementation.
 
 ## Product and deployment model
 
@@ -15,7 +15,18 @@ Authors keep Markdown, API contracts, examples and a small manifest in Git. A
 single Go binary validates the sources and builds a directory of HTML, CSS,
 JavaScript, assets and search data. Any static HTTP host can serve that directory,
 including a container, an existing reverse proxy, object storage or GitHub Pages.
-The deployed documentation needs no application process or database.
+A static export needs no application process or database.
+
+The same binary also runs the authenticated CMS. Its editor, users, drafts,
+history, Git operations and settings use dedicated persistent data directories.
+The server embeds its admin assets and composes the application through named Fx
+modules. Node.js is a development tool for the editor bundle, not a CMS runtime
+requirement. [CMS deployment](cms.md) describes native and Docker startup, private
+volumes and offline backup/restore.
+
+CMS requests enforce document and file permissions, including imported sources,
+search data and page models. A static export has no per-user authorization;
+select its content and hosting access accordingly.
 
 This follows the useful deployment property of
 [MkDocs](https://www.mkdocs.org/user-guide/deploying-your-docs/): its generated files
@@ -75,7 +86,7 @@ with existing files and does not create directories or write documentation.
 
 Required manifest fields are `version`, `title` and a nonempty `pages` list.
 Each page requires `title`, `source` and `path`. The optional `kind` defaults
-to `markdown`; alternatives are `markdown`, `protobuf` and `openapi`.
+to `markdown`; supported kinds are `markdown`, `html`, `protobuf` and `openapi`.
 `description`, `$schema` and `assets` are optional. An optional unique page `id`
 preserves its identity through path changes; otherwise identity derives from its
 output path. The order of `pages` determines navigation order.
@@ -107,8 +118,12 @@ declared capabilities; a reader must not silently omit content it cannot render.
 Markdown remains the default for ordinary documentation. Headings, links, images,
 lists, tables, quotations and fenced code blocks should cover most pages.
 The first foundation uses goldmark, heading anchors and an on-page contents list.
-Raw HTML execution is disabled. An author should not need JSX, a JavaScript
-toolchain or an executable template to write a guide.
+Raw HTML in Markdown remains omitted. Explicit `html` pages use an allowlist
+sanitizer, the shared link and anchor rules, and bounded HTML parsing. Scripts,
+styles, forms and embedded active content are excluded. The
+[HTML contract](format.md#explicit-html-documents) describes the supported model.
+An author should not need JSX, a JavaScript toolchain or an executable template
+to write a guide.
 
 Protobuf comments retain the canonical grouped field annotation:
 
@@ -168,8 +183,8 @@ Tab content remains available without JavaScript and when printed.
 
 Diagrams and API embeds remain proposals. An API embed will reference a stable
 import identity declared in the manifest and must have a readable static fallback.
-Arbitrary HTML, MDX and executable plugins are separate opt-in extension proposals
-with explicit trust and deployment contracts.
+MDX and executable plugins remain separate extension proposals with explicit
+trust and deployment contracts. Sanitized HTML pages do not execute author code.
 
 ## Internal representation and import boundaries
 
@@ -238,16 +253,32 @@ adapters is a required part of the target product. Wiki.js is an additional
 reference for this workflow. This requirement extends the general documentation
 system alongside the reading and API experiences described above.
 
-The editor must support authoring and saving documentation through the UI and
-working with multiple storage and synchronization backends. Backend selection,
-conflict handling, authentication and the boundary between editing and static
-publication need an explicit design before implementation. Preserve stable
-content identities, portable exports and the low resource goals across these
-workflows.
+The CMS foundation now includes local login, administrator/editor/viewer roles,
+read/write path grants, a source editor and preview, document and attachment
+management, persistent drafts, publication and history. The local filesystem and
+Git backends share the managed content transaction. Draft and project revisions
+protect concurrent edits; an explicit rebase preserves the author's text when
+the published revision changes.
 
-The editor and its connectors are future work. They are not implemented in this
-static compiler and Docker delivery slice; specific backends have not yet been
-selected.
+Git publication records the authenticated author, commits managed changes and can
+push after publication. A failed push retains the local commit and exposes a
+retryable status. Administrators can create and switch branches, fetch, pull and
+push. Source, state and publication directories stay separate from the project's
+development checkout. Repository snapshots and include/import consumers are
+validated before publication; unsafe paths, symlinks and external resolution are
+rejected.
+
+The server renders authorized navigation, search and portable models instead of
+exposing its complete generated output directory. Themes and site settings use
+the same draft/publication transaction, with portable tokens stored in the
+manifest. The [appearance guide](appearance.md) describes the current controls.
+
+The broader Wiki.js-style target remains active. Follow-up work includes a
+connector management UI and more storage providers, recursive folder operations
+and broader attachment handling, a format registration contract, richer editing
+workflows, grouped navigation, versions/locales and migration tools. Browser and
+native-platform acceptance checks must cover the complete workflows before a
+release claims that scope.
 
 ## UI behavior
 
@@ -281,13 +312,13 @@ widths.
 
 | Area | Initial foundation | Required follow-up |
 | --- | --- | --- |
-| Reading | Local static pages, global navigation, breadcrumbs, heading anchors, contents and print styles | Grouped navigation, previous/next and mobile contents disclosure |
+| Reading | Static and authenticated pages, navigation, breadcrumbs, heading anchors, contents, previous/next and print styles | Grouped navigation and mobile contents disclosure |
 | Search | Local search data and small browser search UI | Heading-level results, ranking, keyboard palette, bounded worker index for large projects |
-| Appearance | Responsive layout, light/dark theme and copy controls | Custom brand tokens, theme package contract and visual regression fixtures |
-| Authoring | Markdown, protobuf and local OpenAPI pages, listed assets, typed exports, callouts, tabs and reusable local includes | Diagrams, API embeds and version/locale authoring |
+| Appearance | Responsive layout, branding, custom light/dark palettes, fonts, spacing, width, radius and navigation controls | Theme package contract, richer customization and visual regression fixtures |
+| Authoring | CMS source editor, Markdown, sanitized HTML, protobuf/OpenAPI, assets, drafts/history, typed exports and bounded directives | Richer editing, diagrams, API embeds, format registration and version/locale authoring |
 | API reference | Typed operations/schemas, examples, security, bounded property/raw previews and stable anchors | Interactive schema trees, richer operation navigation and selectable examples |
 | API client | Explicit HTTP request panel, server/auth/parameter/body controls, cURL, bounded response inspector and cancel | More client languages, browser/live compatibility corpus, OAuth workflow and declared multipart support |
-| Publishing | Portable static output, site/CLI Docker images and Compose preview | Preview/watch, optional single-binary serving, version/locale routing, migration tools |
+| Publishing | Portable static output, CMS binary/container, Compose, Git synchronization, persistent data and offline backup/restore | Filesystem watch, more connectors, version/locale routing and migration tools |
 
 The API view should keep navigation on the left, operation prose and schema
 details in the center, and examples on the right when space permits. Deep links
@@ -298,8 +329,9 @@ recursive DOM.
 The HTTP request panel loads its local page model after explicit interaction.
 It previews target server, method, path, headers, body and cURL before sending.
 Credentials live in memory and clear on close; page load and search cannot send
-API requests. Browser CORS applies. One active operation, a 16 MiB model, 1 MiB
-request/response bodies and a 30-second timeout bound the client. JSON/YAML
+API requests. Browser CORS applies. One active operation, a 16 MiB model and a
+bounded request body limit the client. Response and timeout settings use bounded
+project controls, with defaults of 1 MiB and 30 seconds. JSON/YAML
 contract tests, client unit tests and static renderer tests do not replace real
 browser verification. OAuth login, cookie auth and multipart/binary uploads are
 explicitly unsupported in the first panel. A proxy, if ever added, needs its own
@@ -379,6 +411,13 @@ change it through a documented design decision with evidence.
    Windows binaries, static output and optional container serving. Add
    benchmarks, repeated-build resource tests, fuzz seeds, browser accessibility
    checks and portable deployment examples to CI.
+
+6. **CMS acceptance.** Exercise login and revoked permissions, source/file access,
+   previews, concurrent drafts and explicit rebase, publication rollback, history,
+   Git branches and failed-push recovery, themes, settings and interactive API
+   calls. Verify persistence, offline backup/restore, deployment prefixes and
+   static delivery independently. Keep browser behavior and native OS execution
+   distinct from Node/HTTP tests and cross-compilation.
 
 Each stage must leave a usable product. Keep correctness fixes, tests and relevant
 documentation in the same change. Run repository lint, security and test commands

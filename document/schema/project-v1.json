@@ -13,11 +13,64 @@
     "version": {"const": 1},
     "title": {"type": "string", "minLength": 1, "maxLength": 256},
     "description": {"type": "string", "maxLength": 4096},
+    "logo": {"type": "string"},
+    "favicon": {"type": "string"},
+    "footer": {"type": "string", "maxLength": 1024},
+    "themeId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "theme": {"$ref": "#/$defs/theme"},
+    "navigation": {"$ref": "#/$defs/navigation"},
+    "editor": {"$ref": "#/$defs/editor"},
+    "api": {"$ref": "#/$defs/apiSettings"},
+    "publishing": {"$ref": "#/$defs/publishing"},
     "source": {"$ref": "#/$defs/location"},
     "root": {"const": "../"},
     "pages": {"type": "array", "items": {"$ref": "#/$defs/pageReference"}}
   },
   "$defs": {
+    "palette": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "surface": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "text": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "muted": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "border": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "accent": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
+      }
+    },
+    "theme": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "mode", "accent", "font", "density", "width"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "description": {"type": "string", "maxLength": 512},
+        "mode": {"enum": ["auto", "light", "dark"]},
+        "accent": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "font": {"enum": ["system", "serif", "mono"]},
+        "density": {"enum": ["comfortable", "compact"]},
+        "width": {"enum": ["normal", "wide"]},
+        "radius": {"type": "integer", "minimum": 0, "maximum": 24},
+        "light": {"$ref": "#/$defs/palette"},
+        "dark": {"$ref": "#/$defs/palette"}
+      }
+    },
+    "navigation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"showTOC": {"type": "boolean"}, "showPreviousNext": {"type": "boolean"}, "stickyHeader": {"type": "boolean"}}
+    },
+    "editor": {
+      "type": "object", "additionalProperties": false, "required": ["defaultFormat"],
+      "properties": {"defaultFormat": {"enum": ["markdown", "html", "protobuf", "openapi"]}, "previewOnSave": {"type": "boolean"}}
+    },
+    "apiSettings": {
+      "type": "object", "additionalProperties": false, "required": ["requestTimeoutMs", "maxResponseBytes"],
+      "properties": {"enabled": {"type": "boolean"}, "showCurl": {"type": "boolean"}, "requestTimeoutMs": {"type": "integer", "minimum": 1000, "maximum": 30000}, "maxResponseBytes": {"type": "integer", "minimum": 1024, "maximum": 1048576}}
+    },
+    "publishing": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"autoPublish": {"type": "boolean"}, "gitPushOnPublish": {"type": "boolean"}}
+    },
     "location": {
       "type": "object",
       "required": ["file"],
@@ -38,7 +91,7 @@
         "title": {"type": "string", "minLength": 1, "maxLength": 256},
         "path": {"type": "string", "minLength": 1},
         "source": {"$ref": "#/$defs/location"},
-        "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]},
+        "kind": {"type": "string", "enum": ["markdown", "html", "protobuf", "openapi"]},
         "data": {"type": "string", "minLength": 1}
       }
     }

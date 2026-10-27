@@ -18,6 +18,16 @@ type pageView struct {
 	APIStylesheet string
 	APIScript     string
 	Interactive   bool
+	AppearanceCSS string
+	ThemeMode     string
+	Logo          string
+	Favicon       string
+	ShowTOC       bool
+	Previous      *navItem
+	Next          *navItem
+	ShowCurl      bool
+	TimeoutMs     int
+	ResponseBytes int
 }
 
 type navItem struct {
@@ -27,7 +37,7 @@ type navItem struct {
 }
 
 var pageStart = template.Must(template.New("start").Parse(`<!doctype html>
-<html lang="en">
+<html lang="en"{{if ne .ThemeMode "auto"}} data-theme="{{.ThemeMode}}"{{end}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -35,15 +45,17 @@ var pageStart = template.Must(template.New("start").Parse(`<!doctype html>
 <meta name="description" content="{{.Project.Description}}">
 <title>{{.Page.Title}} · {{.Project.Title}}</title>
 <link rel="stylesheet" href="{{.Stylesheet}}">
+<link rel="stylesheet" href="{{.AppearanceCSS}}">
+{{if .Favicon}}<link rel="icon" href="{{.Favicon}}">{{end}}
 <link rel="alternate" type="application/vnd.pb-docs.page+json" href="{{.ModelURL}}">
 {{if .APIStylesheet}}<link rel="stylesheet" href="{{.APIStylesheet}}">{{end}}
 <script src="{{.Script}}" data-search="{{.Search}}" defer></script>
-{{if .APIScript}}<script src="{{.APIScript}}" defer></script>{{end}}
+{{if .APIScript}}<script src="{{.APIScript}}" data-api-show-curl="{{.ShowCurl}}" data-api-timeout="{{.TimeoutMs}}" data-api-response-bytes="{{.ResponseBytes}}" defer></script>{{end}}
 </head>
 <body{{if .APIStylesheet}} class="api-page"{{end}}>
 <a class="skip-link" href="#_docs-main">Skip to content</a>
 <header class="topbar">
-<a class="brand" href="{{.Root}}"><span class="brand-mark" aria-hidden="true">D</span>{{.Project.Title}}</a>
+<a class="brand" href="{{.Root}}">{{if .Logo}}<img class="brand-logo" src="{{.Logo}}" alt="">{{else}}<span class="brand-mark" aria-hidden="true">D</span>{{end}}{{.Project.Title}}</a>
 <div class="toolbar"><button id="_docs-theme" type="button" hidden>Theme</button></div>
 </header>
 <div class="layout">
@@ -64,10 +76,10 @@ var pageStart = template.Must(template.New("start").Parse(`<!doctype html>
 `))
 
 var pageEnd = template.Must(template.New("end").Parse(`
-</article><footer class="page-footer">{{.Project.Title}}</footer></main>
-<aside class="toc"><nav aria-label="On this page"><p class="nav-caption">ON THIS PAGE</p><ul>
+</article>{{if or .Previous .Next}}<nav class="page-sequence" aria-label="Adjacent pages">{{if .Previous}}<a class="previous" rel="prev" href="{{.Previous.URL}}">← {{.Previous.Title}}</a>{{end}}{{if .Next}}<a class="next" rel="next" href="{{.Next.URL}}">{{.Next.Title}} →</a>{{end}}</nav>{{end}}<footer class="page-footer">{{if .Project.Footer}}{{.Project.Footer}}{{else}}{{.Project.Title}}{{end}}</footer></main>
+{{if .ShowTOC}}<aside class="toc"><nav aria-label="On this page"><p class="nav-caption">ON THIS PAGE</p><ul>
 {{range .Headings}}<li class="toc-level-{{.Level}}"><a href="#{{.ID}}">{{.Title}}</a></li>{{end}}
-</ul></nav></aside>
+</ul></nav></aside>{{end}}
 </div>
 </body>
 </html>
@@ -75,17 +87,47 @@ var pageEnd = template.Must(template.New("end").Parse(`
 
 func renderPage(manifest Manifest, current int, content pageContent) ([]byte, error) {
 	page := manifest.Pages[current]
+	appearance := manifest.Appearance()
+	home := manifest.Pages[0].Path
+	for _, candidate := range manifest.Pages {
+		if candidate.Path == "index.html" {
+			home = candidate.Path
+			break
+		}
+	}
 	view := pageView{
-		Project:     manifest,
-		Page:        page,
-		Headings:    content.Headings,
-		Root:        relativeURL(page.Path, "index.html"),
-		Stylesheet:  relativeURL(page.Path, "_docs/site.css"),
-		Script:      relativeURL(page.Path, "_docs/site.js"),
-		Search:      relativeURL(page.Path, "_docs/search.json"),
-		NeedsTitle:  true,
-		ModelURL:    relativeURL(page.Path, pageDataPath(page)),
-		Interactive: content.Interactive,
+		Project:       manifest,
+		Page:          page,
+		Headings:      content.Headings,
+		Root:          relativeURL(page.Path, home),
+		Stylesheet:    relativeURL(page.Path, "_docs/site.css"),
+		Script:        relativeURL(page.Path, "_docs/site.js"),
+		Search:        relativeURL(page.Path, "_docs/search.json"),
+		NeedsTitle:    true,
+		ModelURL:      relativeURL(page.Path, pageDataPath(page)),
+		Interactive:   content.Interactive,
+		AppearanceCSS: relativeURL(page.Path, "_docs/appearance.css"),
+		ThemeMode:     appearance.Theme.Mode,
+		ShowTOC:       appearance.Navigation.ShowTOC,
+		ShowCurl:      appearance.API.ShowCurl,
+		TimeoutMs:     appearance.API.RequestTimeoutMs,
+		ResponseBytes: appearance.API.MaxResponseBytes,
+	}
+	if manifest.Logo != "" {
+		view.Logo = relativeURL(page.Path, "assets/"+manifest.Logo)
+	}
+	if manifest.Favicon != "" {
+		view.Favicon = relativeURL(page.Path, "assets/"+manifest.Favicon)
+	}
+	if appearance.Navigation.ShowPreviousNext {
+		if current > 0 {
+			previous := manifest.Pages[current-1]
+			view.Previous = &navItem{Title: previous.Title, URL: relativeURL(page.Path, previous.Path)}
+		}
+		if current+1 < len(manifest.Pages) {
+			next := manifest.Pages[current+1]
+			view.Next = &navItem{Title: next.Title, URL: relativeURL(page.Path, next.Path)}
+		}
 	}
 	if content.APIData != "" {
 		view.APIStylesheet = relativeURL(page.Path, "_docs/api.css")

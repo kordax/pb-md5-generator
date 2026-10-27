@@ -291,7 +291,7 @@
       if (headers.has(lower)) throw new ClientError("Conflicting request header: " + name);
       requestHeaderBytes += name.length + value.length;
       if (requestHeaderBytes > 65536) throw new ClientError("Request headers exceed the browser client's limit");
-      headers.set(lower, { name, value: headerValue(value), owner, secret: secret || sensitive.test(name) });
+      headers.set(lower, { name, value: headerValue(value), owner, secret: secret || sensitive.test(name) || (api.securitySchemes || []).some(scheme => scheme.type === "apiKey" && scheme.in === "header" && String(scheme.name).toLowerCase() === lower) });
     };
     for (const [name, value] of target.searchParams) addQuery(name, encoded(value), "server:" + name, sensitive.test(name));
     const seen = new Set();
@@ -367,6 +367,13 @@
       addHeader("Content-Type", media.name, "body", false);
     }
     if (input.accept) addHeader("Accept", checkText(input.accept, "Accept media type", 1024), "accept", false);
+    if (input.headers != null) {
+      if (!Array.isArray(input.headers) || input.headers.length > 32) throw new ClientError("Additional headers must contain at most 32 name/value pairs");
+      for (const entry of input.headers) {
+        if (!Array.isArray(entry) || entry.length !== 2) throw new ClientError("Additional headers must be name/value pairs");
+        addHeader(checkText(entry[0], "Header name", 256), checkText(entry[1], "Header value"), "additional", false);
+      }
+    }
     const basePath = target.pathname.replace(/\/$/, "");
     target.pathname = basePath + path;
     target.search = query.length ? "?" + query.map(entry => encoded(entry.name) + "=" + entry.value).join("&") : "";
@@ -385,8 +392,32 @@
     return {
       url: target.href, method, headers: headerObject, body,
       credentials: input.includeCookies === true ? "include" : "omit",
+      curlPreview: { url: previewURL.href, headers: headerPreview },
       preview: method + " " + previewURL.href + (headerPreview.length ? "\n" + headerPreview.join("\n") : "") + (body !== undefined ? "\nBody: " + encoder.encode(body).byteLength + " bytes (shown in the editor)" : ""),
     };
+  }
+  function shellQuote(value) { return "'" + String(value).replace(/'/g, "'\\''") + "'"; }
+  function curlRequest(request, { redact = true } = {}) {
+    const method = httpMethod(request.method);
+    const preview = redact && request.curlPreview;
+    const target = targetURL(checkText(request.url, "Request URL", LIMITS.url), "Request URL");
+    if (redact && !preview) for (const name of [...target.searchParams.keys()]) if (sensitive.test(name)) target.searchParams.set(name, "[redacted]");
+    const url = preview ? preview.url : target.href;
+    const headers = preview ? preview.headers : Object.entries(request.headers || {}).map(([name, value]) => headerName(name) && name + ": " + (redact && sensitive.test(name) ? "[redacted]" : headerValue(value)));
+    const lines = ["curl --include --request " + shellQuote(method), "  --url " + shellQuote(url)];
+    for (const header of headers) lines.push("  --header " + shellQuote(header));
+    if (request.body !== undefined) {
+      const body = checkText(request.body, "Request body", LIMITS.body);
+      // --data-raw keeps a leading @ as request text instead of reading a local file.
+      lines.push("  --data-raw " + shellQuote(redact ? "[" + encoder.encode(body).byteLength + " body bytes redacted]" : body));
+    }
+    return lines.join(" \\\n") + (request.credentials === "include" ? "\n# Browser-managed cookies are not included in this command." : "");
+  }
+  function clientSettings(input = {}) {
+    const timeoutMs = input.requestTimeoutMs == null ? LIMITS.timeout : Number(input.requestTimeoutMs);
+    const maxBytes = input.maxResponseBytes == null ? LIMITS.response : Number(input.maxResponseBytes);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > LIMITS.timeout || !Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > LIMITS.response) throw new ClientError("Invalid documentation API client limits");
+    return { timeoutMs, maxBytes, showCurl: input.showCurl !== false && input.showCurl !== "false" };
   }
   function abortError(message) { const error = new ClientError(message); error.name = "AbortError"; return error; }
   function quietCancel(reader) {
@@ -478,6 +509,8 @@
   function attach(document, environment = {}) {
     if (attachments.has(document)) return attachments.get(document);
     const fetcher = environment.fetch || root.fetch.bind(root);
+    const data = document.currentScript && document.currentScript.dataset || {};
+    const settings = clientSettings(environment.settings || { requestTimeoutMs: data.apiTimeout, maxResponseBytes: data.apiResponseBytes, showCurl: data.apiShowCurl });
     const buttons = Array.from(document.querySelectorAll("[data-api-operation]"));
     if (!buttons.length) return () => {};
     const remove = [];
@@ -518,6 +551,8 @@
       const status = element("p", "Review the target and request, then choose Send.", "api-client-status");
       status.setAttribute("role", "status");
       const preview = element("pre", "", "api-client-preview");
+      const curl = settings.showCurl ? element("pre", "", "api-client-curl") : null;
+      if (curl) curl.setAttribute("aria-label", "cURL preview with credentials and body redacted");
       const response = element("pre", "", "api-client-response");
       response.setAttribute("aria-label", "Response preview");
       let requestJob = null;
@@ -615,12 +650,28 @@
       }
       const responseTypes = [...new Set((operation.responses || []).flatMap(item => (item.content || []).map(media => media.name)))];
       const accept = select("Accept response media type", [["", "Server default"], ...responseTypes.map(name => [name, name])]);
+      const additionalHeaders = element("textarea"); additionalHeaders.rows = 3; additionalHeaders.maxLength = 16384; additionalHeaders.autocomplete = "off"; additionalHeaders.spellcheck = false; additionalHeaders.placeholder = "X-Request-ID: example"; field("Additional headers (one Name: value per line, at most 32)", additionalHeaders);
       const cookies = element("input"); cookies.type = "checkbox"; field("Include browser-managed cookies (off by default)", cookies);
       const actions = element("div", undefined, "api-client-actions");
       const send = element("button", "Send"); send.type = "submit";
       const cancel = element("button", "Cancel"); cancel.type = "button"; cancel.disabled = true;
       const close = element("button", "Close and clear"); close.type = "button";
-      actions.append(send, cancel, close); form.append(preview, actions, status, response);
+      actions.append(send, cancel, close);
+      if (curl) {
+        const copyCurl = element("button", "Copy cURL with current values"); copyCurl.type = "button";
+        listen(copyCurl, "click", async () => {
+          try {
+            if (!root.navigator || !root.navigator.clipboard || !root.isSecureContext) throw new ClientError("Clipboard access requires a secure page");
+            const command = curlRequest(collect(), { redact: false });
+            await root.navigator.clipboard.writeText(command);
+            status.textContent = "cURL copied with the current request values. Keep credentials private.";
+          } catch (error) { status.textContent = error.message || "Clipboard unavailable"; }
+        }, listeners);
+        actions.append(copyCurl);
+      }
+      form.append(preview);
+      if (curl) form.append(element("p", "cURL preview redacts credentials and body. Copying uses the values you entered, including credentials.", "api-client-help"), curl);
+      form.append(actions, status, response);
       host.replaceChildren(form); host.hidden = false; host.className = "api-client";
       function collect() {
         const values = Object.create(null);
@@ -632,13 +683,20 @@
         const credentials = Object.create(null);
         for (const [id, controls] of authInputs) credentials[id] = Object.fromEntries(Object.entries(controls).map(([name, control]) => [name, control.value]));
         const inputValues = { serverIndex: Number(serverChoice.value), serverURL: serverURL.value, baseURL: baseURL.value, variables: Object.fromEntries([...variableInputs].map(([name, control]) => [name, control.value])), values, serializedValues, credentials, securityIndex: Number(securityChoice.value), includeCookies: cookies.checked, accept: accept.value };
+        const headerLines = checkText(additionalHeaders.value, "Additional headers").split(/\r?\n/).filter(line => line.trim() !== "");
+        if (headerLines.length > 32) throw new ClientError("Use at most 32 additional headers");
+        inputValues.headers = headerLines.map(line => {
+          const separator = line.indexOf(":");
+          if (separator < 1) throw new ClientError("Write each additional header as Name: value");
+          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+        });
         if (bodyEnabled && bodyEnabled.checked) { inputValues.body = body.value; inputValues.mediaType = mediaType.value; }
         return buildRequest(api, operation, inputValues);
       }
       function refresh() {
         baseURL.parentElement.hidden = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(serverURL.value);
-        try { preview.textContent = collect().preview; }
-        catch (error) { preview.textContent = error.message; }
+        try { const request = collect(); preview.textContent = request.preview; if (curl) curl.textContent = curlRequest(request); }
+        catch (error) { preview.textContent = error.message; if (curl) curl.textContent = ""; }
       }
       listen(form, "input", () => {
         if (previewTimer !== null) root.clearTimeout(previewTimer);
@@ -649,11 +707,11 @@
         event.preventDefault();
         if (previewTimer !== null) { root.clearTimeout(previewTimer); previewTimer = null; }
         let request;
-        try { request = collect(); preview.textContent = request.preview; }
+        try { request = collect(); preview.textContent = request.preview; if (curl) curl.textContent = curlRequest(request); }
         catch (error) { status.textContent = error.message; return; }
         if (requestJob) requestJob.cancel();
         const run = ++requestGeneration;
-        requestJob = executeRequest(request, { fetch: fetcher });
+        requestJob = executeRequest(request, { fetch: fetcher, timeoutMs: settings.timeoutMs, maxBytes: settings.maxBytes });
         send.disabled = true; cancel.disabled = false; status.textContent = "Sending…"; response.textContent = "";
         try {
           const result = await requestJob.promise;
@@ -711,5 +769,5 @@
     attachments.set(document, dispose);
     return dispose;
   }
-  return Object.freeze({ LIMITS, buildRequest, serializeParameter, parseParameterInput, readResponse, executeRequest, attach });
+  return Object.freeze({ LIMITS, buildRequest, serializeParameter, parseParameterInput, curlRequest, clientSettings, readResponse, executeRequest, attach });
 });

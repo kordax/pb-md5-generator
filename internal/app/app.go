@@ -1,18 +1,22 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/kordax/pb-md5-generator/engine"
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/kordax/pb-md5-generator/engine/render"
 	internalproto "github.com/kordax/pb-md5-generator/internal/proto"
+	"github.com/kordax/pb-md5-generator/internal/studio"
 	"github.com/kordax/pb-md5-generator/internal/tools"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -31,8 +35,10 @@ const rootCommandUsage = `Usage:
   pb-md5-generator lint [flags]        Validate protobuf annotations
   pb-md5-generator build [flags]       Build a mixed documentation site
   pb-md5-generator schema [flags]      Export a versioned JSON Schema
+  pb-md5-generator serve [flags]       Run the documentation CMS
+  pb-md5-generator admin-user [flags]  Create the first administrator
 
-Use build -help or schema -help for command-specific flags.
+Use <command> -help for command-specific flags.
 Generate and lint flags:`
 
 type Config struct {
@@ -72,6 +78,9 @@ type appDeps struct {
 
 func Run(args []string) int {
 	configureLogger()
+	if len(args) != 0 && (args[0] == "serve" || args[0] == "admin-user") {
+		return runStudioCommand(args)
+	}
 
 	cfg, err := parseFlags(args)
 	if err != nil {
@@ -83,6 +92,21 @@ func Run(args []string) int {
 	}
 	if err := run(cfg); err != nil {
 		log.Err(err).Msg("command failed")
+		return 1
+	}
+	return 0
+}
+
+func runStudioCommand(args []string) int {
+	ctx := context.Background()
+	if args[0] == "serve" {
+		serving, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		ctx = serving
+	}
+	err := studio.RunCLI(ctx, args, os.Stdin, os.Stdout, os.Stderr)
+	if err != nil && !errors.Is(err, flag.ErrHelp) && !errors.Is(err, context.Canceled) {
+		log.Err(err).Msg("CMS command failed")
 		return 1
 	}
 	return 0

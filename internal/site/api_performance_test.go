@@ -24,8 +24,8 @@ func openAPICorpus(t testing.TB, operations int) []byte {
 		schemas[name] = map[string]any{
 			"type": "object", "required": []string{"id", "name"},
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer", "minimum": 1},
-				"name": map[string]any{"type": "string", "maxLength": 120},
+				"id":      map[string]any{"type": "integer", "minimum": 1},
+				"name":    map[string]any{"type": "string", "maxLength": 120},
 				"related": map[string]any{"$ref": "#/components/schemas/" + name},
 			},
 		}
@@ -40,7 +40,7 @@ func openAPICorpus(t testing.TB, operations int) []byte {
 	data, err := json.Marshal(map[string]any{
 		"openapi": "3.1.0", "info": map[string]any{"title": "Catalog corpus", "version": "1.0.0"},
 		"servers": []any{map[string]any{"url": "https://api.example.test/v1"}},
-		"paths": paths, "components": map[string]any{"schemas": schemas},
+		"paths":   paths, "components": map[string]any{"schemas": schemas},
 	})
 	require.NoError(t, err)
 	return data

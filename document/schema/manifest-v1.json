@@ -12,10 +12,63 @@
     "version": {"const": 1},
     "title": {"type": "string", "minLength": 1, "maxLength": 256},
     "description": {"type": "string", "maxLength": 4096},
+    "logo": {"type": "string"},
+    "favicon": {"type": "string"},
+    "footer": {"type": "string", "maxLength": 1024},
+    "themeId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "theme": {"anyOf": [{"$ref": "#/$defs/theme"}, {"type": "null"}]},
+    "navigation": {"anyOf": [{"$ref": "#/$defs/navigation"}, {"type": "null"}]},
+    "editor": {"anyOf": [{"$ref": "#/$defs/editor"}, {"type": "null"}]},
+    "api": {"anyOf": [{"$ref": "#/$defs/apiSettings"}, {"type": "null"}]},
+    "publishing": {"anyOf": [{"$ref": "#/$defs/publishing"}, {"type": "null"}]},
     "pages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/page"}},
     "assets": {"type": "array", "items": {"type": "string", "minLength": 1}}
   },
   "$defs": {
+    "palette": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "surface": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "text": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "muted": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "border": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "accent": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
+      }
+    },
+    "theme": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "mode", "accent", "font", "density", "width"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "description": {"type": "string", "maxLength": 512},
+        "mode": {"enum": ["auto", "light", "dark"]},
+        "accent": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "font": {"enum": ["system", "serif", "mono"]},
+        "density": {"enum": ["comfortable", "compact"]},
+        "width": {"enum": ["normal", "wide"]},
+        "radius": {"type": "integer", "minimum": 0, "maximum": 24},
+        "light": {"anyOf": [{"$ref": "#/$defs/palette"}, {"type": "null"}]},
+        "dark": {"anyOf": [{"$ref": "#/$defs/palette"}, {"type": "null"}]}
+      }
+    },
+    "navigation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"showTOC": {"type": "boolean"}, "showPreviousNext": {"type": "boolean"}, "stickyHeader": {"type": "boolean"}}
+    },
+    "editor": {
+      "type": "object", "additionalProperties": false, "required": ["defaultFormat"],
+      "properties": {"defaultFormat": {"enum": ["markdown", "html", "protobuf", "openapi"]}, "previewOnSave": {"type": "boolean"}}
+    },
+    "apiSettings": {
+      "type": "object", "additionalProperties": false, "required": ["requestTimeoutMs", "maxResponseBytes"],
+      "properties": {"enabled": {"type": "boolean"}, "showCurl": {"type": "boolean"}, "requestTimeoutMs": {"type": "integer", "minimum": 1000, "maximum": 30000}, "maxResponseBytes": {"type": "integer", "minimum": 1024, "maximum": 1048576}}
+    },
+    "publishing": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"autoPublish": {"type": "boolean"}, "gitPushOnPublish": {"type": "boolean"}}
+    },
     "page": {
       "type": "object",
       "required": ["title", "source", "path"],
@@ -25,7 +78,7 @@
         "title": {"type": "string", "minLength": 1, "maxLength": 256},
         "source": {"type": "string", "minLength": 1},
         "path": {"type": "string", "minLength": 1},
-        "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]}
+        "kind": {"type": "string", "enum": ["markdown", "html", "protobuf", "openapi"]}
       }
     }
   }

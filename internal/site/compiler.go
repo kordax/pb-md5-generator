@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/kordax/pb-md5-generator/document"
@@ -40,11 +41,29 @@ func compileSourcePage(ctx context.Context, root *os.Root, output string, curren
 	if err != nil {
 		return pageContent{}, nil, err
 	}
+	load := confinedSourceLoader(ctx, root, output, page.Source, source)
+	return compileLoadedPage(ctx, source, current, manifest, options, load)
+}
+
+// compileLoadedPage shares the publication compiler with the in-memory editor.
+// The caller supplies a confined loader so previews can enforce source grants.
+func compileLoadedPage(ctx context.Context, source []byte, current int, manifest Manifest, options Options, load func(string) ([]byte, error)) (pageContent, *document.API, error) {
+	if err := ctx.Err(); err != nil {
+		return pageContent{}, nil, err
+	}
+	if len(source) > maxSourceBytes || !utf8.Valid(source) {
+		return pageContent{}, nil, fmt.Errorf("page source must be valid UTF-8 and at most %d bytes", maxSourceBytes)
+	}
+	page := manifest.Pages[current]
+	if page.Kind == "html" {
+		content, err := compileHTML(ctx, source, current, manifest)
+		return content, nil, err
+	}
 	var api *document.API
+	var err error
 	markdown := source
 	if page.Kind != "markdown" && page.Kind != "" {
 		if options.ImportPage != nil {
-			load := confinedSourceLoader(ctx, root, output, page.Source, source)
 			result, err := options.ImportPage(ctx, page.Kind, page.Source, source, load)
 			if err != nil {
 				return pageContent{}, nil, fmt.Errorf("import %s: %w", page.Source, err)
@@ -69,11 +88,11 @@ func compileSourcePage(ctx context.Context, root *os.Root, output string, curren
 		return pageContent{}, nil, err
 	}
 	if api == nil {
-		var load func(string) ([]byte, error)
+		var markdownLoad func(string) ([]byte, error)
 		if page.Kind == "markdown" || page.Kind == "" {
-			load = confinedSourceLoader(ctx, root, output, page.Source, source)
+			markdownLoad = load
 		}
-		content, err := compileMarkdownSource(ctx, markdown, current, manifest, load)
+		content, err := compileMarkdownSource(ctx, markdown, current, manifest, markdownLoad)
 		return content, nil, err
 	}
 	content, err := renderAPI(ctx, api, current, manifest, pageDataPath(page))
@@ -104,7 +123,10 @@ func compileSourcePage(ctx context.Context, root *os.Root, output string, curren
 func confinedSourceLoader(ctx context.Context, root *os.Root, output, primary string, source []byte) func(string) ([]byte, error) {
 	loaded := map[string][]byte{primary: source}
 	total := len(source)
+	var mutex sync.Mutex
 	return func(name string) ([]byte, error) {
+		mutex.Lock()
+		defer mutex.Unlock()
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -121,7 +143,7 @@ func confinedSourceLoader(ctx context.Context, root *os.Root, output, primary st
 		if err != nil {
 			return nil, fmt.Errorf("import source %s: %w", name, err)
 		}
-		if within(output, real) {
+		if output != "" && within(output, real) {
 			return nil, fmt.Errorf("output contains import source %s", name)
 		}
 		data, err := readLimited(root, name, min(int64(maxSourceBytes), int64(maxImportedBytes-total)))

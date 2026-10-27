@@ -31,11 +31,44 @@ Save the manifest schema locally and point an editor at it with the optional `$s
 }
 ```
 
-`version`, `title`, and a nonempty `pages` array are required. Each page needs `title`, `source`, and `path`. `kind` is `markdown`, `protobuf`, or `openapi`; leaving it out selects Markdown regardless of the source filename. `description`, `assets`, and page IDs are optional.
+`version`, `title`, and a nonempty `pages` array are required. Each page needs `title`, `source`, and `path`. `kind` is `markdown`, `html`, `protobuf`, or `openapi`; leaving it out selects Markdown regardless of the source filename. `description`, `assets`, and page IDs are optional.
 
-Sources and assets use clean relative paths. Declare one `index.html` homepage. Public page paths use lowercase relative `.html` paths; `_docs/` and `assets/` belong to the compiler. A declared asset is copied into the output asset namespace. Supported attachments include images, PDF and text files, and `.json`, `.yaml`, `.yml`, and `.proto` source contracts. Local page and asset links must refer to declared content.
+Sources, assets and public output paths use clean relative paths of at most 4096 UTF-8 bytes. Declare one `index.html` homepage. Public page paths use lowercase relative `.html` paths; `_docs/` and `assets/` belong to the compiler. A declared asset is copied into the output asset namespace. Supported attachments include images, PDF and text files, and `.json`, `.yaml`, `.yml`, and `.proto` source contracts. Local page and asset links must refer to declared content.
 
 An explicit page ID matches `[a-z0-9][a-z0-9._-]{0,127}`. Otherwise the compiler derives a stable ID from the public path. Supply an ID when a page should keep its identity across a path change.
+
+## Portable appearance and behavior
+
+The manifest can also declare `logo`, `favicon`, `footer`, `themeId`, a resolved `theme`, and the `navigation`, `editor`, `api`, and `publishing` groups. The compiled project index preserves these fields so another renderer can use the same settings. Brand images are project-relative raster assets that must appear in `assets`; remote image URLs, SVG, scripts and authored CSS are not theme instructions. In a compiled project, resolve `logo` and `favicon` as `assets/<source path>` relative to the project index's `root`.
+
+A theme contains an ID, name, optional description, `mode` (`auto`, `light`, `dark`), a six digit hexadecimal `accent`, `font` (`system`, `serif`, `mono`), `density` (`comfortable`, `compact`), `width` (`normal`, `wide`), and a corner `radius` from 0 to 24 pixels. Optional `light` and `dark` palettes override `background`, `surface`, `text`, `muted`, `border`, and `accent`, each as `#RRGGBB`. The compiler creates an external stylesheet from these tokens; the reader does not execute arbitrary theme code or load remote fonts.
+
+The builtins are `default`, `paper`, and `midnight`. A builtin ID can stand alone. A custom `themeId` requires complete resolved tokens in `theme`, with a matching ID. CMS theme files live at `themes/<id>.json`; applying a theme copies its tokens into the manifest. A static export therefore needs no CMS database or theme registry. See [appearance and settings](appearance.md) for the controls and their defaults.
+
+`navigation` controls `showTOC`, `showPreviousNext`, and `stickyHeader`. `editor` selects `defaultFormat` and `previewOnSave`. `api` controls the request client, cURL display, a request timeout from 1000 to 30000 milliseconds, and a response preview limit from 1024 to 1048576 bytes. `publishing` selects `autoPublish` and `gitPushOnPublish`; these are CMS authoring policies, and automatic Git push requires Git storage. Static rendering preserves the authoring policies as metadata.
+
+Omitting a group selects its standard defaults: visible table of contents and adjacent page links, a sticky header, Markdown editing without automatic preview, an enabled API client and cURL controls, a 30 second request timeout, a 1 MiB response preview, and explicit publication without automatic Git push. In authoring source, `theme`, `navigation`, `editor`, `api`, and `publishing` may also be `null`, with the same effect as omission. A theme's optional `light` and `dark` palettes follow this rule too. A supplied group uses its declared values; booleans omitted within that group are false.
+
+The compiled project omits unset pointer groups and palettes rather than emitting `null`. CMS settings request bodies remain strict typed objects: explicit `null` is not an update command. Source-file decoding and HTTP update decoding are separate contracts.
+
+## Explicit HTML documents
+
+Choose `kind: "html"` for a document written in HTML. This path accepts formatting, lists, tables, disclosures, links and images through an allowlist sanitizer. Scripts, styles, frames, forms, SVG, MathML and event attributes are removed. Links and images use the same source-relative manifest resolution as Markdown, and external images require HTTPS. Explicit IDs must be unique and cannot use the reader's reserved namespace; headings receive stable anchors and appear in the table of contents.
+
+An HTML page exports a block such as:
+
+```json
+{
+  "kind": "html",
+  "source": {"file": "guide.html"},
+  "html": "<p>A sanitized paragraph.</p>",
+  "text": "A sanitized paragraph."
+}
+```
+
+`html` belongs only to an `html` block and contains sanitized markup; `text` is plain text for search. HTML source is bounded to 4 MiB, its DOM to 50000 nodes and 64 levels, and its rendered result to 16 MiB. Raw HTML encountered inside an ordinary Markdown page remains omitted with `omitted: true`; choosing the explicit source kind is required.
+
+The structural schema cannot prove that an HTML string is safe. Readers consuming JSON from another producer must apply their own sanitizer before inserting its markup.
 
 ## Reading compiled data
 

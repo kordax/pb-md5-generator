@@ -1,0 +1,1238 @@
+openapi: 3.1.0
+info:
+  title: PB Docs CMS API
+  version: 0.1.0
+  description: |
+    API for the self-hosted documentation CMS. The static compiler
+    remains independently deployable. CMS routes require a session unless an
+    operation explicitly declares otherwise. Unsafe authenticated requests also
+    require X-CSRF-Token from the current session response and a matching Origin
+    header on every unsafe request, including login. The request Host must match
+    the configured public URL. Responses containing user or document data are
+    not publicly cacheable. Automatic publication settings apply to document
+    saves and file changes; manual rebase and history restore remain drafts.
+    String limits also enforce the documented UTF-8 byte limits. This contract
+    and HTTP tests do not establish browser usability.
+servers:
+  - url: ./
+    description: API root relative to the authenticated openapi.yaml URL, including any deployment prefix
+security:
+  - sessionCookie: []
+  - developmentSessionCookie: []
+tags:
+  - name: Session
+  - name: Users
+  - name: Documents
+  - name: Files
+  - name: Publishing
+  - name: Storage
+  - name: Settings
+paths:
+  /openapi.yaml:
+    get:
+      operationId: getAPIContract
+      tags: [Settings]
+      summary: Download this complete API contract after signing in
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Self-contained OpenAPI YAML; conditional and range headers are ignored
+          content:
+            application/yaml:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /session:
+    get:
+      operationId: getSession
+      tags: [Session]
+      security: []
+      summary: Read the current session without creating one
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Current user and CSRF token, or a null user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+    post:
+      operationId: login
+      parameters: [{$ref: '#/components/parameters/Origin'}]
+      tags: [Session]
+      security: []
+      summary: Sign in and rotate the session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: {type: string, minLength: 1, maxLength: 64}
+                password: {$ref: '#/components/schemas/Password'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Signed-in session; cookie is HttpOnly, host-only and SameSite Strict
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/Limited'}
+    delete:
+      operationId: logout
+      tags: [Session]
+      summary: Revoke the current session and expire its cookie
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '204': {description: Session revoked}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users:
+    get:
+      operationId: listUsers
+      tags: [Users]
+      summary: List users; administrators only
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Users without password hashes or session material
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users: {type: array, maxItems: 256, items: {$ref: '#/components/schemas/User'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createUser
+      tags: [Users]
+      summary: Create a user; administrators only
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreate'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '201':
+          description: Created user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /users/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    patch:
+      operationId: updateUser
+      tags: [Users]
+      summary: Change a user and revoke affected sessions; administrators only
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserUpdate'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      operationId: deleteUser
+      tags: [Users]
+      summary: Delete a user without removing the final active administrator
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '204': {description: User removed and sessions revoked}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [Documents]
+      summary: List readable documents and the current project revision
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Documents filtered by the current user's permissions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents, revision]
+                properties:
+                  documents: {type: array, maxItems: 2048, items: {$ref: '#/components/schemas/Document'}}
+                  revision: {$ref: '#/components/schemas/Revision'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createDocument
+      tags: [Documents]
+      summary: Create a document draft at an authorized source path
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentCreate'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '201':
+          description: Created document and saved draft, or automatic publication result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /documents/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      operationId: getDocument
+      tags: [Documents]
+      summary: Read source and the current user's draft when one exists
+      parameters:
+        - in: query
+          name: published
+          description: Bypass the actor's draft to compare against the current published source
+          schema: {type: boolean, default: false}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Editable source with opaque revision identifiers
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Document'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+    put:
+      operationId: saveDocument
+      tags: [Documents]
+      summary: Save a draft and optionally validate and publish it
+      description: |
+        A stale revision never overwrites newer content. A failed publication
+        preserves the last successful site and retains the draft. A failed Git
+        push preserves the local commit and reports pending synchronization.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentSave'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Saved content and explicit publication/synchronization state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/InvalidContent'}
+    delete:
+      operationId: deleteDocument
+      tags: [Documents]
+      summary: Stage document removal without bypassing revision checks
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Removal draft
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /documents/{id}/rebase:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      operationId: rebaseDocumentDraft
+      tags: [Documents]
+      summary: Save an explicitly reviewed merge against the latest project revision
+      description: |
+        This operation never publishes. When an owned draft exists, draftId and
+        draftRevision must identify its current version. A stale project or
+        draft revision returns 409 and preserves the previously saved draft.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentRebase'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Rebased draft with fresh draft revision and reviewed base revision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /documents/{id}/move:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      operationId: moveDocument
+      tags: [Documents]
+      summary: Stage a document move while preserving its identity
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Move'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Move draft
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /documents/{id}/history:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      operationId: documentHistory
+      tags: [Documents]
+      summary: Read document revision history
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Bounded newest-first revision history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revisions]
+                properties:
+                  revisions: {type: array, maxItems: 256, items: {$ref: '#/components/schemas/HistoryEntry'}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+  /documents/{id}/restore:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      operationId: restoreDocument
+      tags: [Documents]
+      summary: Restore a historical revision into a new draft
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [historyId, revision]
+              properties:
+                historyId: {type: string, minLength: 1, maxLength: 256}
+                revision: {$ref: '#/components/schemas/Revision'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Restored draft; publication remains explicit
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /drafts:
+    get:
+      operationId: listDrafts
+      tags: [Publishing]
+      summary: List the current user's drafts
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Drafts without publishing them
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drafts]
+                properties:
+                  drafts: {type: array, items: {$ref: '#/components/schemas/Draft'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /drafts/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    delete:
+      operationId: discardDraft
+      tags: [Publishing]
+      summary: Discard an owned draft at its expected revision
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '204': {description: Draft discarded}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /drafts/{id}/publish:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      operationId: publishDraft
+      tags: [Publishing]
+      summary: Validate and publish an owned draft, then synchronize if configured
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision]
+              properties:
+                revision: {$ref: '#/components/schemas/Revision'}
+                message: {type: string, maxLength: 256}
+                push: {type: boolean, default: false}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Publication result; remote synchronization may remain pending
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidContent'}
+  /preview:
+    post:
+      operationId: previewDocument
+      tags: [Documents]
+      summary: Render unsaved source without publishing or executing it
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [documentId, content]
+              properties:
+                documentId: {type: string, minLength: 1, maxLength: 256}
+                content: {type: string, maxLength: 4194304}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: HTML for a sandboxed preview; no scripts or publication side effects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [html, diagnostics]
+                properties:
+                  html: {type: string, maxLength: 16777216, description: At most 16 MiB of raw UTF-8 HTML and 16 MiB of JSON-escaped string content; larger previews return 413}
+                  diagnostics: {type: array, items: {$ref: '#/components/schemas/Diagnostic'}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/InvalidContent'}
+  /files:
+    get:
+      operationId: listFiles
+      tags: [Files]
+      summary: List permitted content files and folders
+      parameters:
+        - in: query
+          name: path
+          description: Folder to list; defaults to the content root
+          schema: {type: string, minLength: 1, maxLength: 2048, default: '.'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Managed content tree, excluding internal state and Git metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files, revision]
+                properties:
+                  files: {type: array, items: {$ref: '#/components/schemas/FileEntry'}}
+                  revision: {$ref: '#/components/schemas/Revision'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createFolder
+      tags: [Files]
+      summary: Stage creation of a content folder
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path, revision]
+              properties:
+                path: {type: string, minLength: 1, maxLength: 2048}
+                revision: {$ref: '#/components/schemas/Revision'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '201':
+          description: Folder draft
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /files/content:
+    parameters: [{$ref: '#/components/parameters/Path'}]
+    get:
+      operationId: downloadFile
+      tags: [Files]
+      summary: Download an authorized content file
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Original bytes; active file formats are downloads rather than executable pages
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+    put:
+      operationId: uploadFile
+      tags: [Files]
+      summary: Save a bounded file upload as a draft or publish according to settings
+      description: Images (PNG, JPEG, GIF, WebP, AVIF, ICO) and PDF are at most 16 MiB. Markdown, protobuf, JSON, YAML, HTML and plain UTF-8 text are at most 4 MiB. Other file extensions are rejected.
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, maxLength: 16777216}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Upload saved as a draft or published according to site settings
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+    delete:
+      operationId: deleteFile
+      tags: [Files]
+      summary: Stage removal of a file or empty folder
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Removal draft
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /files/move:
+    post:
+      operationId: moveFile
+      tags: [Files]
+      summary: Move between authorized paths, saving a draft or publishing as configured
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FileMove'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Move draft
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SaveResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /branches:
+    get:
+      operationId: listBranches
+      tags: [Storage]
+      summary: List branches of the managed repository; administrators only
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Available branches
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [branches]
+                properties:
+                  branches: {type: array, items: {$ref: '#/components/schemas/Branch'}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createBranch
+      tags: [Storage]
+      summary: Create a branch; administrators only
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, revision]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 200}
+                revision: {$ref: '#/components/schemas/Revision'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Branch created and current synchronization state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncStatus'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /branches/checkout:
+    post:
+      operationId: checkoutBranch
+      tags: [Storage]
+      summary: Select a clean managed branch without discarding edits or drafts
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, revision]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 200}
+                revision: {$ref: '#/components/schemas/Revision'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: New branch and project state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /sync/status:
+    get:
+      operationId: synchronizationStatus
+      tags: [Storage]
+      summary: Read local synchronization state; branch and commit details are administrators only
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Status from local repository state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /sync:
+    post:
+      operationId: synchronize
+      tags: [Storage]
+      summary: Explicitly fetch, pull or push the configured managed repository
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, revision]
+              properties:
+                action: {type: string, enum: [fetch, pull, push]}
+                revision: {$ref: '#/components/schemas/Revision'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Synchronization result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [Settings]
+      summary: Read site settings without exposing stored credentials
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Current settings and revision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Settings'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      operationId: updateSettings
+      tags: [Settings]
+      summary: Update settings with revision protection; administrators only
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Settings'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Settings'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /themes:
+    get:
+      operationId: listThemes
+      tags: [Settings]
+      summary: List installed themes
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Themes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [themes]
+                properties:
+                  themes: {type: array, maxItems: 67, items: {$ref: '#/components/schemas/Theme'}}
+    post:
+      operationId: saveTheme
+      tags: [Settings]
+      summary: Install or update a declarative theme; administrators only
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ThemeInput'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Stored theme
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Theme'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /themes/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    delete:
+      operationId: deleteTheme
+      tags: [Settings]
+      summary: Remove an unused custom theme; administrators only
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/ThemeIfMatch'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Theme removed locally; requested Git push needs attention
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sync]
+                properties:
+                  sync: {$ref: '#/components/schemas/SyncWarning'}
+        '204': {description: Theme removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-docs_session
+      description: HTTPS host-only session cookie; HttpOnly, Secure, SameSite Strict, Path=/
+    developmentSessionCookie:
+      type: apiKey
+      in: cookie
+      name: docs_session
+      description: HTTP on the literal localhost hostname only; Secure, HttpOnly, host-only, SameSite Strict, Path=/. Other hosts, including numeric loopback addresses, require HTTPS.
+  parameters:
+    ID:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 256}
+    Path:
+      in: query
+      name: path
+      required: true
+      description: Clean project-relative path using forward slashes; internal and escaping paths are forbidden
+      schema: {type: string, minLength: 1, maxLength: 2048}
+    Origin:
+      in: header
+      name: Origin
+      required: true
+      description: Exact configured public origin without a path, for example https://docs.example
+      schema: {type: string, minLength: 1, maxLength: 4096}
+    CSRF:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      description: Token returned by GET or POST session; never put it in a URL
+      schema: {type: string, minLength: 1, maxLength: 256}
+    ThemeIfMatch:
+      in: header
+      name: If-Match
+      required: true
+      description: Current global project revision quoted as an HTTP entity tag
+      schema: {type: string, minLength: 66, maxLength: 66, pattern: '^"[0-9a-f]{64}"$'}
+    IfMatch:
+      in: header
+      name: If-Match
+      required: true
+      description: Expected project or draft revision, preferably quoted as an HTTP entity tag; theme deletion requires quotes
+      schema: {type: string, minLength: 64, maxLength: 66, pattern: '^(?:[0-9a-f]{64}|"[0-9a-f]{64}")$'}
+  schemas:
+    Revision:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      description: Opaque project or draft revision; clients preserve all 64 lowercase hexadecimal characters exactly
+    Password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 15
+      maxLength: 1024
+      description: At least 15 Unicode characters and at most 1024 UTF-8 bytes; no trimming or silent truncation
+    Role:
+      type: string
+      enum: [admin, editor, viewer]
+    Grants:
+      type: object
+      additionalProperties: false
+      properties:
+        read: {type: array, maxItems: 32, items: {type: string, maxLength: 256, description: At most 256 UTF-8 bytes}}
+        write: {type: array, maxItems: 32, items: {type: string, maxLength: 256, description: At most 256 UTF-8 bytes}}
+      description: Optional allowlists of clean source-path prefixes, restricted by the role's capabilities
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, username, displayName, role, disabled]
+      properties:
+        id: {type: string}
+        username: {type: string, maxLength: 64}
+        displayName: {type: string, maxLength: 256, description: At most 256 UTF-8 bytes}
+        role: {$ref: '#/components/schemas/Role'}
+        disabled: {type: boolean}
+        grants:
+          oneOf:
+            - {$ref: '#/components/schemas/Grants'}
+            - {type: 'null'}
+    UserCreate:
+      type: object
+      additionalProperties: false
+      required: [username, password, role]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 64}
+        displayName: {type: string, maxLength: 256, description: At most 256 UTF-8 bytes}
+        password: {$ref: '#/components/schemas/Password'}
+        role: {$ref: '#/components/schemas/Role'}
+        grants: {$ref: '#/components/schemas/Grants'}
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: {type: string, maxLength: 256, description: At most 256 UTF-8 bytes}
+        password: {$ref: '#/components/schemas/Password'}
+        role: {$ref: '#/components/schemas/Role'}
+        disabled: {type: boolean}
+        grants:
+          oneOf:
+            - {$ref: '#/components/schemas/Grants'}
+            - {type: 'null'}
+    Session:
+      type: object
+      additionalProperties: false
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - {$ref: '#/components/schemas/User'}
+            - {type: 'null'}
+        csrfToken: {type: string}
+        setupRequired: {type: boolean}
+    Document:
+      type: object
+      required: [id, path, title, kind, revision]
+      properties:
+        id: {type: string}
+        path: {type: string}
+        title: {type: string}
+        kind: {type: string, enum: [markdown, html, protobuf, openapi]}
+        outputPath: {type: string}
+        revision: {$ref: '#/components/schemas/Revision'}
+        publishedRevision: {type: string}
+        content: {type: string, maxLength: 4194304}
+        draft: {type: boolean}
+        draftId: {type: string}
+        draftRevision: {type: string}
+        baseRevision: {type: string}
+        canWrite: {type: boolean}
+    DocumentCreate:
+      type: object
+      additionalProperties: false
+      required: [path, title, kind, content, revision]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        title: {type: string, minLength: 1, maxLength: 256}
+        kind: {type: string, enum: [markdown, html, protobuf, openapi]}
+        outputPath: {type: string, maxLength: 2048}
+        content: {type: string, maxLength: 4194304}
+        revision: {$ref: '#/components/schemas/Revision'}
+    DocumentSave:
+      type: object
+      additionalProperties: false
+      required: [content, revision]
+      properties:
+        content: {type: string, maxLength: 4194304}
+        revision: {$ref: '#/components/schemas/Revision'}
+        draftId: {type: string, maxLength: 256}
+        draftRevision: {type: string, maxLength: 256}
+        baseRevision: {type: string, maxLength: 256}
+        publish: {type: boolean, default: false}
+        message: {type: string, maxLength: 256}
+    DocumentRebase:
+      type: object
+      additionalProperties: false
+      required: [content, revision]
+      properties:
+        content: {type: string, maxLength: 4194304, description: At most 4 MiB of UTF-8 source}
+        revision: {$ref: '#/components/schemas/Revision'}
+        draftId: {type: string, maxLength: 256}
+        draftRevision: {$ref: '#/components/schemas/Revision'}
+    Move:
+      type: object
+      additionalProperties: false
+      required: [to, revision]
+      properties:
+        to: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+    FileMove:
+      type: object
+      additionalProperties: false
+      required: [path, to, revision]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        to: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+    FileEntry:
+      type: object
+      required: [path, directory, revision]
+      properties:
+        path: {type: string}
+        name: {type: string}
+        directory: {type: boolean}
+        size: {type: integer, minimum: 0}
+        revision: {$ref: '#/components/schemas/Revision'}
+        canWrite: {type: boolean}
+    Draft:
+      type: object
+      required: [id, revision, baseRevision, path, operation]
+      properties:
+        id: {type: string}
+        revision: {$ref: '#/components/schemas/Revision'}
+        baseRevision: {$ref: '#/components/schemas/Revision'}
+        path: {type: string}
+        operation: {type: string, enum: [write, delete, move, mkdir, rmdir]}
+        title: {type: string}
+        updatedAt: {type: string, format: date-time}
+    SaveResult:
+      type: object
+      required: [revision, published]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision'}
+        published: {type: boolean}
+        document: {$ref: '#/components/schemas/Document'}
+        draft: {$ref: '#/components/schemas/Draft'}
+        commit: {type: string}
+        sync: {$ref: '#/components/schemas/SyncStatus'}
+    HistoryEntry:
+      type: object
+      required: [id, path]
+      properties:
+        id: {type: string}
+        path: {type: string}
+        revision: {type: string}
+        commit: {type: string}
+        message: {type: string}
+        author: {type: string}
+        createdAt: {type: string, format: date-time}
+        size: {type: integer, minimum: 0}
+    Branch:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        current: {type: boolean}
+        commit: {type: string}
+    SyncStatus:
+      type: object
+      required: [backend]
+      properties:
+        backend: {type: string, enum: [local, git]}
+        branch: {type: string}
+        revision: {type: string}
+        dirty: {type: boolean}
+        ahead: {type: integer, minimum: 0}
+        behind: {type: integer, minimum: 0}
+        pendingPush: {type: boolean}
+        lastCommit: {type: string}
+        lastError: {type: string, maxLength: 1024}
+    ThemePalette:
+      type: object
+      additionalProperties: false
+      description: Optional palette overrides; omitted colors use the theme defaults
+      properties:
+        background: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        surface: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        text: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        muted: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        border: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        accent: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+    ThemeTokens:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$'}
+        name: {type: string, minLength: 1, maxLength: 120, description: At most 120 UTF-8 bytes}
+        description: {type: string, maxLength: 512, description: At most 512 UTF-8 bytes}
+        mode: {type: string, enum: [auto, light, dark]}
+        accent: {type: string, pattern: '^#[0-9a-fA-F]{6}$'}
+        font: {type: string, enum: [system, serif, mono]}
+        density: {type: string, enum: [comfortable, compact]}
+        width: {type: string, enum: [normal, wide]}
+        radius: {type: integer, minimum: 0, maximum: 24}
+        light: {$ref: '#/components/schemas/ThemePalette'}
+        dark: {$ref: '#/components/schemas/ThemePalette'}
+    ThemeInput:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: At most 16 KiB of JSON. Omit revision for creation; updating a custom theme requires the current global project revision. Builtin themes are immutable.
+      properties:
+        id: {$ref: '#/components/schemas/ThemeTokens/properties/id'}
+        name: {$ref: '#/components/schemas/ThemeTokens/properties/name'}
+        description: {$ref: '#/components/schemas/ThemeTokens/properties/description'}
+        mode: {$ref: '#/components/schemas/ThemeTokens/properties/mode'}
+        accent: {$ref: '#/components/schemas/ThemeTokens/properties/accent'}
+        font: {$ref: '#/components/schemas/ThemeTokens/properties/font'}
+        density: {$ref: '#/components/schemas/ThemeTokens/properties/density'}
+        width: {$ref: '#/components/schemas/ThemeTokens/properties/width'}
+        radius: {$ref: '#/components/schemas/ThemeTokens/properties/radius'}
+        light: {$ref: '#/components/schemas/ThemePalette'}
+        dark: {$ref: '#/components/schemas/ThemePalette'}
+        revision: {type: string, maxLength: 64, pattern: '^(?:[0-9a-f]{64})?$'}
+    Theme:
+      type: object
+      additionalProperties: false
+      required: [id, name, builtin]
+      properties:
+        id: {$ref: '#/components/schemas/ThemeTokens/properties/id'}
+        name: {$ref: '#/components/schemas/ThemeTokens/properties/name'}
+        description: {$ref: '#/components/schemas/ThemeTokens/properties/description'}
+        mode: {$ref: '#/components/schemas/ThemeTokens/properties/mode'}
+        accent: {$ref: '#/components/schemas/ThemeTokens/properties/accent'}
+        font: {$ref: '#/components/schemas/ThemeTokens/properties/font'}
+        density: {$ref: '#/components/schemas/ThemeTokens/properties/density'}
+        width: {$ref: '#/components/schemas/ThemeTokens/properties/width'}
+        radius: {$ref: '#/components/schemas/ThemeTokens/properties/radius'}
+        light: {$ref: '#/components/schemas/ThemePalette'}
+        dark: {$ref: '#/components/schemas/ThemePalette'}
+        builtin: {type: boolean, readOnly: true}
+        revision: {$ref: '#/components/schemas/Revision', readOnly: true}
+        sync: {$ref: '#/components/schemas/SyncWarning', readOnly: true}
+    SyncWarning:
+      type: object
+      additionalProperties: false
+      description: Requested Git synchronization needs attention after a successful local publication
+      required: [backend, state, ahead, behind, dirty, retryable]
+      properties:
+        backend: {type: string, enum: [local, git]}
+        branch: {type: string}
+        head: {type: string}
+        state: {type: string}
+        ahead: {type: integer, minimum: 0}
+        behind: {type: integer, minimum: 0}
+        dirty: {type: boolean}
+        retryable: {type: boolean}
+        error: {type: string, maxLength: 1024}
+    Settings:
+      description: Full settings object, at most 32 KiB JSON. The selected themeId resolves registry tokens. Missing or stale revision returns 409. Sync metadata is response-only and ignored if supplied.
+      type: object
+      additionalProperties: false
+      required: [revision, title]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision'}
+        title: {type: string, minLength: 1, maxLength: 256}
+        description: {type: string, maxLength: 4096, description: At most 4096 UTF-8 bytes}
+        logo: {type: string, maxLength: 4096, description: Declared local raster asset; URLs and SVG are not accepted}
+        favicon: {type: string, maxLength: 4096, description: Declared local raster asset; URLs and SVG are not accepted}
+        footer: {type: string, maxLength: 1024}
+        themeId: {type: string, maxLength: 64}
+        theme: {$ref: '#/components/schemas/ThemeTokens'}
+        sync: {$ref: '#/components/schemas/SyncWarning', readOnly: true}
+        navigation:
+          type: object
+          additionalProperties: false
+          properties:
+            showTOC: {type: boolean}
+            showPreviousNext: {type: boolean}
+            stickyHeader: {type: boolean}
+        editor:
+          type: object
+          additionalProperties: false
+          properties:
+            defaultFormat: {type: string, enum: [markdown, html, protobuf, openapi]}
+            previewOnSave: {type: boolean}
+        api:
+          type: object
+          additionalProperties: false
+          properties:
+            enabled: {type: boolean}
+            showCurl: {type: boolean}
+            requestTimeoutMs: {type: integer, minimum: 1000, maximum: 30000}
+            maxResponseBytes: {type: integer, minimum: 1024, maximum: 1048576}
+        publishing:
+          type: object
+          additionalProperties: false
+          properties:
+            autoPublish: {type: boolean}
+            gitPushOnPublish: {type: boolean, description: Enabling this requires configured Git storage; local storage returns 400}
+    Diagnostic:
+      type: object
+      required: [message]
+      properties:
+        file: {type: string, maxLength: 2048}
+        line: {type: integer, minimum: 0}
+        column: {type: integer, minimum: 0}
+        severity: {type: string, enum: [error, warning, info]}
+        code: {type: string, maxLength: 128}
+        message: {type: string, maxLength: 4096}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            currentRevision: {type: string}
+            diagnostics: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/Diagnostic'}}
+            draft: {$ref: '#/components/schemas/Draft'}
+            document: {$ref: '#/components/schemas/Document'}
+  responses:
+    Failure:
+      description: JSON error for unsupported methods or media, request limits, busy workspace, timeout or server failure; saved draft metadata is included after an unsuccessful publication when available
+      headers:
+        Retry-After: {schema: {type: string}}
+        Allow: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Invalid:
+      description: Invalid or unsupported request; no mutation occurred
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: Missing, expired or invalid session; invalid credentials are not distinguished
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: Insufficient permission or failed origin/CSRF validation
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Missing:
+      description: Requested resource does not exist
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: Stale revision, conflicting change, unsafe branch switch or final-administrator invariant
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TooLarge:
+      description: Request exceeds the documented byte or resource limit
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Limited:
+      description: Login rate or concurrent password-verification limit reached
+      headers:
+        Retry-After: {schema: {type: integer, minimum: 1}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InvalidContent:
+      description: Source failed validation; draft retained and previous successful publication preserved
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SyncFailed:
+      description: Remote synchronization failed; local source, draft and commits are preserved
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}

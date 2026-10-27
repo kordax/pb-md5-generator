@@ -15,7 +15,7 @@
     "title": {"type": "string", "minLength": 1, "maxLength": 256},
     "path": {"type": "string", "minLength": 1},
     "source": {"$ref": "#/$defs/location"},
-    "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]},
+    "kind": {"type": "string", "enum": ["markdown", "html", "protobuf", "openapi"]},
     "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
     "api": {"$ref": "#/$defs/api"}
   },
@@ -59,6 +59,7 @@
         "id": {"type": "string"},
         "level": {"type": "integer", "minimum": 1, "maximum": 6},
         "text": {"type": "string"},
+        "html": {"type": "string", "maxLength": 16777216, "description": "Sanitized HTML fragment from an explicit HTML page. This structural envelope does not establish HTML safety for untrusted model producers."},
         "language": {"type": "string"},
         "title": {"$ref": "#/$defs/directiveTitle"},
         "variant": {"type": "string", "enum": ["note", "info", "tip", "warning", "danger"]},
@@ -98,6 +99,7 @@
             "then": {"required": ["children"], "properties": {"children": {"minItems": 1, "maxItems": 1, "items": {"properties": {"kind": {"const": "code"}}}}}}
           }
         },
+        {"if": {"required": ["html"]}, "then": {"properties": {"kind": {"const": "html"}}, "not": {"properties": {"omitted": {"const": true}}, "required": ["omitted"]}}},
         {"if": {"required": ["title"]}, "then": {"properties": {"kind": {"const": "callout"}}}},
         {"if": {"required": ["variant"]}, "then": {"properties": {"kind": {"const": "callout"}}}},
         {"if": {"required": ["includeSource"]}, "then": {"properties": {"kind": {"const": "include"}}}}

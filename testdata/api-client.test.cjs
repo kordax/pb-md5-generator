@@ -228,7 +228,7 @@ test("already aborted execution never calls Fetch", async () => {
   assert.equal(calls, 0); assert.equal(getEventListeners(signal.signal, "abort").length, 0);
 });
 
-function dom(api, fetcher, contractFetcher) {
+function dom(api, fetcher, contractFetcher, settings = undefined) {
   class Element {
     constructor(tag) { this.tagName = tag; this.children = []; this.dataset = {}; this.attributes = {}; this.events = new Map(); this.value = ""; this.hidden = false; this.disabled = false; this._text = ""; this.className = ""; }
     set textContent(text) { this._text = String(text); this.replaceChildren(); }
@@ -260,7 +260,7 @@ function dom(api, fetcher, contractFetcher) {
   }
   const document = { baseURI: "https://docs.example.test/team/product/reference/api.html", createElement: tag => new Element(tag), querySelectorAll: selector => body.querySelectorAll(selector) };
   const calls = [];
-  const dispose = client.attach(document, { fetch: async (url, options) => {
+  const dispose = client.attach(document, { settings, fetch: async (url, options) => {
     calls.push({ url, options });
     if (url.includes("/_docs/pages/")) return contractFetcher ? contractFetcher(url, options) : new Response(JSON.stringify({ version: 1, api }), { headers: { "content-type": "application/json" } });
     return fetcher ? fetcher(url, options) : new Response("{\"ok\":true}", { headers: { "content-type": "application/json" } });
@@ -422,6 +422,25 @@ test("response status text cannot echo credentials into the status region", asyn
     await app.buttons[0].emit("click"); app.field(app.hosts[0], "path · id").value = "pet-1";
     await app.hosts[0].querySelector("form").emit("submit");
     assert.equal(app.hosts[0].querySelector(".api-client-status").textContent, "HTTP 200");
+  } finally { app.dispose(); }
+});
+
+test("reader settings hide cURL and enforce the configured response cap on an explicit request", async () => {
+  const { api, operation } = fixture(); api.operations = [operation];
+  const app = dom(api, async () => new Response("x".repeat(4096)), undefined, { showCurl: false, requestTimeoutMs: 1000, maxResponseBytes: 1024 });
+  try {
+    await app.buttons[0].emit("click");
+    const host = app.hosts[0];
+    assert.equal(host.querySelector(".api-client-curl"), null);
+    assert.equal(host.querySelectorAll("button").some(button => button.textContent.includes("Copy cURL")), false);
+    app.field(host, "path · id").value = "pet-1";
+    app.field(host, "Additional headers").value = "X-Trace: trace-17";
+    await host.querySelector("form").emit("submit");
+    assert.equal(app.calls.length, 2);
+    assert.equal(app.calls[1].options.headers["X-Trace"], "trace-17");
+    assert.match(host.querySelector(".api-client-status").textContent, /truncated/);
+    assert.ok(host.querySelector(".api-client-response").textContent.endsWith("x".repeat(1024)));
+    assert.ok(!host.querySelector(".api-client-response").textContent.endsWith("x".repeat(1025)));
   } finally { app.dispose(); }
 });
 

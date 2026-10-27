@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="csp-nonce" content="__PB_DOCS_CSP_NONCE__">
+<title>Documentation studio</title>
+<link rel="stylesheet" href="studio.css">
+<script type="module" src="app.mjs"></script>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace</a>
+<section id="login-view" class="login-view" aria-labelledby="login-title">
+  <div class="login-card">
+    <div class="brand-mark" aria-hidden="true">D</div>
+    <h1 id="login-title">Documentation studio</h1>
+    <p class="muted">Write, review and publish your documentation.</p>
+    <p id="setup-notice" class="notice" hidden>This workspace needs an administrator. Ask the person running the site to create the first account.</p>
+    <form id="login-form">
+      <label>Username<input name="username" autocomplete="username" required maxlength="64" autofocus></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="login-error" role="alert" class="error-text"></p>
+    </form>
+    <p id="login-progress" class="muted" role="status">Connecting to workspace…</p>
+    <button id="recover-draft" type="button" hidden>Download unsaved draft</button>
+    <a href="../../">Read documentation</a>
+  </div>
+</section>
+<div id="app" class="app" hidden>
+  <aside class="sidebar">
+    <a class="brand" href="../../"><span class="brand-mark" aria-hidden="true">D</span><span id="project-name">Documentation</span></a>
+    <details class="workspace-navigation" open>
+      <summary>Workspace navigation</summary>
+      <nav aria-label="Workspace">
+        <button type="button" data-view="documents">Documents</button>
+        <button type="button" data-view="files">Files</button>
+        <button type="button" data-view="publishing">Publishing</button>
+        <button type="button" data-view="appearance" data-admin hidden>Appearance</button>
+        <button type="button" data-view="settings" data-admin hidden>Settings</button>
+        <button type="button" data-view="people" data-admin hidden>People</button>
+      </nav>
+      <div class="tree-heading"><h2>Documents</h2><button id="create-document" type="button" title="Create document" aria-label="Create document">+</button></div>
+      <label class="search-label">Find a document<input id="document-search" type="search" maxlength="128" placeholder="Title or path"></label>
+      <div id="document-tree" class="document-tree" aria-label="Document list"></div>
+    </details>
+    <div class="sidebar-footer"><span id="identity"></span><span id="identity-role" class="badge"></span><button id="logout" type="button">Sign out</button></div>
+  </aside>
+  <div class="workspace">
+    <header class="workspace-header"><div><p id="view-eyebrow" class="eyebrow">WORKSPACE</p><h1 id="view-title">Documents</h1></div><a href="../../" class="button secondary" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a></header>
+    <div id="message" class="message" role="status" hidden></div>
+    <div id="error" class="message error" role="alert" hidden></div>
+    <main id="workspace-main" tabindex="-1"><div id="view"></div></main>
+  </div>
+</div>
+<dialog id="action-dialog" aria-labelledby="dialog-title"><form id="dialog-form"><h2 id="dialog-title"></h2><div id="dialog-fields"></div><p id="dialog-error" class="error-text" role="alert"></p><div class="actions"><button type="submit" class="primary" id="dialog-submit">Save</button><button type="button" id="dialog-cancel">Cancel</button></div></form></dialog>
+<noscript><p class="noscript">JavaScript is required for the editing workspace. <a href="../../">Read the published documentation</a>.</p></noscript>
+</body>
+</html>
