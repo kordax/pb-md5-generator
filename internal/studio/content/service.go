@@ -196,7 +196,10 @@ func rejectDevelopmentCheckout(locations ...string) error {
 		return err
 	}
 	for current := working; ; current = filepath.Dir(current) {
-		data, err := os.ReadFile(filepath.Join(current, "go.mod"))
+		data, err := readSource(current, "go.mod", 1<<20)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("%w: development checkout cannot be verified", ErrOwnership)
+		}
 		if err == nil && strings.Contains(string(data), "module github.com/kordax/pb-md5-generator") {
 			for _, location := range locations {
 				if contains(current, location) || contains(location, current) {

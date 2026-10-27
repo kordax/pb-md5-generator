@@ -5,8 +5,8 @@ vars:
     sh: 'echo $(go env GOPATH)/bin'
   GOLANGCI_LINT_VERSION: v2.12.2
   GO_TEST_COVERAGE_VERSION: v2.18.9
-  GOVULNCHECK_VERSION: v1.6.0
-  GOSEC_VERSION: v2.28.0
+  GOVULNCHECK_VERSION: v1.9.0
+  GOSEC_VERSION: v2.30.0
   ACTIONLINT_VERSION: v1.7.12
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 
@@ -246,7 +246,7 @@ tasks:
     cmds:
       - go mod verify
       - go run golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}} ./...
-      - go run github.com/securego/gosec/v2/cmd/gosec@{{.GOSEC_VERSION}} -exclude=G103,G115,G304 ./...
+      - go run github.com/securego/gosec/v2/cmd/gosec@{{.GOSEC_VERSION}} ./...
     sources:
       - "**/*.go"
       - "go.mod"
