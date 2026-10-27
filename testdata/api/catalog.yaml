@@ -1,0 +1,101 @@
+openapi: 3.1.2
+info:
+  title: Local catalog
+  version: 2026-10
+  description: A local contract with recursive types and explicit security.
+servers:
+  - url: https://{region}.example.test/v1
+    description: Catalog API
+    variables:
+      region:
+        default: eu
+        enum: [eu, us]
+tags:
+  - name: Items
+    description: Catalog entries
+security:
+  - token: []
+    oauth: [catalog:read]
+  - {}
+paths:
+  /items/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ItemID'
+      - name: q
+        in: query
+        style: form
+        explode: false
+        allowReserved: true
+        schema:
+          type: array
+          items: {type: string}
+    get:
+      operationId: getItem
+      summary: Read an item
+      description: Includes its recursive children.
+      tags: [Items]
+      servers: []
+      security: []
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string}
+          example: 9007199254740993
+      responses:
+        '200':
+          $ref: './responses.yaml#/Item'
+    post:
+      operationId: updateItem
+      tags: [Items]
+      requestBody:
+        required: true
+        description: Replacement item
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Node'}
+            example: {id: 9007199254740993}
+            examples:
+              precise:
+                summary: A precise identifier
+                value: {id: 9007199254740993}
+      callbacks:
+        updated:
+          '{$request.body#/callbackUrl}':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema: {type: object}
+              responses:
+                '204': {description: Accepted}
+      responses:
+        '204': {description: Updated}
+webhooks:
+  itemChanged:
+    post:
+      responses:
+        '204': {description: Acknowledged}
+components:
+  parameters:
+    ItemID:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer, format: int64, minimum: 1}
+  securitySchemes:
+    token:
+      type: apiKey
+      in: header
+      name: X-Catalog-Key
+    oauth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.test/authorize
+          tokenUrl: https://auth.example.test/token
+          scopes:
+            catalog:read: Read entries
+  schemas:
+    Node:
+      $ref: './schemas/node.yaml'
+      description: Catalog tree

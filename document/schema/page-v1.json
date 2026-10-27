@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pb-docs:page:v1",
+  "title": "pb-docs page version 1 draft",
+  "description": "Portable page content and an optional typed API graph. Raw API payloads preserve source semantics and are intentionally not validated as complete protocol contracts by this envelope.",
+  "$comment": "This is the version 1 draft structural contract. It is not a claim of complete protocol, link, path, or resource validation. All schema references are internal to this file.",
+  "type": "object",
+  "required": ["format", "version", "id", "title", "path", "source", "kind", "blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "format": {"const": "pb-docs/page"},
+    "version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "path": {"type": "string", "minLength": 1},
+    "source": {"$ref": "#/$defs/location"},
+    "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]},
+    "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+    "api": {"$ref": "#/$defs/api"}
+  },
+  "$defs": {
+    "location": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1},
+        "generated": {"type": "boolean"}
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page": {"type": "string", "minLength": 1},
+        "asset": {"type": "string", "minLength": 1},
+        "anchor": {"type": "string", "minLength": 1}
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["kind", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"type": "string", "enum": ["paragraph", "heading", "code", "quote", "list", "listItem", "table", "tableRow", "tableHeader", "tableCell", "definitionList", "definitionTerm", "definition", "rule", "anchor", "html"]},
+        "source": {"$ref": "#/$defs/location"},
+        "id": {"type": "string"},
+        "level": {"type": "integer", "minimum": 1, "maximum": 6},
+        "text": {"type": "string"},
+        "language": {"type": "string"},
+        "inlines": {"type": "array", "items": {"$ref": "#/$defs/inline"}},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "ordered": {"type": "boolean"},
+        "start": {"type": "integer"},
+        "tight": {"type": "boolean"},
+        "align": {"type": "string", "enum": ["left", "center", "right"]},
+        "omitted": {"type": "boolean"}
+      }
+    },
+    "inline": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"type": "string", "enum": ["text", "code", "emphasis", "strong", "strikethrough", "link", "image", "softBreak", "hardBreak", "checkbox", "html", "anchor"]},
+        "id": {"type": "string"},
+        "text": {"type": "string"},
+        "destination": {"type": "string"},
+        "title": {"type": "string"},
+        "reference": {"$ref": "#/$defs/reference"},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/inline"}},
+        "checked": {"type": "boolean"},
+        "omitted": {"type": "boolean"}
+      }
+    },
+    "raw": {
+      "description": "Preserved JSON payload. Its protocol-specific contents are intentionally unconstrained by the documentation envelope."
+    },
+    "jsonText": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "description": "Exact JSON text companion for readers without arbitrary numeric precision. Equality with the associated raw value is not checked here."
+    },
+    "api": {
+      "type": "object",
+      "required": ["id", "protocol", "format", "version", "title", "source", "servers", "operations", "schemas", "security", "documents"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "protocol": {"type": "string", "enum": ["http", "grpc"]},
+        "format": {"type": "string", "enum": ["openapi", "protobuf"]},
+        "version": {"type": "string"},
+        "apiVersion": {"type": "string"},
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "source": {"$ref": "#/$defs/location"},
+        "servers": {"type": "array", "items": {"$ref": "#/$defs/server"}},
+        "tags": {"type": "array", "items": {"$ref": "#/$defs/tag"}},
+        "operations": {"type": "array", "items": {"$ref": "#/$defs/operation"}},
+        "schemas": {"type": "array", "items": {"$ref": "#/$defs/apiSchema"}},
+        "securitySchemes": {"type": "array", "items": {"$ref": "#/$defs/securityScheme"}},
+        "security": {"type": "array", "items": {"$ref": "#/$defs/securityRequirement"}},
+        "documents": {"type": "array", "items": {"$ref": "#/$defs/apiDocument"}}
+      }
+    },
+    "apiDocument": {
+      "type": "object",
+      "required": ["path", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string"},
+        "content": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "tag": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "summary": {"type": "string"},
+        "parent": {"type": "string"},
+        "kind": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "server": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "url": {"type": "string"},
+        "description": {"type": "string"},
+        "variables": {"type": "array", "items": {"$ref": "#/$defs/serverVariable"}}
+      }
+    },
+    "serverVariable": {
+      "type": "object",
+      "required": ["name", "default"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "default": {"type": "string"},
+        "description": {"type": "string"},
+        "enum": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "securityRequirement": {
+      "type": "object",
+      "description": "One conjunction of schemes and required scopes. The enclosing array is a disjunction; an empty requirement allows anonymous use.",
+      "additionalProperties": {"type": "array", "items": {"type": "string"}}
+    },
+    "securityScheme": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "description": {"type": "string"},
+        "name": {"type": "string"},
+        "in": {"type": "string"},
+        "scheme": {"type": "string"},
+        "bearerFormat": {"type": "string"},
+        "openIdConnectUrl": {"type": "string"},
+        "flows": {"$ref": "#/$defs/raw"},
+        "raw": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": ["id", "anchor", "path", "servers", "security", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "anchor": {"type": "string"},
+        "method": {"type": "string"},
+        "interaction": {"type": "string"},
+        "path": {"type": "string"},
+        "service": {"type": "string"},
+        "rpcMethod": {"type": "string"},
+        "summary": {"type": "string"},
+        "description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "deprecated": {"type": "boolean"},
+        "servers": {"type": "array", "items": {"$ref": "#/$defs/server"}},
+        "parameters": {"type": "array", "items": {"$ref": "#/$defs/parameter"}},
+        "requestBody": {"$ref": "#/$defs/requestBody"},
+        "responses": {"type": "array", "items": {"$ref": "#/$defs/response"}},
+        "security": {"type": "array", "items": {"$ref": "#/$defs/securityRequirement"}},
+        "clientStreaming": {"type": "boolean"},
+        "serverStreaming": {"type": "boolean"},
+        "inputSchema": {"type": "string"},
+        "outputSchema": {"type": "string"},
+        "source": {"$ref": "#/$defs/location"},
+        "raw": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "in": {"type": "string"},
+        "description": {"type": "string"},
+        "required": {"type": "boolean"},
+        "deprecated": {"type": "boolean"},
+        "allowReserved": {"type": "boolean"},
+        "allowEmptyValue": {"type": "boolean"},
+        "style": {"type": "string"},
+        "explode": {"type": "boolean"},
+        "schema": {"type": "string"},
+        "content": {"type": "array", "items": {"$ref": "#/$defs/mediaType"}},
+        "example": {"$ref": "#/$defs/raw"},
+        "exampleJSON": {"$ref": "#/$defs/jsonText"},
+        "examples": {"type": "array", "items": {"$ref": "#/$defs/example"}},
+        "raw": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "requestBody": {
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {"type": "string"},
+        "required": {"type": "boolean"},
+        "content": {"type": "array", "items": {"$ref": "#/$defs/mediaType"}}
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["status", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string"},
+        "description": {"type": "string"},
+        "headers": {"type": "array", "items": {"$ref": "#/$defs/parameter"}},
+        "content": {"type": "array", "items": {"$ref": "#/$defs/mediaType"}},
+        "raw": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "mediaType": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "schema": {"type": "string"},
+        "itemSchema": {"type": "string"},
+        "example": {"$ref": "#/$defs/raw"},
+        "exampleJSON": {"$ref": "#/$defs/jsonText"},
+        "examples": {"type": "array", "items": {"$ref": "#/$defs/example"}},
+        "encoding": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "summary": {"type": "string"},
+        "description": {"type": "string"},
+        "value": {"$ref": "#/$defs/raw"},
+        "valueJSON": {"$ref": "#/$defs/jsonText"},
+        "externalValue": {"type": "string"},
+        "dataValue": {"$ref": "#/$defs/raw"},
+        "serializedValue": {"type": "string"},
+        "raw": {"$ref": "#/$defs/raw"}
+      }
+    },
+    "apiSchema": {
+      "type": "object",
+      "required": ["id", "anchor", "name", "definition", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "anchor": {"type": "string"},
+        "name": {"type": "string"},
+        "definition": {"type": ["object", "boolean"], "description": "Preserved schema. The envelope does not validate its dialect or evaluate its references."},
+        "exampleJSON": {"$ref": "#/$defs/jsonText"},
+        "defaultJSON": {"$ref": "#/$defs/jsonText"},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/schemaReference"}},
+        "source": {"$ref": "#/$defs/location"}
+      }
+    },
+    "schemaReference": {
+      "type": "object",
+      "required": ["pointer", "reference", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "pointer": {"type": "string"},
+        "reference": {"type": "string"},
+        "target": {"type": "string"},
+        "dynamic": {"type": "boolean"}
+      }
+    }
+  }
+}

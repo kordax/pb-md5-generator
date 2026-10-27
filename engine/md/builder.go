@@ -166,6 +166,12 @@ func (b *CodeblockBuilder) Text(text string) *CodeblockBuilder {
 	return b
 }
 
+// Language sets the fenced code language, such as json or xml.
+func (b *CodeblockBuilder) Language(language string) *CodeblockBuilder {
+	b.codeblock.language = language
+	return b
+}
+
 func (b *CodeblockBuilder) Build() *Codeblock {
 	return b.codeblock
 }

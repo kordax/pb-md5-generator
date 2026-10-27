@@ -6,10 +6,38 @@
 
 # Introduction
 
-Markdown documentation generator for proto3 protocol.
-This project consists of a custom program designed to parse Protocol Buffers (protobuf) definition files, specifically
-focusing on extracting documentation annotations present in the comments. These annotations follow a custom doc
-protocol, facilitating the generation of Markdown documentation from the protobuf files.
+A documentation compiler for guides, runbooks and API reference. Write ordinary Markdown, import protobuf or local
+OpenAPI contracts, and build a portable static site with one Go binary. The protobuf-to-Markdown commands remain available.
+
+The first reader includes navigation, a page contents list, Unicode heading anchors, local search, light/dark themes
+and code copying. It runs on any static HTTP host, including under a subpath, without a Node.js server or database.
+
+Run the complete example with Docker, then open [localhost:8080](http://localhost:8080/):
+
+```console
+docker compose up --build -d --wait
+```
+
+Use `docker compose down` to stop and remove the local stack. The [deployment guide](./docs/deployment.md#docker)
+covers custom sources, ports, image transfer and the separate CLI image.
+
+From a source checkout with Go and Task installed:
+
+```console
+task site
+# Or use the standalone binary:
+./build/pb-md5-generator build -config docs.json -o site
+./build/pb-md5-generator build -config docs.json -o site -check
+```
+
+The checked-in [`docs.json`](./docs.json) combines [guides](./docs/authoring.md),
+[deployment instructions](./docs/deployment.md), the [design and roadmap](./docs/design.md), and protobuf/OpenAPI examples.
+API pages include operations, schemas and an explicit HTTP request panel. See the [API guide](./docs/api.md) for supported
+contract versions, authentication and browser limits. Every page also has a [typed JSON export](./docs/format.md), with
+standalone JSON Schemas available through `schema -kind manifest|project|page`.
+
+The format remains a draft. Grouped navigation, versions, languages, directives and the remaining MkDocs/Scalar workflow
+are tracked in the roadmap; the current implementation does not claim full compatibility.
 
 ## Syntax
 
@@ -102,6 +130,11 @@ that contain spaces or `@`. Email addresses and ordinary mentions in prose remai
 
 The legacy `@min`, `@max`, `@len`, `@val`, and `@type` forms remain supported, so existing proto files do not need a
 migration. `max_len` maps to `@len`, and `example` maps to `@val`.
+
+Numeric bounds are inclusive and retain exact decimal values, including int64/uint64 endpoints. Equal bounds generate a
+fixed value; an integer interval with no representable integer is an error. File markers are recognized only inside
+actual comments, outside fixed examples and literal Markdown code. See the [syntax contract](./docs/syntax.md) for the
+grammar, escaping and limits.
 
 1. **Max Annotation**
    - Syntax: `@max=<value>`
@@ -349,7 +382,8 @@ Regenerate it with `task generate-example`.
 ## Prerequisites
 
 - A downloaded binary needs no external programs.
-- Building from source requires Go 1.26 or newer.
+- Building from source requires Go 1.26.10 or newer.
+- `task verify` also uses Node.js 24 or newer for reader enhancement tests. No npm dependencies are needed.
 
 The binary parses each `.proto` source directly. It does not invoke `protoc`,
 resolve or download imports, run `buf`, use a language plugin, or require Docker.

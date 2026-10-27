@@ -22,10 +22,23 @@ import (
 const (
 	commandGenerate = "generate"
 	commandLint     = "lint"
+	commandBuild    = "build"
+	commandSchema   = "schema"
 )
+
+const rootCommandUsage = `Usage:
+  pb-md5-generator generate [flags]    Generate protobuf Markdown
+  pb-md5-generator lint [flags]        Validate protobuf annotations
+  pb-md5-generator build [flags]       Build a mixed documentation site
+  pb-md5-generator schema [flags]      Export a versioned JSON Schema
+
+Use build -help or schema -help for command-specific flags.
+Generate and lint flags:`
 
 type Config struct {
 	Command                string
+	SiteConfig             string
+	SchemaKind             string
 	ProtoDir               string
 	ProtoPaths             []string
 	Files                  string
@@ -45,6 +58,7 @@ type generationOptions struct {
 	knownPackages     []string
 	seed              int64
 	strictAnnotations bool
+	sources           map[string][]byte
 }
 
 type appDeps struct {
@@ -92,6 +106,12 @@ func defaultDeps() appDeps {
 }
 
 func parseFlags(args []string) (Config, error) {
+	if len(args) > 0 && args[0] == commandSchema {
+		return parseSchemaFlags(args[1:])
+	}
+	if len(args) > 0 && args[0] == commandBuild {
+		return parseSiteFlags(args[1:])
+	}
 	command := commandGenerate
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command = args[0]
@@ -103,6 +123,10 @@ func parseFlags(args []string) (Config, error) {
 
 	flags := flag.NewFlagSet("pb-md5-generator "+command, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), rootCommandUsage)
+		flags.PrintDefaults()
+	}
 
 	cfg := Config{Command: command, Seed: engine.DefaultCodegenSeed}
 	protoPaths := &stringListFlag{}
@@ -157,6 +181,12 @@ func (f *stringListFlag) Set(value string) error {
 }
 
 func run(cfg Config) error {
+	if cfg.Command == commandSchema {
+		return writeSchema(cfg)
+	}
+	if cfg.Command == commandBuild {
+		return buildSite(cfg)
+	}
 	return runWithDeps(cfg, defaultDeps())
 }
 
@@ -285,7 +315,7 @@ func writeDocument(path, content string, check bool, deps appDeps) error {
 
 func configureLogger() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "02/01 15:04:05"})
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "02/01 15:04:05"})
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 }
 
@@ -387,6 +417,7 @@ func generatorStyle(cfg Config) (engine.GeneratorStyle, error) {
 func generate(request *pluginpb.CodeGeneratorRequest, options generationOptions) (string, error) {
 	parser := engine.NewDescriptorParserWithOptions(request, engine.ParserOptions{
 		StrictAnnotations: options.strictAnnotations,
+		Sources:           options.sources,
 	})
 	generator := engine.NewMDGeneratorWithStyle(engine.NewCodegeneratorWithSeed(options.seed), options.style)
 	renderer := render.NewMarkdownRenderer(render.DefaultConfig())

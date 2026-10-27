@@ -8,6 +8,9 @@ import (
 // ParserOptions configures protobuf documentation parsing.
 type ParserOptions struct {
 	StrictAnnotations bool
+	// Sources supplies source snapshots keyed by FileToGenerate names. When set,
+	// missing entries fail parsing instead of falling back to the filesystem.
+	Sources map[string][]byte
 }
 
 type DescriptorParser struct {
@@ -23,6 +26,7 @@ func NewDescriptorParserWithOptions(request *pluginpb.CodeGeneratorRequest, opti
 	return &DescriptorParser{
 		delegate: parser.NewDescriptorParserWithOptions(request, parser.ParserOptions{
 			StrictAnnotations: options.StrictAnnotations,
+			Sources:           options.Sources,
 		}),
 	}
 }
@@ -163,6 +167,8 @@ func convertFieldFlags(flags parser.Option[parser.FieldFlags]) Option[FieldFlags
 		maxLength:  src.GetMaxLength(),
 		min:        src.GetMin(),
 		max:        src.GetMax(),
+		minLiteral: src.GetMinLiteral(),
+		maxLiteral: src.GetMaxLiteral(),
 		value:      src.GetValue(),
 		customType: customType,
 		other:      src.Other(),

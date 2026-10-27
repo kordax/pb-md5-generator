@@ -43,29 +43,20 @@ func ContainsPredicate[T any](values []T, predicate func(T) bool) (int, *T) {
 
 func protoToFieldValueType(d *protokit.FieldDescriptor) ValueType {
 	switch d.GetType() {
-	case descriptorpb.FieldDescriptorProto_TYPE_INT64:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_INT32:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_UINT64:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_UINT32:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_SINT64:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_SINT32:
+	case descriptorpb.FieldDescriptorProto_TYPE_INT64,
+		descriptorpb.FieldDescriptorProto_TYPE_INT32,
+		descriptorpb.FieldDescriptorProto_TYPE_SINT64,
+		descriptorpb.FieldDescriptorProto_TYPE_SINT32,
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED64,
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED32:
 		return ValueTypeInt
-	case descriptorpb.FieldDescriptorProto_TYPE_FIXED64:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_FIXED32:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_DOUBLE:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_FLOAT:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_SFIXED64:
-		fallthrough
-	case descriptorpb.FieldDescriptorProto_TYPE_SFIXED32:
+	case descriptorpb.FieldDescriptorProto_TYPE_UINT64,
+		descriptorpb.FieldDescriptorProto_TYPE_UINT32,
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED64,
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED32:
+		return ValueTypeUInt
+	case descriptorpb.FieldDescriptorProto_TYPE_DOUBLE,
+		descriptorpb.FieldDescriptorProto_TYPE_FLOAT:
 		return ValueTypeFloat
 	case descriptorpb.FieldDescriptorProto_TYPE_BOOL:
 		return ValueTypeBool

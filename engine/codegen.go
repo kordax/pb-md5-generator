@@ -14,7 +14,6 @@ import (
 	"github.com/goombaio/namegenerator"
 	"github.com/kordax/pb-md5-generator/engine/md"
 	"github.com/kordax/pb-md5-generator/engine/password"
-	"github.com/rs/zerolog/log"
 )
 
 // DefaultCodegenSeed is the reproducible seed used by NewCodegenerator.
@@ -42,14 +41,14 @@ func NewCodegeneratorWithSeed(seed int64) *Codegenerator {
 
 func (g *Codegenerator) Generate(files []ParsedFile, message *Message) (*md.Codeblock, error) {
 	if message.code.Present() {
-		result := md.NewCodeblockBuilder().Text(message.code.Get().Right).Build()
+		result := md.NewCodeblockBuilder().Text(message.code.Get().Right).Language(exampleLanguage(message.code.Get().Left)).Build()
 		return result, nil
 	} else if message.autocode.Present() {
 		autocode, err := g.generateFromMessage(files, message, nil)
 		if err != nil {
 			return nil, err
 		}
-		result := md.NewCodeblockBuilder().Text(autocode).Build()
+		result := md.NewCodeblockBuilder().Text(autocode).Language(exampleLanguage(message.autocode.Get().syntax)).Build()
 		return result, nil
 	} else {
 		return nil, fmt.Errorf("received message entry with both code and autocode flags missing")
@@ -64,44 +63,14 @@ func (g *Codegenerator) generateFromMessage(files []ParsedFile, message *Message
 	if err != nil {
 		return "", err
 	}
+	body, err := newExampleContext(g, files).messageValue(message, 0)
+	if err != nil {
+		return "", err
+	}
 	js["trx"] = transactionID
-	js[message.m.GetName()] = map[string]any{}
-	jsMsg := js[message.m.GetName()].(map[string]any)
-	for _, field := range message.fields {
-		if field.isMsg == nil {
-			value, err := g.generateFromField(files, field)
-			if err != nil {
-				return "", err
-			}
-			jsMsg[field.d.GetName()] = value
-		} else {
-			nestedJSON, err := g.generateFromMessage(files, field.isMsg, nil)
-			if err != nil {
-				return "", err
-			}
-			var nestedParsed map[string]any
-			if err := json.Unmarshal([]byte(nestedJSON), &nestedParsed); err != nil {
-				return "", err
-			}
-
-			nestedMessageName := field.isMsg.m.GetName()
-			nestedMsgValue, ok := nestedParsed[nestedMessageName]
-			if !ok {
-				for key, value := range nestedParsed {
-					if key == "trx" {
-						continue
-					}
-					nestedMsgValue = value
-					ok = true
-					break
-				}
-			}
-
-			if !ok {
-				nestedMsgValue = map[string]any{}
-			}
-			jsMsg[field.d.GetName()] = nestedMsgValue
-		}
+	js[message.m.GetName()] = body
+	if message.autocode.Present() && message.autocode.Get().syntax == SyntaxXml {
+		return marshalExampleXML(js)
 	}
 	res, err := json.MarshalIndent(js, "", "\t")
 	return string(res), err
@@ -116,20 +85,14 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 	field.valueType = customType.OrElse(field.ValueType())
 	switch field.valueType {
 	case ValueTypeInt:
-		if value.Present() {
-			return strconv.ParseInt(*value.Get(), 10, 64)
-		}
-		return int64WithinRangeFrom(g.random, int64(minVal.OrElse(0)), int64(maxVal.OrElse(1000000)))
+		return g.signedExample(field, field.flags.OrElse(FieldFlags{}))
 	case ValueTypeFloat:
 		if value.Present() {
 			return strconv.ParseFloat(*value.Get(), 64)
 		}
 		return float64WithinRangeFrom(g.random, minVal.OrElse(0), maxVal.OrElse(1000000))
 	case ValueTypeUInt:
-		if value.Present() {
-			return strconv.ParseUint(*value.Get(), 10, 64)
-		}
-		return uint64WithinRangeFrom(g.random, uint64(minVal.OrElse(0)), uint64(maxVal.OrElse(1000000)))
+		return g.unsignedExample(field, field.flags.OrElse(FieldFlags{}))
 	case ValueTypeBool:
 		if value.Present() {
 			return strconv.ParseBool(*value.Get())
@@ -146,18 +109,26 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 			return *value.Get(), nil
 		}
 		str := g.namegen.Generate()
-		if maxLen.Present() {
-			count := utf8.RuneCountInString(str)
-			if count > *maxLen.Get() {
-				return str[:*maxLen.Get()], nil
+		suffix := ""
+		if field.valueType == ValueTypeEmail {
+			suffix = "@email.com"
+			if maxLen.Present() && *maxLen.Get() < utf8.RuneCountInString(suffix)+1 {
+				if *maxLen.Get() < 3 {
+					return nil, fmt.Errorf("email max_len must allow at least three characters")
+				}
+				suffix = "@b"
 			}
 		}
-
-		if field.valueType == ValueTypeEmail {
-			return str + "@email.com", nil
+		if maxLen.Present() {
+			limit := *maxLen.Get() - utf8.RuneCountInString(suffix)
+			if limit < 0 {
+				return nil, fmt.Errorf("max_len cannot be negative")
+			}
+			if utf8.RuneCountInString(str) > limit {
+				str = string([]rune(str)[:limit])
+			}
 		}
-
-		return str, nil
+		return str + suffix, nil
 	case ValueTypePhone:
 		if value.Present() {
 			return *value.Get(), nil
@@ -193,21 +164,22 @@ func (g *Codegenerator) generateFromField(files []ParsedFile, field MessageField
 	case ValueTypeEnum:
 		var enum *Enum
 		for _, file := range files {
-			for _, entry := range file.entries {
-				if entry.enum != nil {
-					log.Debug().Msgf("reading enum descriptor: %s", entry.enum.e.GetName())
-					if "."+entry.enum.e.GetFullName() == field.d.GetTypeName() {
-						enum = entry.enum
-					}
-					if enum != nil {
-						break
-					}
-				}
+			enum = findExampleEnum(file.entries, field.d.GetTypeName())
+			if enum != nil {
+				break
 			}
 		}
 
 		if enum != nil {
 			values := enum.values
+			if value.Present() {
+				for _, candidate := range values {
+					if candidate.d.GetName() == *value.Get() {
+						return *value.Get(), nil
+					}
+				}
+				return nil, fmt.Errorf("unknown enum example %q", *value.Get())
+			}
 			l := len(values)
 			index, err := cryptoIndexFrom(g.random, l)
 			if err != nil {
@@ -248,12 +220,13 @@ func int64WithinRangeFrom(reader io.Reader, min, max int64) (int64, error) {
 	if max <= min {
 		return min, nil
 	}
-	diff := max - min
-	value, err := cryptoRand.Int(reader, big.NewInt(diff))
+	minimum := big.NewInt(min)
+	diff := new(big.Int).Sub(big.NewInt(max), minimum)
+	value, err := cryptoRand.Int(reader, diff)
 	if err != nil {
 		return 0, err
 	}
-	return min + value.Int64(), nil
+	return value.Add(value, minimum).Int64(), nil
 }
 
 func uint64WithinRange(min, max uint64) (uint64, error) {
@@ -286,7 +259,7 @@ func float64WithinRangeFrom(reader io.Reader, min, max float64) (float64, error)
 		return 0, err
 	}
 	ratio := float64(value) / float64(maxUint64)
-	return min + ratio*(max-min), nil
+	return (1-ratio)*min + ratio*max, nil
 }
 
 func cryptoIndex(max int) (int, error) {

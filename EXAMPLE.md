@@ -47,24 +47,24 @@ Creates a user with generated JSON example.
 
 | Field              | Type                          | Label          | Description                       | Min value | Max value | Max length/size |
 |--------------------|-------------------------------|----------------|-----------------------------------|-----------|-----------|-----------------|
-| **`email`**        | [string](#string)             |                | Email field description.          |           |           |                 |
-| **`phone`**        | [string](#string)             |                | Phone field description.          |           |           |                 |
-| **`password`**     | [string](#string)             |                | Password field description.       |           |           |                 |
-| **`request_uuid`** | [string](#string)             |                | UUID field description.           |           |           |                 |
-| **`access_token`** | [string](#string)             |                | JWT field description.            |           |           |                 |
-| **`age`**          | [int32](#int32)               |                | Age field description.            | 18        | 100       |                 |
-| **`score`**        | [float64](#float64)           |                | Score field description.          | 0.5       | 99.9      |                 |
-| **`login_count`**  | [uint64](#uint64)             |                | Login count field description.    | 1         | 42        |                 |
-| **`display_name`** | [string](#string)             |                | Display name field description.   |           |           | 12              |
-| **`nickname`**     | [string](#string)             |                | Fixed nickname field description. |           |           |                 |
-| **`enabled`**      | [bool](#bool)                 |                | Fixed bool field description.     |           |           |                 |
+| **`email`**        | `string`                      |                | Email field description.          |           |           |                 |
+| **`phone`**        | `string`                      |                | Phone field description.          |           |           |                 |
+| **`password`**     | `string`                      |                | Password field description.       |           |           |                 |
+| **`request_uuid`** | `string`                      |                | UUID field description.           |           |           |                 |
+| **`access_token`** | `string`                      |                | JWT field description.            |           |           |                 |
+| **`age`**          | `int32`                       |                | Age field description.            | 18        | 100       |                 |
+| **`score`**        | `float64`                     |                | Score field description.          | 0.5       | 99.9      |                 |
+| **`login_count`**  | `uint64`                      |                | Login count field description.    | 1         | 42        |                 |
+| **`display_name`** | `string`                      |                | Display name field description.   |           |           | 12              |
+| **`nickname`**     | `string`                      |                | Fixed nickname field description. |           |           |                 |
+| **`enabled`**      | `bool`                        |                | Fixed bool field description.     |           |           |                 |
 | **`role`**         | [fixture.Role](#fixture.Role) |                | Role enum field description.      |           |           |                 |
-| **`tags`**         | [string](#string)             | LABEL_REPEATED | Repeated tags field description.  |           |           |                 |
-| **`raw_payload`**  | [[]byte](#[]byte)             |                | Bytes payload field description.  |           |           |                 |
+| **`tags`**         | `string`                      | LABEL_REPEATED | Repeated tags field description.  |           |           |                 |
+| **`raw_payload`**  | `[]byte`                      |                | Bytes payload field description.  |           |           |                 |
 
 #### `CreateUserRequest` code example:
 
-```
+```json
 {
 	"CreateUserRequest": {
 		"access_token": "example-access-token",
@@ -76,11 +76,13 @@ Creates a user with generated JSON example.
 		"nickname": "fixed-nickname",
 		"password": "wE29y9G4#26W4",
 		"phone": "+633.8426211692",
-		"raw_payload": "restless-surf",
+		"raw_payload": "cmVzdGxlc3Mtc3VyZg==",
 		"request_uuid": "d471c483-f15f-490b-adb3-7c5821b6d955",
 		"role": "ROLE_MEMBER",
-		"score": 64.21844269698448,
-		"tags": "hidden-sea"
+		"score": 64.2184426969845,
+		"tags": [
+			"hidden-sea"
+		]
 	},
 	"trx": "4784045d-87f3-467c-b227-46e995af5a25"
 }
@@ -95,12 +97,12 @@ Explicit JSON example message.
 | Field         | Type                                      | Label          | Description                        |
 |---------------|-------------------------------------------|----------------|------------------------------------|
 | **`status`**  | [fixture.UserStatus](#fixture.UserStatus) |                | Response status field description. |
-| **`user_id`** | [string](#string)                         |                | User id field description.         |
+| **`user_id`** | `string`                                  |                | User id field description.         |
 | **`roles`**   | [fixture.Role](#fixture.Role)             | LABEL_REPEATED | Roles field description.           |
 
 #### `CreateUserResponse` code example:
 
-```
+```json
 {
 	"CreateUserResponse": {
 		"status": "USER_STATUS_ACTIVE",
@@ -120,14 +122,14 @@ Explicit JSON example message.
 
 XML code example message.
 
-| Field            | Type              | Label | Description                               | Max length/size |
-|------------------|-------------------|-------|-------------------------------------------|-----------------|
-| **`id`**         | [string](#string) |       | Session identifier description.           | 16              |
-| **`expires_at`** | [string](#string) |       | Session expiration timestamp description. |                 |
+| Field            | Type     | Label | Description                               | Max length/size |
+|------------------|----------|-------|-------------------------------------------|-----------------|
+| **`id`**         | `string` |       | Session identifier description.           | 16              |
+| **`expires_at`** | `string` |       | Session expiration timestamp description. |                 |
 
 #### `SessionResponse` code example:
 
-```
+```xml
 <session>
   <id>session-1</id>
 </session>
@@ -139,23 +141,23 @@ XML code example message.
 
 XML autocode marker coverage.
 
-| Field            | Type                | Label | Description |
-|------------------|---------------------|-------|-------------|
-| **`session_id`** | [string](#string)   |       |             |
-| **`active`**     | [bool](#bool)       |       |             |
-| **`risk_score`** | [float32](#float32) |       |             |
+| Field            | Type      | Label | Description |
+|------------------|-----------|-------|-------------|
+| **`session_id`** | `string`  |       |             |
+| **`active`**     | `bool`    |       |             |
+| **`risk_score`** | `float32` |       |             |
 
 #### `SessionAuditRequest` code example:
 
-```
-{
-	"SessionAuditRequest": {
-		"active": true,
-		"risk_score": 842435.9885913228,
-		"session_id": "session-1"
-	},
-	"trx": "3a1b1d49-d495-4c84-8621-6325253fec73"
-}
+```xml
+<example>
+	<SessionAuditRequest>
+		<active>true</active>
+		<risk_score>842435.9885913228</risk_score>
+		<session_id>session-1</session_id>
+	</SessionAuditRequest>
+	<trx>3a1b1d49-d495-4c84-8621-6325253fec73</trx>
+</example>
 ```
 
 <a name="fixture.Profile"></a>
@@ -166,8 +168,8 @@ Parent message description.
 
 | Field                    | Type                                                        | Label          | Description             | Max length/size |
 |--------------------------|-------------------------------------------------------------|----------------|-------------------------|-----------------|
-| **`first_name`**         | [string](#string)                                           |                | First name description. | 32              |
-| **`last_name`**          | [string](#string)                                           |                | Last name description.  | 64              |
+| **`first_name`**         | `string`                                                    |                | First name description. | 32              |
+| **`last_name`**          | `string`                                                    |                | Last name description.  | 64              |
 | **`primary_address`**    | [fixture.Profile.Address](#fixture.Profile.Address)         |                |                         |                 |
 | **`previous_addresses`** | [fixture.Profile.Address](#fixture.Profile.Address)         | LABEL_REPEATED |                         |                 |
 | **`preferences`**        | [fixture.Profile.Preferences](#fixture.Profile.Preferences) |                |                         |                 |
@@ -180,9 +182,9 @@ Nested address description.
 
 | Field         | Type                                                                  | Label | Description               | Max length/size |
 |---------------|-----------------------------------------------------------------------|-------|---------------------------|-----------------|
-| **`country`** | [string](#string)                                                     |       | Country code description. | 2               |
-| **`city`**    | [string](#string)                                                     |       | City description.         | 64              |
-| **`line`**    | [string](#string)                                                     |       | Street line description.  | 128             |
+| **`country`** | `string`                                                              |       | Country code description. | 2               |
+| **`city`**    | `string`                                                              |       | City description.         | 64              |
+| **`line`**    | `string`                                                              |       | Street line description.  | 128             |
 | **`geo`**     | [fixture.Profile.Address.GeoPoint](#fixture.Profile.Address.GeoPoint) |       |                           |                 |
 
 <a name="fixture.Profile.Address.GeoPoint"></a>
@@ -191,10 +193,10 @@ Nested address description.
 
 Nested geo point description.
 
-| Field     | Type                | Label | Description            | Min value | Max value |
-|-----------|---------------------|-------|------------------------|-----------|-----------|
-| **`lat`** | [float64](#float64) |       | Latitude description.  | -90       | 90        |
-| **`lon`** | [float64](#float64) |       | Longitude description. | -180      | 180       |
+| Field     | Type      | Label | Description            | Min value | Max value |
+|-----------|-----------|-------|------------------------|-----------|-----------|
+| **`lat`** | `float64` |       | Latitude description.  | -90       | 90        |
+| **`lon`** | `float64` |       | Longitude description. | -180      | 180       |
 
 <a name="fixture.Profile.Preferences"></a>
 
@@ -204,18 +206,18 @@ Nested preferences description.
 
 | Field                   | Type                                                                                    | Label          | Description                      | Max length/size |
 |-------------------------|-----------------------------------------------------------------------------------------|----------------|----------------------------------|-----------------|
-| **`marketing_enabled`** | [bool](#bool)                                                                           |                | Marketing enabled description.   |                 |
-| **`languages`**         | [string](#string)                                                                       | LABEL_REPEATED | Preferred languages description. | 5               |
+| **`marketing_enabled`** | `bool`                                                                                  |                | Marketing enabled description.   |                 |
+| **`languages`**         | `string`                                                                                | LABEL_REPEATED | Preferred languages description. | 5               |
 | **`settings`**          | [fixture.Profile.Preferences.SettingsEntry](#fixture.Profile.Preferences.SettingsEntry) | LABEL_REPEATED | Settings map description.        |                 |
 
 <a name="fixture.Profile.Preferences.SettingsEntry"></a>
 
 #### `fixture.Profile.Preferences.SettingsEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [string](#string) |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `string` |       |             |
 
 ### Billing
 
@@ -227,23 +229,23 @@ Creates a payment using generated JSON example.
 
 | Field                 | Type                                  | Label | Description                     | Min value | Max value | Max length/size |
 |-----------------------|---------------------------------------|-------|---------------------------------|-----------|-----------|-----------------|
-| **`merchant_id`**     | [string](#string)                     |       | Merchant id description.        |           |           | 12              |
-| **`order_id`**        | [string](#string)                     |       | Order id description.           |           |           | 10              |
-| **`amount_minor`**    | [int64](#int64)                       |       | Amount minor units description. | 100       | 999999    |                 |
+| **`merchant_id`**     | `string`                              |       | Merchant id description.        |           |           | 12              |
+| **`order_id`**        | `string`                              |       | Order id description.           |           |           | 10              |
+| **`amount_minor`**    | `int64`                               |       | Amount minor units description. | 100       | 999999    |                 |
 | **`currency`**        | [fixture.Currency](#fixture.Currency) |       | Currency enum description.      |           |           |                 |
-| **`capture`**         | [bool](#bool)                         |       | Capture flag description.       |           |           |                 |
-| **`idempotency_key`** | [string](#string)                     |       | Idempotency key description.    |           |           |                 |
-| **`customer_email`**  | [string](#string)                     |       | Customer email description.     |           |           | 128             |
-| **`risk_score`**      | [float32](#float32)                   |       | Risk score description.         | 0         | 1         |                 |
-| **`attempt`**         | [uint32](#uint32)                     |       | Attempt count description.      | 1         | 5         |                 |
+| **`capture`**         | `bool`                                |       | Capture flag description.       |           |           |                 |
+| **`idempotency_key`** | `string`                              |       | Idempotency key description.    |           |           |                 |
+| **`customer_email`**  | `string`                              |       | Customer email description.     |           |           | 128             |
+| **`risk_score`**      | `float32`                             |       | Risk score description.         | 0         | 1         |                 |
+| **`attempt`**         | `uint32`                              |       | Attempt count description.      | 1         | 5         |                 |
 
 #### `CreatePaymentRequest` code example:
 
-```
+```json
 {
 	"CreatePaymentRequest": {
 		"amount_minor": 134233,
-		"attempt": 1,
+		"attempt": 5,
 		"capture": false,
 		"currency": "CURRENCY_USD",
 		"customer_email": "summer-night@email.com",
@@ -264,11 +266,11 @@ Rich payment response with nested structures and arrays.
 
 | Field              | Type                                                                                        | Label          | Description                     | Min value | Max value | Max length/size |
 |--------------------|---------------------------------------------------------------------------------------------|----------------|---------------------------------|-----------|-----------|-----------------|
-| **`payment_id`**   | [string](#string)                                                                           |                | Payment id description.         |           |           | 16              |
+| **`payment_id`**   | `string`                                                                                    |                | Payment id description.         |           |           | 16              |
 | **`status`**       | [fixture.PaymentStatus](#fixture.PaymentStatus)                                             |                | Payment status description.     |           |           |                 |
-| **`amount_minor`** | [int64](#int64)                                                                             |                | Amount minor units description. | 1         | 999999    |                 |
+| **`amount_minor`** | `int64`                                                                                     |                | Amount minor units description. | 1         | 999999    |                 |
 | **`currency`**     | [fixture.Currency](#fixture.Currency)                                                       |                | Currency description.           |           |           |                 |
-| **`created_at`**   | [string](#string)                                                                           |                | Created timestamp description.  |           |           |                 |
+| **`created_at`**   | `string`                                                                                    |                | Created timestamp description.  |           |           |                 |
 | **`customer`**     | [fixture.CreatePaymentResponse.Customer](#fixture.CreatePaymentResponse.Customer)           |                |                                 |           |           |                 |
 | **`method`**       | [fixture.CreatePaymentResponse.PaymentMethod](#fixture.CreatePaymentResponse.PaymentMethod) |                |                                 |           |           |                 |
 | **`fees`**         | [fixture.CreatePaymentResponse.Fee](#fixture.CreatePaymentResponse.Fee)                     | LABEL_REPEATED |                                 |           |           |                 |
@@ -276,7 +278,7 @@ Rich payment response with nested structures and arrays.
 
 #### `CreatePaymentResponse` code example:
 
-```
+```json
 {
 	"CreatePaymentResponse": {
 		"payment_id": "pay_8f3c0d",
@@ -324,11 +326,11 @@ Rich payment response with nested structures and arrays.
 
 #### `fixture.CreatePaymentResponse.Customer` message:
 
-| Field        | Type              | Label          | Description                      | Max length/size |
-|--------------|-------------------|----------------|----------------------------------|-----------------|
-| **`id`**     | [string](#string) |                | Customer id description.         | 16              |
-| **`email`**  | [string](#string) |                | Customer email description.      | 128             |
-| **`phones`** | [string](#string) | LABEL_REPEATED | Customer phone list description. |                 |
+| Field        | Type     | Label          | Description                      | Max length/size |
+|--------------|----------|----------------|----------------------------------|-----------------|
+| **`id`**     | `string` |                | Customer id description.         | 16              |
+| **`email`**  | `string` |                | Customer email description.      | 128             |
+| **`phones`** | `string` | LABEL_REPEATED | Customer phone list description. |                 |
 
 <a name="fixture.CreatePaymentResponse.PaymentMethod"></a>
 
@@ -336,37 +338,37 @@ Rich payment response with nested structures and arrays.
 
 | Field      | Type                                                                                                  | Label | Description                      |
 |------------|-------------------------------------------------------------------------------------------------------|-------|----------------------------------|
-| **`kind`** | [string](#string)                                                                                     |       | Payment method kind description. |
+| **`kind`** | `string`                                                                                              |       | Payment method kind description. |
 | **`card`** | [fixture.CreatePaymentResponse.PaymentMethod.Card](#fixture.CreatePaymentResponse.PaymentMethod.Card) |       |                                  |
 
 <a name="fixture.CreatePaymentResponse.PaymentMethod.Card"></a>
 
 #### `fixture.CreatePaymentResponse.PaymentMethod.Card` message:
 
-| Field           | Type              | Label | Description                        | Min value | Max value | Max length/size |
-|-----------------|-------------------|-------|------------------------------------|-----------|-----------|-----------------|
-| **`brand`**     | [string](#string) |       | Card brand description.            |           |           |                 |
-| **`last4`**     | [string](#string) |       | Card last four digits description. |           |           | 4               |
-| **`exp_month`** | [int32](#int32)   |       | Expiration month description.      | 1         | 12        |                 |
-| **`exp_year`**  | [int32](#int32)   |       | Expiration year description.       | 2026      | 2040      |                 |
+| Field           | Type     | Label | Description                        | Min value | Max value | Max length/size |
+|-----------------|----------|-------|------------------------------------|-----------|-----------|-----------------|
+| **`brand`**     | `string` |       | Card brand description.            |           |           |                 |
+| **`last4`**     | `string` |       | Card last four digits description. |           |           | 4               |
+| **`exp_month`** | `int32`  |       | Expiration month description.      | 1         | 12        |                 |
+| **`exp_year`**  | `int32`  |       | Expiration year description.       | 2026      | 2040      |                 |
 
 <a name="fixture.CreatePaymentResponse.Fee"></a>
 
 #### `fixture.CreatePaymentResponse.Fee` message:
 
-| Field              | Type              | Label | Description                         | Min value | Max value |
-|--------------------|-------------------|-------|-------------------------------------|-----------|-----------|
-| **`type`**         | [string](#string) |       | Fee type description.               |           |           |
-| **`amount_minor`** | [int64](#int64)   |       | Fee amount minor units description. | 0         | 10000     |
+| Field              | Type     | Label | Description                         | Min value | Max value |
+|--------------------|----------|-------|-------------------------------------|-----------|-----------|
+| **`type`**         | `string` |       | Fee type description.               |           |           |
+| **`amount_minor`** | `int64`  |       | Fee amount minor units description. | 0         | 10000     |
 
 <a name="fixture.CreatePaymentResponse.MetadataEntry"></a>
 
 #### `fixture.CreatePaymentResponse.MetadataEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [string](#string) |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `string` |       |             |
 
 <a name="fixture.RefundPaymentRequest"></a>
 
@@ -376,14 +378,14 @@ XML refund example with nested elements.
 
 | Field              | Type                                                                    | Label          | Description |
 |--------------------|-------------------------------------------------------------------------|----------------|-------------|
-| **`payment_id`**   | [string](#string)                                                       |                |             |
-| **`amount_minor`** | [int64](#int64)                                                         |                |             |
-| **`reason`**       | [string](#string)                                                       |                |             |
+| **`payment_id`**   | `string`                                                                |                |             |
+| **`amount_minor`** | `int64`                                                                 |                |             |
+| **`reason`**       | `string`                                                                |                |             |
 | **`items`**        | [fixture.RefundPaymentRequest.Item](#fixture.RefundPaymentRequest.Item) | LABEL_REPEATED |             |
 
 #### `RefundPaymentRequest` code example:
 
-```
+```xml
 <refund>
   <payment_id>pay_8f3c0d</payment_id>
   <amount_minor>25000</amount_minor>
@@ -405,10 +407,10 @@ XML refund example with nested elements.
 
 #### `fixture.RefundPaymentRequest.Item` message:
 
-| Field          | Type              | Label | Description |
-|----------------|-------------------|-------|-------------|
-| **`sku`**      | [string](#string) |       |             |
-| **`quantity`** | [int32](#int32)   |       |             |
+| Field          | Type     | Label | Description |
+|----------------|----------|-------|-------------|
+| **`sku`**      | `string` |       |             |
+| **`quantity`** | `int32`  |       |             |
 
 ### Inventory
 
@@ -420,15 +422,15 @@ Catalog search request with generated example.
 
 | Field                  | Type                              | Label | Description                   | Min value | Max value | Max length/size |
 |------------------------|-----------------------------------|-------|-------------------------------|-----------|-----------|-----------------|
-| **`query`**            | [string](#string)                 |       | Search query description.     |           |           | 64              |
-| **`page`**             | [int32](#int32)                   |       | Page number description.      | 1         | 20        |                 |
-| **`page_size`**        | [int32](#int32)                   |       | Page size description.        | 10        | 100       |                 |
+| **`query`**            | `string`                          |       | Search query description.     |           |           | 64              |
+| **`page`**             | `int32`                           |       | Page number description.      | 1         | 20        |                 |
+| **`page_size`**        | `int32`                           |       | Page size description.        | 10        | 100       |                 |
 | **`region`**           | [fixture.Region](#fixture.Region) |       | Region description.           |           |           |                 |
-| **`include_archived`** | [bool](#bool)                     |       | Include archived description. |           |           |                 |
+| **`include_archived`** | `bool`                            |       | Include archived description. |           |           |                 |
 
 #### `SearchCatalogRequest` code example:
 
-```
+```json
 {
 	"SearchCatalogRequest": {
 		"include_archived": false,
@@ -449,14 +451,14 @@ Inventory snapshot with maps, repeated rows and deeply nested dimensions.
 
 | Field              | Type                                                                                | Label          | Description               | Max length/size |
 |--------------------|-------------------------------------------------------------------------------------|----------------|---------------------------|-----------------|
-| **`warehouse_id`** | [string](#string)                                                                   |                | Warehouse id description. | 16              |
+| **`warehouse_id`** | `string`                                                                            |                | Warehouse id description. | 16              |
 | **`region`**       | [fixture.Region](#fixture.Region)                                                   |                | Region description.       |                 |
 | **`items`**        | [fixture.InventorySnapshot.Item](#fixture.InventorySnapshot.Item)                   | LABEL_REPEATED |                           |                 |
 | **`counters`**     | [fixture.InventorySnapshot.CountersEntry](#fixture.InventorySnapshot.CountersEntry) | LABEL_REPEATED |                           |                 |
 
 #### `InventorySnapshot` code example:
 
-```
+```json
 {
 	"InventorySnapshot": {
 		"warehouse_id": "wh-eu-1",
@@ -506,9 +508,9 @@ Inventory snapshot with maps, repeated rows and deeply nested dimensions.
 
 | Field            | Type                                                                                      | Label          | Description                  | Min value | Max value | Max length/size |
 |------------------|-------------------------------------------------------------------------------------------|----------------|------------------------------|-----------|-----------|-----------------|
-| **`sku`**        | [string](#string)                                                                         |                | SKU description.             |           |           | 32              |
+| **`sku`**        | `string`                                                                                  |                | SKU description.             |           |           | 32              |
 | **`state`**      | [fixture.InventoryState](#fixture.InventoryState)                                         |                | Inventory state description. |           |           |                 |
-| **`quantity`**   | [int64](#int64)                                                                           |                | Quantity description.        | 0         | 100000    |                 |
+| **`quantity`**   | `int64`                                                                                   |                | Quantity description.        | 0         | 100000    |                 |
 | **`dimensions`** | [fixture.InventorySnapshot.Item.Dimensions](#fixture.InventorySnapshot.Item.Dimensions)   |                |                              |           |           |                 |
 | **`labels`**     | [fixture.InventorySnapshot.Item.LabelsEntry](#fixture.InventorySnapshot.Item.LabelsEntry) | LABEL_REPEATED |                              |           |           |                 |
 
@@ -516,29 +518,29 @@ Inventory snapshot with maps, repeated rows and deeply nested dimensions.
 
 #### `fixture.InventorySnapshot.Item.Dimensions` message:
 
-| Field        | Type                | Label | Description         | Min value | Max value |
-|--------------|---------------------|-------|---------------------|-----------|-----------|
-| **`width`**  | [float64](#float64) |       | Width description.  | 0.1       | 999.9     |
-| **`height`** | [float64](#float64) |       | Height description. | 0.1       | 999.9     |
-| **`depth`**  | [float64](#float64) |       | Depth description.  | 0.1       | 999.9     |
+| Field        | Type      | Label | Description         | Min value | Max value |
+|--------------|-----------|-------|---------------------|-----------|-----------|
+| **`width`**  | `float64` |       | Width description.  | 0.1       | 999.9     |
+| **`height`** | `float64` |       | Height description. | 0.1       | 999.9     |
+| **`depth`**  | `float64` |       | Depth description.  | 0.1       | 999.9     |
 
 <a name="fixture.InventorySnapshot.Item.LabelsEntry"></a>
 
 #### `fixture.InventorySnapshot.Item.LabelsEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [string](#string) |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `string` |       |             |
 
 <a name="fixture.InventorySnapshot.CountersEntry"></a>
 
 #### `fixture.InventorySnapshot.CountersEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [int64](#int64)   |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `int64`  |       |             |
 
 ### Audit
 
@@ -550,16 +552,16 @@ Audit query request with several generated constrained values.
 
 | Field             | Type                                        | Label | Description                 | Min value | Max value | Max length/size |
 |-------------------|---------------------------------------------|-------|-----------------------------|-----------|-----------|-----------------|
-| **`tenant_id`**   | [string](#string)                           |       | Tenant description.         |           |           | 32              |
-| **`actor_email`** | [string](#string)                           |       | Actor description.          |           |           | 128             |
+| **`tenant_id`**   | `string`                                    |       | Tenant description.         |           |           | 32              |
+| **`actor_email`** | `string`                                    |       | Actor description.          |           |           | 128             |
 | **`action`**      | [fixture.AuditAction](#fixture.AuditAction) |       | Action description.         |           |           |                 |
-| **`from`**        | [string](#string)                           |       | From timestamp description. |           |           |                 |
-| **`to`**          | [string](#string)                           |       | To timestamp description.   |           |           |                 |
-| **`limit`**       | [int32](#int32)                             |       | Limit description.          | 1         | 500       |                 |
+| **`from`**        | `string`                                    |       | From timestamp description. |           |           |                 |
+| **`to`**          | `string`                                    |       | To timestamp description.   |           |           |                 |
+| **`limit`**       | `int32`                                     |       | Limit description.          | 1         | 500       |                 |
 
 #### `AuditQueryRequest` code example:
 
-```
+```json
 {
 	"AuditQueryRequest": {
 		"action": "AUDIT_ACTION_UNKNOWN",
@@ -581,7 +583,7 @@ Audit envelope with nested actor, target, diff and context structures.
 
 | Field          | Type                                                            | Label          | Description               | Max length/size |
 |----------------|-----------------------------------------------------------------|----------------|---------------------------|-----------------|
-| **`event_id`** | [string](#string)                                               |                | Event id description.     | 32              |
+| **`event_id`** | `string`                                                        |                | Event id description.     | 32              |
 | **`action`**   | [fixture.AuditAction](#fixture.AuditAction)                     |                | Audit action description. |                 |
 | **`actor`**    | [fixture.AuditEnvelope.Actor](#fixture.AuditEnvelope.Actor)     |                |                           |                 |
 | **`target`**   | [fixture.AuditEnvelope.Target](#fixture.AuditEnvelope.Target)   |                |                           |                 |
@@ -590,7 +592,7 @@ Audit envelope with nested actor, target, diff and context structures.
 
 #### `AuditEnvelope` code example:
 
-```
+```json
 {
 	"AuditEnvelope": {
 		"event_id": "evt_001",
@@ -635,42 +637,42 @@ Audit envelope with nested actor, target, diff and context structures.
 
 #### `fixture.AuditEnvelope.Actor` message:
 
-| Field            | Type              | Label | Description                   | Max length/size |
-|------------------|-------------------|-------|-------------------------------|-----------------|
-| **`id`**         | [string](#string) |       | Actor id description.         | 16              |
-| **`email`**      | [string](#string) |       | Actor email description.      | 128             |
-| **`ip`**         | [string](#string) |       | Actor IP address description. |                 |
-| **`user_agent`** | [string](#string) |       | Actor user agent description. | 128             |
+| Field            | Type     | Label | Description                   | Max length/size |
+|------------------|----------|-------|-------------------------------|-----------------|
+| **`id`**         | `string` |       | Actor id description.         | 16              |
+| **`email`**      | `string` |       | Actor email description.      | 128             |
+| **`ip`**         | `string` |       | Actor IP address description. |                 |
+| **`user_agent`** | `string` |       | Actor user agent description. | 128             |
 
 <a name="fixture.AuditEnvelope.Target"></a>
 
 #### `fixture.AuditEnvelope.Target` message:
 
-| Field              | Type              | Label | Description                      | Max length/size |
-|--------------------|-------------------|-------|----------------------------------|-----------------|
-| **`type`**         | [string](#string) |       | Target type description.         |                 |
-| **`id`**           | [string](#string) |       | Target id description.           | 32              |
-| **`display_name`** | [string](#string) |       | Target display name description. | 128             |
+| Field              | Type     | Label | Description                      | Max length/size |
+|--------------------|----------|-------|----------------------------------|-----------------|
+| **`type`**         | `string` |       | Target type description.         |                 |
+| **`id`**           | `string` |       | Target id description.           | 32              |
+| **`display_name`** | `string` |       | Target display name description. | 128             |
 
 <a name="fixture.AuditEnvelope.Diff"></a>
 
 #### `fixture.AuditEnvelope.Diff` message:
 
-| Field        | Type              | Label | Description                 | Max length/size |
-|--------------|-------------------|-------|-----------------------------|-----------------|
-| **`path`**   | [string](#string) |       | Diff path description.      | 64              |
-| **`before`** | [string](#string) |       | Previous value description. | 128             |
-| **`after`**  | [string](#string) |       | New value description.      | 128             |
+| Field        | Type     | Label | Description                 | Max length/size |
+|--------------|----------|-------|-----------------------------|-----------------|
+| **`path`**   | `string` |       | Diff path description.      | 64              |
+| **`before`** | `string` |       | Previous value description. | 128             |
+| **`after`**  | `string` |       | New value description.      | 128             |
 
 <a name="fixture.AuditEnvelope.Context"></a>
 
 #### `fixture.AuditEnvelope.Context` message:
 
-| Field            | Type              | Label          | Description               | Max length/size |
-|------------------|-------------------|----------------|---------------------------|-----------------|
-| **`request_id`** | [string](#string) |                | Request id description.   | 32              |
-| **`trace_id`**   | [string](#string) |                | Trace id description.     | 64              |
-| **`tags`**       | [string](#string) | LABEL_REPEATED | Context tags description. | 32              |
+| Field            | Type     | Label          | Description               | Max length/size |
+|------------------|----------|----------------|---------------------------|-----------------|
+| **`request_id`** | `string` |                | Request id description.   | 32              |
+| **`trace_id`**   | `string` |                | Trace id description.     | 64              |
+| **`tags`**       | `string` | LABEL_REPEATED | Context tags description. | 32              |
 
 ### Notifications
 
@@ -682,7 +684,7 @@ Notification batch with oneof payload alternatives and nested recipient details.
 
 | Field            | Type                                                                              | Label          | Description                       | Max length/size |
 |------------------|-----------------------------------------------------------------------------------|----------------|-----------------------------------|-----------------|
-| **`batch_id`**   | [string](#string)                                                                 |                | Batch id description.             | 32              |
+| **`batch_id`**   | `string`                                                                          |                | Batch id description.             | 32              |
 | **`channel`**    | [fixture.NotificationChannel](#fixture.NotificationChannel)                       |                | Notification channel description. |                 |
 | **`recipients`** | [fixture.NotificationBatch.Recipient](#fixture.NotificationBatch.Recipient)       | LABEL_REPEATED |                                   |                 |
 | **`email`**      | [fixture.NotificationBatch.EmailPayload](#fixture.NotificationBatch.EmailPayload) |                |                                   |                 |
@@ -691,7 +693,7 @@ Notification batch with oneof payload alternatives and nested recipient details.
 
 #### `NotificationBatch` code example:
 
-```
+```json
 {
 	"NotificationBatch": {
 		"batch_id": "batch-001",
@@ -729,38 +731,38 @@ Notification batch with oneof payload alternatives and nested recipient details.
 
 | Field           | Type                                                                                                      | Label          | Description                      | Max length/size |
 |-----------------|-----------------------------------------------------------------------------------------------------------|----------------|----------------------------------|-----------------|
-| **`user_id`**   | [string](#string)                                                                                         |                | Recipient user id description.   | 16              |
-| **`email`**     | [string](#string)                                                                                         |                | Recipient email description.     | 128             |
-| **`phone`**     | [string](#string)                                                                                         |                | Recipient phone description.     |                 |
+| **`user_id`**   | `string`                                                                                                  |                | Recipient user id description.   | 16              |
+| **`email`**     | `string`                                                                                                  |                | Recipient email description.     | 128             |
+| **`phone`**     | `string`                                                                                                  |                | Recipient phone description.     |                 |
 | **`variables`** | [fixture.NotificationBatch.Recipient.VariablesEntry](#fixture.NotificationBatch.Recipient.VariablesEntry) | LABEL_REPEATED | Recipient variables description. |                 |
 
 <a name="fixture.NotificationBatch.Recipient.VariablesEntry"></a>
 
 #### `fixture.NotificationBatch.Recipient.VariablesEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [string](#string) |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `string` |       |             |
 
 <a name="fixture.NotificationBatch.EmailPayload"></a>
 
 #### `fixture.NotificationBatch.EmailPayload` message:
 
-| Field             | Type              | Label | Description                    | Max length/size |
-|-------------------|-------------------|-------|--------------------------------|-----------------|
-| **`subject`**     | [string](#string) |       | Email subject description.     | 128             |
-| **`template_id`** | [string](#string) |       | Email template id description. | 64              |
-| **`reply_to`**    | [string](#string) |       | Reply-to email description.    | 128             |
+| Field             | Type     | Label | Description                    | Max length/size |
+|-------------------|----------|-------|--------------------------------|-----------------|
+| **`subject`**     | `string` |       | Email subject description.     | 128             |
+| **`template_id`** | `string` |       | Email template id description. | 64              |
+| **`reply_to`**    | `string` |       | Reply-to email description.    | 128             |
 
 <a name="fixture.NotificationBatch.SmsPayload"></a>
 
 #### `fixture.NotificationBatch.SmsPayload` message:
 
-| Field        | Type              | Label | Description             | Max length/size |
-|--------------|-------------------|-------|-------------------------|-----------------|
-| **`sender`** | [string](#string) |       | SMS sender description. | 32              |
-| **`body`**   | [string](#string) |       | SMS body description.   | 160             |
+| Field        | Type     | Label | Description             | Max length/size |
+|--------------|----------|-------|-------------------------|-----------------|
+| **`sender`** | `string` |       | SMS sender description. | 32              |
+| **`body`**   | `string` |       | SMS body description.   | 160             |
 
 <a name="fixture.NotificationBatch.PushPayload"></a>
 
@@ -768,18 +770,18 @@ Notification batch with oneof payload alternatives and nested recipient details.
 
 | Field       | Type                                                                                                | Label          | Description             | Max length/size |
 |-------------|-----------------------------------------------------------------------------------------------------|----------------|-------------------------|-----------------|
-| **`title`** | [string](#string)                                                                                   |                | Push title description. | 64              |
-| **`body`**  | [string](#string)                                                                                   |                | Push body description.  | 256             |
+| **`title`** | `string`                                                                                            |                | Push title description. | 64              |
+| **`body`**  | `string`                                                                                            |                | Push body description.  | 256             |
 | **`data`**  | [fixture.NotificationBatch.PushPayload.DataEntry](#fixture.NotificationBatch.PushPayload.DataEntry) | LABEL_REPEATED | Push data description.  |                 |
 
 <a name="fixture.NotificationBatch.PushPayload.DataEntry"></a>
 
 #### `fixture.NotificationBatch.PushPayload.DataEntry` message:
 
-| Field       | Type              | Label | Description |
-|-------------|-------------------|-------|-------------|
-| **`key`**   | [string](#string) |       |             |
-| **`value`** | [string](#string) |       |             |
+| Field       | Type     | Label | Description |
+|-------------|----------|-------|-------------|
+| **`key`**   | `string` |       |             |
+| **`value`** | `string` |       |             |
 
 ## Enums
 

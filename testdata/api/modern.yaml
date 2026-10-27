@@ -1,0 +1,48 @@
+openapi: 3.2.1
+info: {title: Modern contract, version: '1'}
+servers:
+  - name: primary
+    url: https://api.example.test
+    description: Primary API
+tags:
+  - name: Parent
+  - name: Child
+    parent: Parent
+    kind: nav
+    summary: Child group
+paths:
+  /search:
+    query:
+      operationId: search
+      parameters:
+        - name: search
+          in: querystring
+          content:
+            application/x-www-form-urlencoded:
+              schema:
+                type: object
+                properties:
+                  q: {type: string}
+      responses:
+        '200':
+          description: Results
+          content:
+            application/jsonl:
+              itemSchema:
+                type: object
+                properties:
+                  id: {type: integer}
+              examples:
+                precise:
+                  dataValue: {id: 9007199254740993}
+                  serializedValue: '{"id":9007199254740993}'
+    additionalOperations:
+      REPORT:
+        operationId: report
+        responses:
+          '204': {description: Reported}
+components:
+  securitySchemes:
+    identity:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.example.test/.well-known/openid-configuration

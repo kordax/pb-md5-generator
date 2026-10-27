@@ -104,6 +104,7 @@ const ListDashDelimiter = "-"
 const ListPlusDelimiter = "+"
 
 // ColumnAlignmentLeftDelimiter TODO: Implement alignment
+//
 //goland:noinspection GoUnusedConst
 const ColumnAlignmentLeftDelimiter = ":---"
 
@@ -367,7 +368,13 @@ func (l *List) AddEntry(entry *ListEntry) {
 
 type Codeblock struct {
 	OrderedSafeElement
-	text string
+	text     string
+	language string
+}
+
+// GetLanguage returns the optional fenced code language.
+func (c *Codeblock) GetLanguage() string {
+	return c.language
 }
 
 func (c *Codeblock) GetText() string {

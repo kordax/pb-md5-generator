@@ -23,6 +23,7 @@ type MDGenerator struct {
 	packageMode    bool
 	currentPackage string
 	knownPackages  []string
+	ignoredTypes   map[string]bool
 }
 
 func NewMDGenerator(codegen *Codegenerator) *MDGenerator {
@@ -35,6 +36,7 @@ func NewMDGeneratorWithStyle(codegen *Codegenerator, style GeneratorStyle) *MDGe
 }
 
 func (g *MDGenerator) Generate(parsedFiles []ParsedFile) (*md.Document, error) {
+	g.ignoredTypes = ignoredTypeNames(parsedFiles)
 	tocSection := md.NewSectionBuilder().Build()
 	result := &md.Document{}
 
@@ -331,14 +333,24 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 		lenRow := MkRow()
 		if field.flags.Present() {
 			flags := field.flags.Get()
-			flags.min.IfPresent(func(min float64) {
+			if flags.minLiteral.Present() {
 				minFound = true
-				minRow.AddText(MkText(strconv.FormatFloat(min, 'f', -1, 64), md.TextEmphasisNormal))
-			})
-			flags.max.IfPresent(func(max float64) {
+				minRow.AddText(MkText(*flags.minLiteral.Get(), md.TextEmphasisNormal))
+			} else {
+				flags.min.IfPresent(func(min float64) {
+					minFound = true
+					minRow.AddText(MkText(strconv.FormatFloat(min, 'f', -1, 64), md.TextEmphasisNormal))
+				})
+			}
+			if flags.maxLiteral.Present() {
 				maxFound = true
-				maxRow.AddText(MkText(strconv.FormatFloat(max, 'f', -1, 64), md.TextEmphasisNormal))
-			})
+				maxRow.AddText(MkText(*flags.maxLiteral.Get(), md.TextEmphasisNormal))
+			} else {
+				flags.max.IfPresent(func(max float64) {
+					maxFound = true
+					maxRow.AddText(MkText(strconv.FormatFloat(max, 'f', -1, 64), md.TextEmphasisNormal))
+				})
+			}
 			flags.maxLength.IfPresent(func(max int) {
 				lenFound = true
 				lenRow.AddText(MkText(strconv.Itoa(max), md.TextEmphasisNormal))
@@ -368,18 +380,14 @@ func (g *MDGenerator) message(files []ParsedFile, message *Message, section *md.
 
 	section.AddElement(table)
 
-	message.code.IfPresent(func(code Pair[Syntax, string]) {
-		g.header(fmt.Sprintf("%s code example:", styledInlineIdentifier(message.m.GetName(), g.style.HeadingIdentifiers)), 4, section)
-		g.code(code.Right, section)
-	})
-	message.autocode.IfPresent(func(ac AutocodeOpt) {
-		g.header(fmt.Sprintf("%s code example:", styledInlineIdentifier(message.m.GetName(), g.style.HeadingIdentifiers)), 4, section)
+	if message.code.Present() || message.autocode.Present() {
 		generated, err := g.codegen.Generate(files, message)
 		if err != nil {
-			return
+			return fmt.Errorf("generate example for %s: %w", strings.TrimPrefix(message.m.GetFullName(), "."), err)
 		}
+		g.header(fmt.Sprintf("%s code example:", styledInlineIdentifier(message.m.GetName(), g.style.HeadingIdentifiers)), 4, section)
 		section.AddElement(generated)
-	})
+	}
 
 	entries := message.entries
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -446,10 +454,6 @@ func (g *MDGenerator) enum(enum *Enum, section *md.Section) error {
 	return nil
 }
 
-func (g *MDGenerator) code(code string, section *md.Section) {
-	section.AddElement(md.NewCodeblockBuilder().Text(code).Build())
-}
-
 func markdownTableText(value string) string {
 	value = strings.ReplaceAll(value, "\\", "\\\\")
 	value = strings.ReplaceAll(value, "|", "\\|")
@@ -459,11 +463,20 @@ func markdownTableText(value string) string {
 }
 
 func (g *MDGenerator) fieldTypeElement(field *MessageField) md.Element {
-	if !g.packageMode {
-		return MkFieldTypeLink(field)
-	}
-
 	typeName := pbTypeToString(field.d)
+	if g.ignoredTypes[strings.TrimPrefix(typeName, ".")] {
+		return MkText(codeSpan(typeName), md.TextEmphasisNormal)
+	}
+	if !g.packageMode {
+		switch field.d.GetType() {
+		case descriptorpb.FieldDescriptorProto_TYPE_MESSAGE,
+			descriptorpb.FieldDescriptorProto_TYPE_ENUM,
+			descriptorpb.FieldDescriptorProto_TYPE_GROUP:
+			return MkFieldTypeLink(field)
+		default:
+			return MkText(codeSpan(typeName), md.TextEmphasisNormal)
+		}
+	}
 	switch field.d.GetType() {
 	case descriptorpb.FieldDescriptorProto_TYPE_MESSAGE,
 		descriptorpb.FieldDescriptorProto_TYPE_ENUM,
@@ -514,17 +527,17 @@ func pbTypeToString(d *protokit.FieldDescriptor) string {
 	case descriptorpb.FieldDescriptorProto_TYPE_SINT32:
 		return "int32"
 	case descriptorpb.FieldDescriptorProto_TYPE_FIXED64:
-		return "float64"
+		return "uint64"
 	case descriptorpb.FieldDescriptorProto_TYPE_FIXED32:
-		return "float32"
+		return "uint32"
 	case descriptorpb.FieldDescriptorProto_TYPE_DOUBLE:
 		return "float64"
 	case descriptorpb.FieldDescriptorProto_TYPE_FLOAT:
 		return "float32"
 	case descriptorpb.FieldDescriptorProto_TYPE_SFIXED64:
-		return "float64"
+		return "int64"
 	case descriptorpb.FieldDescriptorProto_TYPE_SFIXED32:
-		return "float32"
+		return "int32"
 	case descriptorpb.FieldDescriptorProto_TYPE_BOOL:
 		return "bool"
 	case descriptorpb.FieldDescriptorProto_TYPE_STRING:

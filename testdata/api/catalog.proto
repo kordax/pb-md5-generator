@@ -1,0 +1,29 @@
+syntax = "proto3";
+package catalog.v1;
+
+// A local tree with real protobuf types.
+message Node {
+  int64 id = 1;
+  string display_name = 2;
+  repeated Node children = 3;
+  map<string, Node> related = 4;
+  bytes digest = 5;
+  Status status = 6;
+  oneof selection {
+    string label = 7;
+    uint32 index = 8;
+  }
+  optional bool active = 9;
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_READY = 1;
+  }
+}
+
+// Catalog RPCs.
+service Catalog {
+  // Read one node.
+  rpc Get(Node) returns (Node);
+  // Watch a stream of nodes.
+  rpc Watch(stream Node) returns (stream Node);
+}

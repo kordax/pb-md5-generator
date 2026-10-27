@@ -42,6 +42,8 @@ type AutocodeOpt struct {
 type FieldFlags struct {
 	maxLength  Option[int]
 	min, max   Option[float64]
+	minLiteral Option[string]
+	maxLiteral Option[string]
 	value      Option[string]
 	customType Option[ValueType]
 	other      []string
@@ -58,6 +60,12 @@ func (a FieldFlags) GetMin() Option[float64] {
 func (a FieldFlags) GetMax() Option[float64] {
 	return a.max
 }
+
+// GetMinLiteral returns the exact source constraint, before float64 rounding.
+func (a FieldFlags) GetMinLiteral() Option[string] { return a.minLiteral }
+
+// GetMaxLiteral returns the exact source constraint, before float64 rounding.
+func (a FieldFlags) GetMaxLiteral() Option[string] { return a.maxLiteral }
 
 func (a FieldFlags) GetValue() Option[string] {
 	return a.value

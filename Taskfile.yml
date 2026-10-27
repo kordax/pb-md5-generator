@@ -17,6 +17,8 @@ tasks:
       - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o build/pb-md5-generator ./cmd/pb-md5-generator
     sources:
       - "**/*.go"
+      - "internal/site/*.js"
+      - "document/**/*.json"
       - go.mod
       - go.sum
     generates:
@@ -32,6 +34,25 @@ tasks:
       - check-example
       - security
       - actionlint
+      - test-ui
+
+  test-ui:
+    desc: "Test local reader enhancements with Node's built-in test runner"
+    deps: [site]
+    cmds:
+      - node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs
+
+  site:
+    desc: "Build and verify the mixed documentation site"
+    deps: [build]
+    cmds:
+      - ./build/pb-md5-generator build -config docs.json -o site
+      - ./build/pb-md5-generator build -config docs.json -o site -check
+
+  benchmark:
+    desc: "Measure Markdown compilation time and allocations"
+    cmds:
+      - go test ./internal/site -run '^$' -bench BenchmarkCompileMarkdown -benchmem
 
   test:
     desc: "Testing all submodules"
@@ -40,6 +61,10 @@ tasks:
       - go test -race ./...
     sources:
       - "**/*.go"
+      - "internal/site/*.js"
+      - "document/**/*.json"
+      - go.mod
+      - go.sum
 
   integration-test:
     desc: "Testing all submodules with integration tests"
@@ -48,6 +73,10 @@ tasks:
       - go test -race ./... -tags=integration_test
     sources:
       - "**/*.go"
+      - "internal/site/*.js"
+      - "document/**/*.json"
+      - go.mod
+      - go.sum
 
   lint-docs:
     desc: "Validate documentation annotations in the integration fixture"
@@ -110,6 +139,10 @@ tasks:
       - rm -f ./cover.out
     sources:
       - "**/*.go"
+      - "internal/site/*.js"
+      - "document/**/*.json"
+      - go.mod
+      - go.sum
       - "testcoverage.yml"
 
   security:

@@ -1,0 +1,23 @@
+{
+  "$schema": "document/schema/manifest-v1.json",
+  "version": 1,
+  "title": "PB Docs",
+  "description": "Guides, operations and API reference in one documentation project.",
+  "pages": [
+    {"id":"overview","title":"Overview","source":"docs/index.md","path":"index.html"},
+    {"id":"authoring","title":"Write documentation","source":"docs/authoring.md","path":"guides/authoring.html"},
+    {"id":"syntax","title":"Protobuf syntax","source":"docs/syntax.md","path":"guides/syntax.html"},
+    {"id":"api-guide","title":"API reference and requests","source":"docs/api.md","path":"guides/api.html"},
+    {"id":"format","title":"Document format","source":"docs/format.md","path":"engineering/format.html"},
+    {"id":"deployment","title":"Deploy a site","source":"docs/deployment.md","path":"operations/deployment.html"},
+    {"id":"performance","title":"Performance","source":"docs/performance.md","path":"engineering/performance.html"},
+    {"id":"design","title":"Design and roadmap","source":"docs/design.md","path":"design.html"},
+    {"id":"protobuf-example","title":"Protobuf API","source":"testdata/integration/full_api.proto","path":"reference/protobuf.html","kind":"protobuf"},
+    {"id":"openapi-example","title":"HTTP API","source":"testdata/integration/catalog.openapi.yaml","path":"reference/http.html","kind":"openapi"}
+  ],
+  "assets": [
+    "document/schema/manifest-v1.json",
+    "document/schema/project-v1.json",
+    "document/schema/page-v1.json"
+  ]
+}

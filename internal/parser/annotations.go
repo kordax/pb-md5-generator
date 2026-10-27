@@ -75,13 +75,17 @@ var fieldAnnotationNames = map[string]struct{}{
 func parseCommentAnnotations(comment string) ([]parsedAnnotation, error) {
 	lines := strings.Split(comment, "\n")
 	result := make([]parsedAnnotation, 0)
+	var fence annotationFence
 	for _, rawLine := range lines {
+		if indentedCommentLine(rawLine) {
+			continue
+		}
 		line := cleanCommentLine(rawLine)
-		if line == "" {
+		if fence.consume(line) || line == "" {
 			continue
 		}
 
-		annotations, stop, err := parseAnnotationLine(line)
+		annotations, stop, err := parseAnnotationLine(maskInlineCode(line))
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +153,7 @@ func parseAnnotationLine(line string) ([]parsedAnnotation, bool, error) {
 		}
 
 		result = append(result, annotation)
-		if name == CodeMarker {
+		if name == CodeMarker || name == AutocodeMarker {
 			return result, true, nil
 		}
 	}
@@ -350,16 +354,43 @@ func canonicalDocumentAttribute(name string) (string, bool) {
 func commentDescription(comment string) string {
 	lines := strings.Split(comment, "\n")
 	description := make([]string, 0, len(lines))
+	var fence annotationFence
+	preserveLines := false
+	rawComment := strings.HasPrefix(strings.TrimSpace(comment), "//") || strings.HasPrefix(strings.TrimSpace(comment), "/*")
 	for _, rawLine := range lines {
-		line := cleanCommentLine(rawLine)
+		line := strings.TrimSpace(rawLine)
+		if rawComment {
+			line = cleanCommentLine(rawLine)
+		}
+		wasOpen := fence.length != 0
+		if fence.consume(line) {
+			preserveLines = true
+			if wasOpen && fence.length != 0 {
+				if rawComment {
+					description = append(description, stripCommentPrefix(rawLine))
+				} else {
+					description = append(description, rawLine)
+				}
+			} else {
+				description = append(description, line)
+			}
+			continue
+		}
 		if line == "" {
+			if preserveLines {
+				description = append(description, "")
+			}
 			continue
 		}
 
 		cut := len(line)
 		stop := false
-		for offset := 0; offset < len(line); {
-			start, end, name, ok := nextAnnotationToken(line, offset)
+		scanLine := maskInlineCode(line)
+		if indentedCommentLine(rawLine) {
+			scanLine = ""
+		}
+		for offset := 0; offset < len(scanLine); {
+			start, end, name, ok := nextAnnotationToken(scanLine, offset)
 			if !ok {
 				break
 			}
@@ -376,6 +407,9 @@ func commentDescription(comment string) string {
 		if stop {
 			break
 		}
+	}
+	if preserveLines {
+		return strings.TrimSpace(strings.Join(description, "\n"))
 	}
 	return strings.Join(description, " ")
 }
@@ -400,6 +434,7 @@ func commentFlags(comment string) []string {
 }
 
 func indexAnnotation(text, name string) int {
+	text = maskInlineCode(text)
 	for offset := 0; offset < len(text); {
 		start, end, current, ok := nextAnnotationToken(text, offset)
 		if !ok {
@@ -415,11 +450,15 @@ func indexAnnotation(text, name string) int {
 
 func nextAnnotationToken(text string, offset int) (int, int, string, bool) {
 	for offset < len(text) {
-		relative := strings.IndexByte(text[offset:], '@')
-		if relative == -1 {
-			return 0, 0, "", false
+		if text[offset] == '"' || text[offset] == '\'' && !quoteInsideWord(text, offset) {
+			offset = quotedEnd(text, offset, false)
+			continue
 		}
-		start := offset + relative
+		if text[offset] != '@' {
+			offset++
+			continue
+		}
+		start := offset
 		if start > 0 {
 			previous, _ := utf8.DecodeLastRuneInString(text[:start])
 			if !unicode.IsSpace(previous) && previous != '*' && previous != '/' {

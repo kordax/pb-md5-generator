@@ -5,7 +5,7 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.26.5]
+        go-version: [1.26.10]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -32,3 +32,15 @@ jobs:
 
       - name: Check generated example
         run: task check-example
+
+      - name: Build and check documentation site
+        run: task site
+
+      - name: Install Node for reader tests
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Test reader enhancements
+        run: node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs

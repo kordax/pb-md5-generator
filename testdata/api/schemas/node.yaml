@@ -1,0 +1,18 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$anchor: node
+type: object
+description: A recursive catalog node
+required: [id]
+properties:
+  id:
+    type: integer
+    minimum: 1
+    example: 9007199254740993
+    default: 18446744073709551615
+  nullableName:
+    type: [string, 'null']
+  children:
+    type: array
+    items:
+      $ref: '#node'
+unevaluatedProperties: false

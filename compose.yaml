@@ -1,0 +1,20 @@
+services:
+  docs:
+    image: pb-docs:local
+    build:
+      context: .
+      target: site
+      args:
+        DOCS_CONFIG: ${DOCS_CONFIG:-docs.json}
+    ports:
+      - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 128m
+    restart: unless-stopped

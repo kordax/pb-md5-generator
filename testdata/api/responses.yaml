@@ -1,0 +1,13 @@
+Item:
+  description: A catalog item
+  headers:
+    X-Request-ID:
+      description: Trace identifier
+      schema: {type: string}
+  content:
+    application/json:
+      schema:
+        $ref: './schemas/node.yaml#node'
+      examples:
+        precise:
+          value: {id: 9007199254740993}

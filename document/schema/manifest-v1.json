@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pb-docs:manifest:v1",
+  "title": "pb-docs manifest version 1 draft",
+  "description": "Authoring manifest for a pb-docs project. Compiler checks additionally enforce portable paths, UTF-8 byte budgets, identifiers, ownership and local links.",
+  "$comment": "This is the version 1 draft structural contract. It is not a claim of complete protocol, link, path, or resource validation.",
+  "type": "object",
+  "required": ["version", "title", "pages"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "version": {"const": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "description": {"type": "string", "maxLength": 4096},
+    "pages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/page"}},
+    "assets": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "page": {
+      "type": "object",
+      "required": ["title", "source", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 256},
+        "source": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+syntax = "proto3";
+package privacy;
+
+// @ignore
+message SecretMessage {
+  string forbidden_message_content = 1;
+  message SecretNested { string forbidden_nested_content = 1; }
+}
+
+// @ignore
+enum SecretEnum {
+  FORBIDDEN_ENUM_CONTENT = 0;
+}
+
+message Visible {
+  // @ignore
+  string forbidden_field_content = 1;
+  // @doc: ignore
+  string forbidden_doc_content = 2;
+  // An inline `@ignore` example is documentation.
+  string retained_inline = 3;
+  // ```text
+  // @ignore
+  // ```
+  string retained_fenced = 4;
+  // @code[xml]: <example>@ignore</example>
+  string retained_fixed = 5;
+  //     @ignore
+  string retained_indented = 6;
+  SecretMessage opaque = 7;
+  SecretEnum opaque_enum = 8;
+  repeated SecretMessage opaque_list = 9;
+  map<string, SecretMessage> opaque_map = 10;
+  // @ignore
+  message HiddenNested { string forbidden_hidden_nested = 1; }
+  enum Status {
+    STATUS_VISIBLE = 0;
+    // @ignore
+    FORBIDDEN_VALUE_CONTENT = 1;
+  }
+  Status status = 11;
+  // @ignore
+  oneof forbidden_oneof_content {
+    string forbidden_choice_a = 12;
+    int32 forbidden_choice_b = 13;
+  }
+  oneof retained_choice {
+    string retained_name = 14;
+  }
+}
+
+// @ignore
+service ForbiddenService {
+  rpc ForbiddenMethod(Visible) returns (Visible);
+}
+service PublicService {
+  // @ignore
+  rpc ForbiddenMethodContent(Visible) returns (Visible);
+  rpc Read(SecretMessage) returns (Visible);
+}

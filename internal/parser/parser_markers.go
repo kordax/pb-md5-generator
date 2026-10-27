@@ -3,8 +3,11 @@ package parser
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"math"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,41 +16,26 @@ import (
 )
 
 func (p *DescriptorParser) getMarker(descriptor *protokit.FileDescriptor, marker string) (string, int, error) {
-	payload, err := p.getPayload(descriptor)
-	if err != nil {
-		return "", -1, err
+	for _, annotation := range p.sourceFileMarkers(descriptor.GetName()) {
+		if annotation.name == marker {
+			return annotation.value, annotation.index, nil
+		}
 	}
-	from := indexAnnotation(payload, marker)
-	if from == -1 {
-		return "", -1, nil
-	}
-	fromStr := payload[from+len(MarkerDelimiter)+len(marker):]
-	to := strings.Index(fromStr, "\n")
-	if to == -1 {
-		to = len(fromStr)
-	}
-	return strings.Trim(fromStr[:to], ":\n*/ "), from, nil
+	return "", -1, nil
 }
 
 func (p *DescriptorParser) nextMarker(descriptor *protokit.FileDescriptor, marker string) (string, int, error) {
-	payload, err := p.getPayload(descriptor)
-	if err != nil {
-		return "", -1, err
+	if p.readOffsets == nil {
+		p.readOffsets = make(map[string]int)
 	}
-	offset := p.readOffsets[descriptor.GetName()]
-	buf := payload[offset:]
-	from := indexAnnotation(buf, marker)
-	if from == -1 {
-		return "", -1, nil
+	name := descriptor.GetName()
+	for _, annotation := range p.sourceFileMarkers(name) {
+		if annotation.name == marker && annotation.index >= p.readOffsets[name] {
+			p.readOffsets[name] = annotation.index + len(MarkerDelimiter) + len(marker)
+			return annotation.value, annotation.index, nil
+		}
 	}
-	markerLength := len(MarkerDelimiter) + len(marker)
-	fromStr := buf[from+markerLength:]
-	to := strings.Index(fromStr, "\n")
-	if to == -1 {
-		to = len(fromStr)
-	}
-	p.readOffsets[descriptor.GetName()] += from + markerLength
-	return strings.Trim(fromStr[:to], ":\n*/ "), from + offset, nil
+	return "", -1, nil
 }
 
 type markerPosition struct {
@@ -56,32 +44,13 @@ type markerPosition struct {
 }
 
 func (p *DescriptorParser) markers(descriptor *protokit.FileDescriptor, marker string) ([]markerPosition, error) {
-	payload, err := p.getPayload(descriptor)
-	if err != nil {
-		return nil, err
-	}
-
-	token := MarkerDelimiter + marker
-	offset := 0
 	result := make([]markerPosition, 0)
-	for {
-		relative := indexAnnotation(payload[offset:], marker)
-		if relative == -1 {
-			return result, nil
+	for _, annotation := range p.sourceFileMarkers(descriptor.GetName()) {
+		if annotation.name == marker {
+			result = append(result, markerPosition{value: annotation.value, index: annotation.index})
 		}
-
-		index := offset + relative
-		fromStr := payload[index+len(token):]
-		to := strings.Index(fromStr, "\n")
-		if to == -1 {
-			to = len(fromStr)
-		}
-		result = append(result, markerPosition{
-			value: strings.Trim(fromStr[:to], ":\n*/ "),
-			index: index,
-		})
-		offset = index + len(token)
 	}
+	return result, nil
 }
 
 func (p *DescriptorParser) getPayload(descriptor *protokit.FileDescriptor) (string, error) {
@@ -95,12 +64,15 @@ func (p *DescriptorParser) getPayload(descriptor *protokit.FileDescriptor) (stri
 }
 
 func (p *DescriptorParser) getMessageSourceIndex(fileDescriptor *protokit.FileDescriptor, descriptor *protokit.Descriptor) int {
+	if position, ok := p.topMessagePositions(fileDescriptor)[descriptor.GetName()]; ok {
+		return position
+	}
 	return p.indexOf(fileDescriptor, "message "+descriptor.GetName())
 }
 
 func (p *DescriptorParser) indexOf(fileDescriptor *protokit.FileDescriptor, substr string) int {
 	payload, _ := p.getPayload(fileDescriptor)
-	return strings.Index(payload, substr)
+	return strings.Index(codeSource(payload), substr)
 }
 
 func (p *DescriptorParser) parseMessageDescription(descriptor *protokit.Descriptor) string {
@@ -125,7 +97,7 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syn
 	comments := descriptor.GetComments()
 	str := comments.String()
 
-	if ind := indexAnnotation(str, CodeMarker); ind != -1 {
+	if ind := commentAnnotationIndex(str, CodeMarker); ind != -1 {
 		block := str[ind+len(marker):]
 		str = str[ind:]
 		str = strings.Split(str, "\n")[0]
@@ -150,6 +122,8 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syn
 				return nil, markerError{marker: MarkerDelimiter + CodeMarker, err: fmt.Errorf("failed to marshal and validate json code: %s, code:\n%s", err.Error(), block)}
 			}
 			block = indent.String()
+		} else if err := validateXMLCode(block); err != nil {
+			return nil, markerError{marker: MarkerDelimiter + CodeMarker, err: fmt.Errorf("invalid XML code example: %w", err)}
 		}
 		return &Pair[Syntax, string]{
 			Left:  syntax,
@@ -160,11 +134,66 @@ func (p *DescriptorParser) parseCode(descriptor *protokit.Descriptor) (*Pair[Syn
 	return nil, nil
 }
 
+// validateXMLCode checks document structure in addition to Decoder's strict token
+// validation: Decoder also accepts streams containing multiple root elements.
+func validateXMLCode(block string) error {
+	decoder := xml.NewDecoder(strings.NewReader(block))
+	depth, roots := 0, 0
+	doctype := false
+	for {
+		start := decoder.InputOffset()
+		token, err := decoder.Token()
+		if err == io.EOF {
+			if roots != 1 {
+				return fmt.Errorf("expected one XML root element")
+			}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			if depth == 0 {
+				roots++
+				if roots > 1 {
+					return fmt.Errorf("multiple XML root elements")
+				}
+			}
+			attributes := make(map[xml.Name]struct{}, len(value.Attr))
+			for _, attribute := range value.Attr {
+				if _, duplicate := attributes[attribute.Name]; duplicate {
+					return fmt.Errorf("duplicate XML attribute %s", attribute.Name.Local)
+				}
+				attributes[attribute.Name] = struct{}{}
+			}
+			depth++
+		case xml.EndElement:
+			depth--
+		case xml.CharData:
+			if depth == 0 && (len(bytes.TrimSpace(value)) != 0 || strings.Contains(block[start:decoder.InputOffset()], "<![CDATA[")) {
+				return fmt.Errorf("text outside XML root element")
+			}
+		case xml.ProcInst:
+			if strings.EqualFold(value.Target, "xml") && (value.Target != "xml" || start != 0) {
+				return fmt.Errorf("XML declaration must be at the start of the document")
+			}
+		case xml.Directive:
+			directive := strings.TrimSpace(string(value))
+			isDoctype := strings.HasPrefix(directive, "DOCTYPE") && len(directive) > len("DOCTYPE") && strings.ContainsRune(" \t\r\n", rune(directive[len("DOCTYPE")]))
+			if depth != 0 || roots != 0 || doctype || !isDoctype {
+				return fmt.Errorf("unsupported or misplaced XML directive")
+			}
+			doctype = true
+		}
+	}
+}
+
 func (p *DescriptorParser) parseAutocode(descriptor *protokit.Descriptor) (*AutocodeOpt, error) {
 	comments := descriptor.GetComments()
 	str := comments.String()
 
-	if ind := indexAnnotation(str, AutocodeMarker); ind != -1 {
+	if ind := commentAnnotationIndex(str, AutocodeMarker); ind != -1 {
 		str = str[ind:]
 		str = strings.Split(str, "\n")[0]
 		matched, _ := regexp.MatchString(CodeSyntaxPattern, str)
@@ -184,8 +213,8 @@ func (p *DescriptorParser) parseAutocode(descriptor *protokit.Descriptor) (*Auto
 func parseSyntax(markerStr string) (Syntax, int, error) {
 	from := strings.Index(markerStr, "[")
 	to := strings.Index(markerStr, "]")
-	if from == -1 || to == -1 {
-		return SyntaxXml, -1, fmt.Errorf("syntax tags are missing")
+	if from == -1 || to <= from {
+		return SyntaxXml, -1, fmt.Errorf("syntax tags are missing or malformed")
 	}
 	codeStr := markerStr[from : to+1]
 	code := codeStr[1 : len(codeStr)-1]
@@ -232,26 +261,36 @@ func (p *DescriptorParser) parseFieldFlags(descriptor *protokit.FieldDescriptor)
 	if err := applyFieldCustomType(result, values); err != nil {
 		return nil, err
 	}
+	if err := validateIntegerFieldBounds(descriptor, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 func applyFieldBounds(result *FieldFlags, values map[string]string) error {
+	var minimum, maximum *big.Rat
 	if raw, ok := values[AutocodeMaxMarker]; ok {
-		value, err := parseFiniteAnnotationFloat(AutocodeMaxMarker, raw)
+		value, err := ParseNumericLiteral(raw)
 		if err != nil {
-			return err
+			return fmt.Errorf("invalid @%s value %q: %w", AutocodeMaxMarker, raw, err)
 		}
-		result.max = Some(value)
+		maximum = value
+		approximate, _ := value.Float64()
+		result.max = Some(approximate)
+		result.maxLiteral = Some(strings.Clone(raw))
 	}
 	if raw, ok := values[AutocodeMinMarker]; ok {
-		value, err := parseFiniteAnnotationFloat(AutocodeMinMarker, raw)
+		value, err := ParseNumericLiteral(raw)
 		if err != nil {
-			return err
+			return fmt.Errorf("invalid @%s value %q: %w", AutocodeMinMarker, raw, err)
 		}
-		result.min = Some(value)
+		minimum = value
+		approximate, _ := value.Float64()
+		result.min = Some(approximate)
+		result.minLiteral = Some(strings.Clone(raw))
 	}
-	if result.min.Present() && result.max.Present() && *result.min.Get() >= *result.max.Get() {
-		return fmt.Errorf("@%s must be less than @%s", AutocodeMinMarker, AutocodeMaxMarker)
+	if minimum != nil && maximum != nil && minimum.Cmp(maximum) > 0 {
+		return fmt.Errorf("@%s must be less than or equal to @%s", AutocodeMinMarker, AutocodeMaxMarker)
 	}
 	return nil
 }

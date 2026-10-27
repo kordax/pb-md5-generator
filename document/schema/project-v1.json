@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pb-docs:project:v1",
+  "title": "pb-docs project version 1 draft",
+  "description": "Small index of independently readable page artifacts. Resolve pages[].data relative to this index, and root relative to the index location.",
+  "$comment": "This is the version 1 draft structural contract. It is not a claim of complete protocol, link, path, or resource validation.",
+  "type": "object",
+  "required": ["format", "version", "title", "source", "root", "pages"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "format": {"const": "pb-docs/project"},
+    "version": {"const": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "description": {"type": "string", "maxLength": 4096},
+    "source": {"$ref": "#/$defs/location"},
+    "root": {"const": "../"},
+    "pages": {"type": "array", "items": {"$ref": "#/$defs/pageReference"}}
+  },
+  "$defs": {
+    "location": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1},
+        "generated": {"type": "boolean"}
+      }
+    },
+    "pageReference": {
+      "type": "object",
+      "required": ["id", "title", "path", "source", "kind", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 256},
+        "path": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/location"},
+        "kind": {"type": "string", "enum": ["markdown", "protobuf", "openapi"]},
+        "data": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

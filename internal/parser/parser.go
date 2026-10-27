@@ -78,6 +78,8 @@ func (o AutocodeOpt) Syntax() Syntax {
 type FieldFlags struct {
 	maxLength  Option[int]
 	min, max   Option[float64]
+	minLiteral Option[string]
+	maxLiteral Option[string]
 	value      Option[string]
 	customType Option[ValueType]
 	other      []string
@@ -94,6 +96,12 @@ func (a FieldFlags) GetMin() Option[float64] {
 func (a FieldFlags) GetMax() Option[float64] {
 	return a.max
 }
+
+// GetMinLiteral returns the exact source constraint, before float64 rounding.
+func (a FieldFlags) GetMinLiteral() Option[string] { return a.minLiteral }
+
+// GetMaxLiteral returns the exact source constraint, before float64 rounding.
+func (a FieldFlags) GetMaxLiteral() Option[string] { return a.maxLiteral }
 
 func (a FieldFlags) GetValue() Option[string] {
 	return a.value
@@ -288,6 +296,9 @@ func (f *MessageField) Descriptor() *protokit.FieldDescriptor {
 // ParserOptions configures descriptor parsing behavior.
 type ParserOptions struct {
 	StrictAnnotations bool
+	// Sources supplies immutable source snapshots keyed by FileToGenerate names.
+	// A non-nil map disables filesystem reads and requires every selected source.
+	Sources map[string][]byte
 }
 
 type DescriptorParser struct {
@@ -296,5 +307,8 @@ type DescriptorParser struct {
 	payload      map[string]string
 
 	readOffsets       map[string]int
+	sourceMarkers     map[string][]sourceAnnotation
+	messagePositions  map[string]map[string]int
 	strictAnnotations bool
+	sourceErr         error
 }

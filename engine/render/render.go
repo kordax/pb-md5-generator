@@ -44,6 +44,7 @@ func NewMarkdownRenderer(config *Config) *MarkdownRenderer {
 }
 
 func (g *MarkdownRenderer) Render(doc *md.Document) (string, error) {
+	g.builder.Reset()
 	sections := doc.GetSections()
 	sort.Slice(sections, func(i, j int) bool {
 		return sections[i].GetIndex() < sections[j].GetIndex()
@@ -313,9 +314,17 @@ func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (int, err
 	del, delChars := getCodeblockDelimiter(g.config)
 
 	for _, b := range codeblock {
-		g.builder.WriteString(del)
+		language := b.GetLanguage()
+		for _, char := range language {
+			if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' && char != '-' && char != '+' {
+				return 0, fmt.Errorf("invalid code block language %q", language)
+			}
+		}
+		fence := codeblockFence(b.GetText(), del)
+		fenceChars := delChars + len(fence) - len(del)
+		g.builder.WriteString(fence + language)
 		g.newline()
-		chars += delChars
+		chars += fenceChars + len(language)
 		if b.GetText() != "" {
 			chars += g.renderString(b.GetText())
 		} else {
@@ -324,12 +333,28 @@ func (g *MarkdownRenderer) renderCodeblock(codeblock ...*md.Codeblock) (int, err
 		if !strings.HasSuffix(b.GetText(), "\n") {
 			g.newline()
 		}
-		g.builder.WriteString(del)
-		chars += delChars
+		g.builder.WriteString(fence)
+		chars += fenceChars
 		g.newline()
 	}
 
 	return chars, nil
+}
+
+// codeblockFence scans once, including when the source contains a long fence.
+func codeblockFence(text, delimiter string) string {
+	longest, current := len(delimiter)-1, 0
+	for index := range len(text) {
+		if text[index] == delimiter[0] {
+			current++
+			if current > longest {
+				longest = current
+			}
+		} else {
+			current = 0
+		}
+	}
+	return strings.Repeat(delimiter[:1], longest+1)
 }
 
 func (g *MarkdownRenderer) renderImage(image ...*md.Image) (int, error) {
@@ -514,11 +539,12 @@ func (g *MarkdownRenderer) renderText(text ...*md.Text) int {
 			g.builder.WriteString(str)
 			chars += utf8.RuneCountInString(str)
 		case md.TextEmphasisBold:
+			str = strings.TrimRight(str, "\n ")
+			if str == "" {
+				continue
+			}
 			del, delChars := getEmphasisBoldDelimiter(g.config)
 			g.builder.WriteString(del)
-			for str[len(str)-1] == '\n' || str[len(str)-1] == ' ' {
-				str = str[:len(str)-1]
-			}
 			g.builder.WriteString(str)
 			g.builder.WriteString(del + " ")
 			chars += utf8.RuneCountInString(str) + delChars*2 + 1

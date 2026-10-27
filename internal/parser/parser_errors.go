@@ -49,7 +49,7 @@ func (p *DescriptorParser) messageError(descriptor *protokit.Descriptor, err err
 	fileName := descriptor.GetFile().GetName()
 	var markerErr markerError
 	if errors.As(err, &markerErr) {
-		return p.sourceError(fileName, fmt.Sprintf("message %s marker %s", descriptor.GetName(), markerErr.marker), p.findMarker(fileName, markerErr.marker), err)
+		return p.sourceError(fileName, fmt.Sprintf("message %s marker %s", descriptor.GetName(), markerErr.marker), p.messageMarkerIndex(descriptor, markerErr.marker), err)
 	}
 	return p.sourceError(fileName, fmt.Sprintf("message %s", descriptor.GetName()), p.findDeclaration(fileName, "message", descriptor.GetName()), err)
 }
@@ -61,7 +61,7 @@ func (p *DescriptorParser) enumError(descriptor *protokit.EnumDescriptor, err er
 
 func (p *DescriptorParser) fieldError(descriptor *protokit.FieldDescriptor, err error) error {
 	fileName := descriptor.GetFile().GetName()
-	return p.sourceError(fileName, fmt.Sprintf("field %s", descriptor.GetName()), p.findFieldDeclaration(fileName, descriptor.GetName()), err)
+	return p.sourceError(fileName, fmt.Sprintf("field %s", descriptor.GetName()), p.fieldSourceIndex(descriptor), err)
 }
 
 func (p *DescriptorParser) enumValueError(descriptor *protokit.EnumValueDescriptor, err error) error {
@@ -80,13 +80,13 @@ func (p *DescriptorParser) sourceError(fileName, entity string, index int, err e
 
 func (p *DescriptorParser) findDeclaration(fileName, kind, name string) int {
 	payload := p.payloadForFile(fileName)
-	return strings.Index(payload, kind+" "+name)
+	return strings.Index(codeSource(payload), kind+" "+name)
 }
 
 func (p *DescriptorParser) findFieldDeclaration(fileName, name string) int {
 	payload := p.payloadForFile(fileName)
 	re := regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(name) + `\b\s*=`)
-	loc := re.FindStringIndex(payload)
+	loc := re.FindStringIndex(codeSource(payload))
 	if loc == nil {
 		return -1
 	}
@@ -94,7 +94,7 @@ func (p *DescriptorParser) findFieldDeclaration(fileName, name string) int {
 }
 
 func (p *DescriptorParser) findMarker(fileName, marker string) int {
-	return strings.Index(p.payloadForFile(fileName), marker)
+	return sourceAnnotationIndex(p.payloadForFile(fileName), marker)
 }
 
 func (p *DescriptorParser) findEnumValueDeclaration(fileName, name string) int {

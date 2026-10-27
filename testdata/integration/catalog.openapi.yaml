@@ -1,0 +1,104 @@
+openapi: 3.1.0
+info:
+  title: Catalog API
+  version: 1.0.0
+  description: A local documentation example. Replace the example server to try your own API.
+servers:
+  - url: https://api.example.test/v1
+    description: Example server
+security: []
+tags:
+  - name: Catalog
+    description: Read and create catalog items.
+paths:
+  /items/{itemId}:
+    get:
+      operationId: getItem
+      summary: Find an item
+      description: Returns one catalog item by its stable identifier.
+      tags: [Catalog]
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          description: The item identifier.
+          schema:
+            type: integer
+            minimum: 1
+          example: 42
+        - name: includeInactive
+          in: query
+          description: Include an item that is no longer active.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: The requested item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+              example:
+                id: 42
+                name: Keyboard
+                active: true
+        '404':
+          description: No item has this identifier.
+  /items:
+    post:
+      operationId: createItem
+      summary: Create an item
+      tags: [Catalog]
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewItem'
+            example:
+              name: Keyboard
+              active: true
+      responses:
+        '201':
+          description: The item was created.
+          headers:
+            Location:
+              description: The new item URL.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Paste a key for the server you explicitly chose.
+  schemas:
+    NewItem:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        active:
+          type: boolean
+          default: true
+    Item:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/NewItem'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: integer
+              minimum: 1

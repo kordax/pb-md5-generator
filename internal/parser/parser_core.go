@@ -27,8 +27,18 @@ func NewDescriptorParserWithOptions(request *pluginpb.CodeGeneratorRequest, opti
 		sourceRoots[strings.TrimPrefix(mapping[0], "M")] = mapping[1]
 	}
 
-	matchedFiles := make(map[string]*os.File)
+	payload := make(map[string]string, len(request.GetFileToGenerate()))
+	var sourceErr error
 	for _, f := range request.GetFileToGenerate() {
+		if options.Sources != nil {
+			contents, ok := options.Sources[f]
+			if !ok {
+				sourceErr = fmt.Errorf("no source snapshot provided for file: %s", f)
+				break
+			}
+			payload[f] = string(contents)
+			continue
+		}
 		root, ok := sourceRoots[f]
 		if !ok {
 			// Accept requests produced by older versions, where nested files were
@@ -44,23 +54,30 @@ func NewDescriptorParserWithOptions(request *pluginpb.CodeGeneratorRequest, opti
 		if err != nil {
 			panic(fmt.Errorf("no file found, even though matched path was provided, path: %s, err: %s", fullPath, err.Error()))
 		}
-		file, err := os.OpenFile(fullPath, os.O_RDONLY, lstat.Mode()) // #nosec G304 -- proto source path comes from the compiler request.
-		if err != nil {
-			panic(fmt.Errorf("failed to open file: %s, path: %s, err: %s", f, fullPath, err.Error()))
+		if !lstat.Mode().IsRegular() {
+			panic(fmt.Errorf("protobuf source is not a regular file: %s", fullPath))
 		}
-		matchedFiles[f] = file
+		contents, err := os.ReadFile(fullPath) // #nosec G304 -- proto source path comes from the compiler request.
+		if err != nil {
+			panic(fmt.Errorf("failed to read file: %s, path: %s, err: %s", f, fullPath, err.Error()))
+		}
+		payload[f] = string(contents)
 	}
 
 	return &DescriptorParser{
 		descriptors:       protokit.ParseCodeGenRequest(request),
-		matchedFiles:      matchedFiles,
+		matchedFiles:      make(map[string]*os.File),
 		readOffsets:       make(map[string]int),
-		payload:           make(map[string]string),
+		payload:           payload,
 		strictAnnotations: options.StrictAnnotations,
+		sourceErr:         sourceErr,
 	}
 }
 
 func (p *DescriptorParser) Parse() ([]ParsedFile, error) {
+	if p.sourceErr != nil {
+		return nil, p.sourceErr
+	}
 	result := make([]ParsedFile, 0)
 	sort.Slice(p.descriptors, func(i, j int) bool {
 		return p.descriptors[i].GetName() < p.descriptors[j].GetName()
