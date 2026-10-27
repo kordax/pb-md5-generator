@@ -73,24 +73,31 @@ const (
 	BlockRule           BlockKind = "rule"
 	BlockAnchor         BlockKind = "anchor"
 	BlockHTML           BlockKind = "html"
+	BlockCallout        BlockKind = "callout"
+	BlockTabs           BlockKind = "tabs"
+	BlockTab            BlockKind = "tab"
+	BlockInclude        BlockKind = "include"
 )
 
 // Block represents one structural node. Leaf text and code are stored once;
 // containers hold child nodes rather than copying whole Markdown fragments.
 type Block struct {
-	Kind     BlockKind `json:"kind"`
-	Source   Location  `json:"source"`
-	ID       string    `json:"id,omitempty"`
-	Level    int       `json:"level,omitempty"`
-	Text     string    `json:"text,omitempty"`
-	Language string    `json:"language,omitempty"`
-	Inlines  []Inline  `json:"inlines,omitempty"`
-	Children []Block   `json:"children,omitempty"`
-	Ordered  bool      `json:"ordered,omitempty"`
-	Start    int       `json:"start,omitempty"`
-	Tight    bool      `json:"tight,omitempty"`
-	Align    string    `json:"align,omitempty"`
-	Omitted  bool      `json:"omitted,omitempty"`
+	Kind          BlockKind `json:"kind"`
+	Source        Location  `json:"source"`
+	ID            string    `json:"id,omitempty"`
+	Level         int       `json:"level,omitempty"`
+	Text          string    `json:"text,omitempty"`
+	Language      string    `json:"language,omitempty"`
+	Title         string    `json:"title,omitempty"`
+	Variant       string    `json:"variant,omitempty"`
+	IncludeSource string    `json:"includeSource,omitempty"`
+	Inlines       []Inline  `json:"inlines,omitempty"`
+	Children      []Block   `json:"children,omitempty"`
+	Ordered       bool      `json:"ordered,omitempty"`
+	Start         int       `json:"start,omitempty"`
+	Tight         bool      `json:"tight,omitempty"`
+	Align         string    `json:"align,omitempty"`
+	Omitted       bool      `json:"omitted,omitempty"`
 }
 
 type InlineKind string

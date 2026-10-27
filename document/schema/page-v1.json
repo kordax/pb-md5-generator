@@ -40,24 +40,80 @@
         "anchor": {"type": "string", "minLength": 1}
       }
     },
+    "directiveTitle": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "allOf": [
+        {"not": {"pattern": "[\u0000-\u001F\u007F-\u009F]"}},
+        {"pattern": "[^\u0000-\u0020\u007F-\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]"}
+      ]
+    },
     "block": {
       "type": "object",
       "required": ["kind", "source"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"type": "string", "enum": ["paragraph", "heading", "code", "quote", "list", "listItem", "table", "tableRow", "tableHeader", "tableCell", "definitionList", "definitionTerm", "definition", "rule", "anchor", "html"]},
+        "kind": {"type": "string", "enum": ["paragraph", "heading", "code", "quote", "list", "listItem", "table", "tableRow", "tableHeader", "tableCell", "definitionList", "definitionTerm", "definition", "rule", "anchor", "html", "callout", "tabs", "include"]},
         "source": {"$ref": "#/$defs/location"},
         "id": {"type": "string"},
         "level": {"type": "integer", "minimum": 1, "maximum": 6},
         "text": {"type": "string"},
         "language": {"type": "string"},
+        "title": {"$ref": "#/$defs/directiveTitle"},
+        "variant": {"type": "string", "enum": ["note", "info", "tip", "warning", "danger"]},
+        "includeSource": {"type": "string", "minLength": 1, "maxLength": 4096, "not": {"pattern": "[\u0000-\u001F\u007F-\u009F]"}, "description": "Canonical project-relative included file. Filesystem confinement is enforced by the compiler."},
         "inlines": {"type": "array", "items": {"$ref": "#/$defs/inline"}},
-        "children": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "children": {"type": "array"},
         "ordered": {"type": "boolean"},
         "start": {"type": "integer"},
         "tight": {"type": "boolean"},
         "align": {"type": "string", "enum": ["left", "center", "right"]},
         "omitted": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "tabs"}}},
+          "then": {"required": ["children"], "properties": {"children": {"minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/tab"}}}},
+          "else": {"properties": {"children": {"items": {"$ref": "#/$defs/block"}}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "callout"}}},
+          "then": {"required": ["variant", "title"]}
+        },
+        {
+          "if": {"properties": {"kind": {"enum": ["callout", "tabs", "include"]}}},
+          "then": {"not": {"anyOf": [{"required": ["level"]}, {"required": ["text"]}, {"required": ["inlines"]}, {"required": ["ordered"]}, {"required": ["start"]}, {"required": ["tight"]}, {"required": ["align"]}, {"required": ["omitted"]}]}}
+        },
+        {
+          "if": {"properties": {"kind": {"enum": ["callout", "tabs"]}}},
+          "then": {"not": {"required": ["language"]}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "include"}}},
+          "then": {
+            "required": ["includeSource"],
+            "properties": {"language": {"minLength": 1, "maxLength": 32, "pattern": "^[A-Za-z0-9][A-Za-z0-9_+.-]{0,31}$", "not": {"pattern": "[\u0000-\u001F\u007F-\u009F]"}}},
+            "if": {"required": ["language"]},
+            "then": {"required": ["children"], "properties": {"children": {"minItems": 1, "maxItems": 1, "items": {"properties": {"kind": {"const": "code"}}}}}}
+          }
+        },
+        {"if": {"required": ["title"]}, "then": {"properties": {"kind": {"const": "callout"}}}},
+        {"if": {"required": ["variant"]}, "then": {"properties": {"kind": {"const": "callout"}}}},
+        {"if": {"required": ["includeSource"]}, "then": {"properties": {"kind": {"const": "include"}}}}
+      ]
+    },
+    "tab": {
+      "type": "object",
+      "description": "A labeled section belonging directly to a tabs block. A standalone tab is invalid.",
+      "required": ["kind", "source", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "tab"},
+        "source": {"$ref": "#/$defs/location"},
+        "id": {"type": "string"},
+        "title": {"$ref": "#/$defs/directiveTitle"},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/block"}}
       }
     },
     "inline": {

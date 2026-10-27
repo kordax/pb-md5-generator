@@ -69,7 +69,11 @@ func compileSourcePage(ctx context.Context, root *os.Root, output string, curren
 		return pageContent{}, nil, err
 	}
 	if api == nil {
-		content, err := compileMarkdown(markdown, current, manifest)
+		var load func(string) ([]byte, error)
+		if page.Kind == "markdown" || page.Kind == "" {
+			load = confinedSourceLoader(ctx, root, output, page.Source, source)
+		}
+		content, err := compileMarkdownSource(ctx, markdown, current, manifest, load)
 		return content, nil, err
 	}
 	content, err := renderAPI(ctx, api, current, manifest, pageDataPath(page))

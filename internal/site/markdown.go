@@ -1,6 +1,7 @@
 package site
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"net/url"
@@ -116,19 +117,36 @@ func compileMarkdown(source []byte, current int, manifest Manifest) (pageContent
 }
 
 func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope string, transform func(string) (string, error)) (pageContent, error) {
+	name := manifest.Pages[current].Source
+	return compileMarkdownState(source, current, manifest, scope, transform, newDirectiveState(context.Background(), name, nil, transform), name, 0, 0)
+}
+
+func compileMarkdownState(source []byte, current int, manifest Manifest, scope string, transform func(string) (string, error), state *directiveState, sourceName string, includeDepth, baseDepth int) (pageContent, error) {
+	if err := state.ctx.Err(); err != nil {
+		return pageContent{}, err
+	}
+	if len(source) > maxIncludeExpandedBytes-state.expanded {
+		return pageContent{}, directiveError(sourceName, source, 0, fmt.Sprintf("expanded includes exceed %d bytes", maxIncludeExpandedBytes))
+	}
+	state.expanded += len(source)
 	if !utf8.Valid(source) {
 		return pageContent{}, fmt.Errorf("source is not valid UTF-8")
 	}
 	if err := checkMarkupBudget(source); err != nil {
 		return pageContent{}, err
 	}
+	directives := &directiveParser{state: state, sourceName: sourceName}
 	markdown := goldmark.New(
 		goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithAttribute()),
-		goldmark.WithRendererOptions(renderer.WithNodeRenderers(util.Prioritized(anchorRenderer{}, 100))),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithAttribute(), parser.WithBlockParsers(util.Prioritized(directives, 50))),
+		goldmark.WithRendererOptions(renderer.WithNodeRenderers(util.Prioritized(anchorRenderer{}, 100), util.Prioritized(directiveRenderer{}, 100))),
 	)
-	context := parser.NewContext(parser.WithIDs(&headingIDs{used: make(map[string]bool)}))
-	document := markdown.Parser().Parse(text.NewReader(source), parser.WithContext(context))
+	ids := &directiveHeadingIDs{local: &headingIDs{used: make(map[string]bool)}, shared: state.ids, aliases: make(map[string]string)}
+	parseContext := parser.NewContext(parser.WithIDs(ids))
+	document := markdown.Parser().Parse(text.NewReader(source), parser.WithContext(parseContext))
+	if directives.err != nil {
+		return pageContent{}, directives.err
+	}
 	content := pageContent{Anchors: make(map[string]bool)}
 	type anchorReplacement struct {
 		node  ast.Node
@@ -136,8 +154,11 @@ func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope 
 		id    string
 	}
 	var replacements []anchorReplacement
-	nodes, depth := 0, 0
+	depth := 0
 	aliases := make(map[string]string)
+	for local, actual := range ids.aliases {
+		aliases[local] = scopedAnchor(scope, actual)
+	}
 	type scopedLink struct {
 		node *ast.Link
 		ref  int
@@ -149,14 +170,26 @@ func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope 
 			return ast.WalkContinue, nil
 		}
 		depth++
-		if depth > maxContentDepth {
+		if err := state.ctx.Err(); err != nil {
+			return ast.WalkStop, err
+		}
+		if depth+baseDepth > maxContentDepth {
 			return ast.WalkStop, fmt.Errorf("content nesting exceeds %d levels", maxContentDepth)
 		}
-		nodes++
-		if nodes > maxPageNodes {
+		state.nodes++
+		if state.nodes > maxPageNodes {
 			return ast.WalkStop, fmt.Errorf("markdown AST exceeds %d nodes", maxPageNodes)
 		}
 		switch n := node.(type) {
+		case *directiveNode:
+			if err := state.prepare(n, source, current, manifest, scope, sourceName, includeDepth, baseDepth+depth); err != nil {
+				return ast.WalkStop, err
+			}
+			if n.Name == "include" {
+				if err := mergePageContent(&content, n.Content); err != nil {
+					return ast.WalkStop, err
+				}
+			}
 		case *ast.HTMLBlock:
 			if match := legacyAnchor.FindSubmatch(n.Lines().Value(source)); match != nil {
 				original := string(match[1])
@@ -181,7 +214,8 @@ func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope 
 				}
 			}
 		case *ast.Heading:
-			if len(content.Headings) >= maxPageHeadings {
+			state.headings++
+			if state.headings > maxPageHeadings {
 				return ast.WalkStop, fmt.Errorf("page exceeds %d headings", maxPageHeadings)
 			}
 			value, _ := n.AttributeString("id")
@@ -217,7 +251,15 @@ func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope 
 				return ast.WalkStop, err
 			}
 		case *ast.Image:
-			target, _, err := resolveLink(string(util.URLEscape(n.Destination, true)), current, manifest, true)
+			destination := string(util.URLEscape(n.Destination, true))
+			if sourceName != state.primary {
+				var err error
+				destination, err = state.rebaseDestination(destination, sourceName)
+				if err != nil {
+					return ast.WalkStop, err
+				}
+			}
+			target, _, err := resolveLink(destination, current, manifest, true)
 			if err != nil {
 				return ast.WalkStop, err
 			}
@@ -262,7 +304,7 @@ func compileMarkdownScoped(source []byte, current int, manifest Manifest, scope 
 	// Even a short normalized string can be a view into a multi-megabyte
 	// builder buffer. Keep only the bytes that enter the bounded search index.
 	content.Text = strings.Clone(content.Text)
-	content.Blocks, err = modelBlocks(document, source, current, manifest)
+	content.Blocks, err = modelBlocksWithSource(document, source, current, manifest, sourceName)
 	if err != nil {
 		return pageContent{}, err
 	}
@@ -363,6 +405,13 @@ func plainText(node ast.Node, source []byte) string {
 			return ast.WalkContinue, nil
 		}
 		switch value := n.(type) {
+		case *directiveNode:
+			result.WriteString(value.Title)
+			result.WriteByte(' ')
+			if value.Name == "include" {
+				result.WriteString(value.Content.Text)
+				result.WriteByte(' ')
+			}
 		case *ast.Text:
 			result.Write(value.Segment.Value(source))
 			if value.SoftLineBreak() || value.HardLineBreak() {

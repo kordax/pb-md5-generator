@@ -25,9 +25,9 @@ type contentModel struct {
 	manifest  Manifest
 }
 
-func modelBlocks(root ast.Node, source []byte, current int, manifest Manifest) ([]document.Block, error) {
+func modelBlocksWithSource(root ast.Node, source []byte, current int, manifest Manifest, sourceName string) ([]document.Block, error) {
 	page := manifest.Pages[current]
-	model := contentModel{source: source, file: page.Source, generated: page.Kind != "" && page.Kind != "markdown", current: current, manifest: manifest, lines: []int{0}}
+	model := contentModel{source: source, file: sourceName, generated: page.Kind != "" && page.Kind != "markdown", current: current, manifest: manifest, lines: []int{0}}
 	if !model.generated {
 		for i, value := range source {
 			if value == '\n' {
@@ -47,6 +47,21 @@ func (m *contentModel) blocks(parent ast.Node, depth int) ([]document.Block, err
 		block := document.Block{Source: m.location(node)}
 		container := false
 		switch n := node.(type) {
+		case *directiveNode:
+			block.ID = n.ID
+			switch n.Name {
+			case "note", "info", "tip", "warning", "danger":
+				block.Kind, block.Variant, block.Title, container = document.BlockCallout, n.Name, n.Title, true
+			case "tabs":
+				block.Kind, container = document.BlockTabs, true
+			case "tab":
+				block.Kind, block.Title, container = document.BlockTab, n.Title, true
+			case "include":
+				block.Kind, block.IncludeSource, block.Language = document.BlockInclude, n.ResolvedSource, n.Language
+				block.Children = n.Content.Blocks
+			default:
+				return nil, fmt.Errorf("unsupported directive block %s", n.Name)
+			}
 		case *ast.Paragraph, *ast.TextBlock:
 			block.Kind = document.BlockParagraph
 		case *ast.Heading:
@@ -176,11 +191,20 @@ func (m *contentModel) inlines(parent ast.Node, depth int) ([]document.Inline, e
 }
 
 func (m *contentModel) location(node ast.Node) document.Location {
+	if directive, ok := node.(*directiveNode); ok {
+		return m.locationAt(directive.Offset)
+	}
+	if node.Type() != ast.TypeBlock || node.Lines().Len() == 0 {
+		return document.Location{File: m.file, Generated: m.generated}
+	}
+	return m.locationAt(node.Lines().At(0).Start)
+}
+
+func (m *contentModel) locationAt(offset int) document.Location {
 	location := document.Location{File: m.file, Generated: m.generated}
-	if m.generated || node.Type() != ast.TypeBlock || node.Lines().Len() == 0 {
+	if m.generated || offset < 0 || offset > len(m.source) {
 		return location
 	}
-	offset := node.Lines().At(0).Start
 	line := sort.Search(len(m.lines), func(i int) bool { return m.lines[i] > offset })
 	if line > 0 {
 		location.Line, location.Column = line, offset-m.lines[line-1]+1

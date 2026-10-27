@@ -12,8 +12,9 @@ To view the complete example with Docker, run from the repository root:
 docker compose up --build -d --wait
 ```
 
-Open <http://localhost:8080/>. See [Docker deployment](deployment.md#docker) for
-ports, rebuilding, stopping and using your own sources.
+Open <http://localhost:8080/>. With Task installed, `task docker:up` runs the same
+command and `task docker:down` stops the preview. See [Docker deployment](deployment.md#docker)
+for ports, rebuilding, stopping and using your own sources.
 
 To build without Docker:
 
@@ -55,6 +56,11 @@ anchors, local page search, light and dark themes, and copying code on secure
 origins. Reading and navigation work without JavaScript. Search loads only when
 a reader enters a query.
 
+[Callouts, tabbed examples and local includes](authoring.md#add-callouts) add
+structure to guides without executable templates. Included Markdown retains its
+source locations and relative links; included code stays literal. Tabs remain
+readable without JavaScript and in print.
+
 The compiler validates declared page and asset links, including heading fragments,
 and reports broken references before publishing. It keeps the previous site if
 compilation fails. Identical inputs and example seeds produce identical files.
@@ -62,7 +68,8 @@ compilation fails. Identical inputs and example seeds produce identical files.
 ## Next product milestones
 
 The static reader is the foundation of a broader documentation system. Grouped
-navigation, versions and languages, content directives and a fuller API explorer
-are still planned. The design records
-their acceptance criteria rather than treating this first reader as full
-MkDocs or Scalar parity.
+navigation, versions and languages, diagrams, API embeds and a fuller API explorer
+remain on the roadmap, along with an editor, access control, Git synchronization
+and custom themes. The [design](design.md) records their acceptance criteria;
+these working reader features do not establish full MkDocs, Scalar or Wiki.js
+parity.

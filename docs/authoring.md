@@ -56,6 +56,137 @@ Raw HTML is omitted. The exact empty anchors emitted by the legacy protobuf
 Markdown generator are retained as safe IDs; other raw elements and attributes
 are not enabled. The builder does not execute JSX, templates, scripts or plugins.
 
+## Add callouts
+
+Directives are Markdown blocks with an opening `:::name` line and a closing `:::`
+line. Their contents remain readable without JavaScript. A note can explain a
+prerequisite without interrupting the main instructions:
+
+:::note title="Keep the sources"
+The generated site is a publication. Keep the manifest, Markdown and API contracts
+as the editable source of truth.
+:::
+
+```markdown
+:::note title="Keep the sources"
+The generated site is a publication. Keep the original sources.
+:::
+```
+
+Callout names are `note`, `info`, `tip`, `warning` and `danger`. The optional
+`title` defaults to the capitalized name. Callouts can contain normal Markdown,
+including lists, code, links and other directives. Their titles are plain text.
+Raw HTML and scripts are not enabled by a directive.
+
+## Offer tabbed examples
+
+Group alternatives inside `:::tabs`, with one or more labeled `:::tab` children.
+Close the innermost block first. A group accepts at most 32 tabs; it cannot contain
+unwrapped prose. This example is rendered by the same syntax it documents:
+
+:::tabs title="Build the documentation"
+:::tab title="CLI"
+### Build with the binary
+
+Run these commands from the project root:
+
+```sh
+task build
+./build/pb-md5-generator build -config docs.json -o site
+```
+:::
+:::tab title="Docker"
+### Docker preview
+
+Use the Taskfile to build the image and wait for a healthy preview:
+
+```sh
+task docker:up
+```
+
+Open <http://localhost:8080/>. Stop the preview with `task docker:down`.
+:::
+:::
+
+With JavaScript, a group becomes a keyboard-accessible tab list. Arrow keys,
+Home and End select tabs. A heading link into an inactive tab reveals that tab;
+printing and reading without JavaScript show every section. Each tab requires a
+nonempty `title`; a group can have a plain-text `title` for its accessible label.
+
+```markdown
+:::tabs title="Examples"
+:::tab title="CLI"
+The command-line instructions go here.
+:::
+:::tab title="Docker"
+The container instructions go here.
+:::
+:::
+```
+
+## Include local content
+
+Include a Markdown snippet without giving it a separate navigation entry:
+
+```markdown
+:::include source="snippets/preview-requirements.md"
+:::
+```
+
+:::include source="snippets/preview-requirements.md"
+:::
+
+The path is relative to the file containing the directive. Links and images in
+the included Markdown resolve relative to that included file. Its headings join
+the page contents and anchor space. Automatically generated heading IDs receive
+suffixes when necessary; duplicate explicit anchors are errors. Exported blocks
+retain the included file's source locations.
+
+Set `language` to include a file as literal code instead of Markdown. Neither
+Markdown nor directives inside that file are interpreted:
+
+```markdown
+:::include source="snippets/project-example.json" language="json"
+:::
+```
+
+:::include source="snippets/project-example.json" language="json"
+:::
+
+Includes have an empty body. They read through the same confined loader as API
+imports: no URLs, downloads, shell commands or reads outside the project tree.
+The compiler rejects include cycles, output files used as sources and symlinks
+that escape the source root. A page allows eight nested includes, at most 64
+unique loaded files and 16 MiB of source expansion including the primary source
+and repeated inclusions. The existing per-source, node, heading and rendered-size
+limits also apply across the page. A page accepts at most 1,024 directives across
+all included files, with at most 16 nested directive containers in each source.
+An opening directive line is limited to 4,096 bytes.
+
+## Directive grammar
+
+The directive syntax is part of the draft content contract:
+
+```ebnf
+opening   = indent, ":::", name, { whitespace, attribute }, newline ;
+closing   = indent, ":::", { whitespace }, newline ;
+attribute = name, "=", json-string ;
+```
+
+Fences occupy their own lines and use exactly three colons. Indentation is zero
+to three spaces within the current Markdown container, including a list item or
+quotation. Names are lowercase. Attribute values are double-quoted JSON strings;
+JSON escapes such as `\"` and `\\` are accepted. Unknown or duplicate attributes,
+unquoted values, unclosed blocks and tabs outside a tab group are errors. Text
+inside an ordinary fenced or indented code block stays literal.
+
+Callouts, tab groups and tabs accept only `title`. An include accepts `source` and
+optional `language`. Titles are at most 256 UTF-8 bytes, contain no control
+characters and cannot be blank when supplied. A code language starts with an
+ASCII letter or digit, followed by at most 31 letters, digits, `_`, `+`, `.` or
+`-`. Diagnostics identify the declaring file, line and column. Stable diagnostic
+codes and a frozen compatibility policy remain work for the public standard.
+
 ## Link sources and assets
 
 Write a relative link to another declared source, with an optional heading

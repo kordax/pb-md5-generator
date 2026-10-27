@@ -133,8 +133,9 @@ The [syntax contract](syntax.md) describes accepted grammar and resource bounds.
 These changes have boundary, malformed-input, compatibility and fuzz tests; they
 do not by themselves freeze the broader standard.
 
-The following block syntax is a proposal for later releases, not accepted syntax
-in the initial site builder:
+Markdown pages support bounded directives for callouts, tabs and local includes.
+The [authoring guide](authoring.md#directive-grammar) specifies the draft grammar,
+resource limits and examples:
 
 ```markdown
 :::note title="Before you begin"
@@ -154,23 +155,21 @@ curl https://api.example.test/accounts
 :::
 :::
 
-:::api source="accounts" operation="createAccount"
-:::
-
 :::include source="examples/create-account.json" language="json"
 :::
 ```
 
-Directives are parsed as syntax nodes, never by executing author code. A bounded
-attribute grammar with quoted strings, clear nesting rules and source locations
-must precede implementation. Includes resolve through the same confined file
-loader and need cycle, byte and depth limits. Imports are declared once in the
-manifest, then referenced by stable identifiers from pages. API content must also
-have a readable static fallback.
+Directives are parsed as syntax nodes, never by executing author code. Their
+attribute grammar uses JSON-quoted strings, validates nesting and reports source
+locations. Includes resolve through the confined file loader with cycle, byte,
+document and depth limits. Markdown includes keep the originating file's links
+and source coordinates; a declared code language makes the included bytes literal.
+Tab content remains available without JavaScript and when printed.
 
-Admonitions, tabs, include files, diagrams and API embeds need conformance tests
-before being advertised. Arbitrary HTML, MDX and executable plugins are separate
-opt-in extension proposals with explicit trust and deployment contracts.
+Diagrams and API embeds remain proposals. An API embed will reference a stable
+import identity declared in the manifest and must have a readable static fallback.
+Arbitrary HTML, MDX and executable plugins are separate opt-in extension proposals
+with explicit trust and deployment contracts.
 
 ## Internal representation and import boundaries
 
@@ -199,7 +198,7 @@ The model contracts and remaining extensions are:
 | --- | --- |
 | Project | Schema version, title and ordered page identities; grouped navigation and capabilities remain planned |
 | Page | Stable ID, output path, source location, title, kind, content blocks and optional API |
-| Block | Typed Markdown blocks/inlines with available locations; callouts, tabs, diagrams, includes and API embeds remain planned |
+| Block | Typed Markdown blocks/inlines, callouts, tabs and includes with source locations; diagrams and API embeds remain planned |
 | Reference | Target ID and optional anchor, independent of output format |
 | API | Protocol, source format/version, source provenance, operations, schemas and security requirements |
 | Operation | Stable ID, transport identity, summary, parameters, request/response shapes, examples and security |
@@ -285,7 +284,7 @@ widths.
 | Reading | Local static pages, global navigation, breadcrumbs, heading anchors, contents and print styles | Grouped navigation, previous/next and mobile contents disclosure |
 | Search | Local search data and small browser search UI | Heading-level results, ranking, keyboard palette, bounded worker index for large projects |
 | Appearance | Responsive layout, light/dark theme and copy controls | Custom brand tokens, theme package contract and visual regression fixtures |
-| Authoring | Markdown, protobuf and local OpenAPI pages, listed assets, typed exports | Callouts, tabs, includes, diagrams and reusable snippets |
+| Authoring | Markdown, protobuf and local OpenAPI pages, listed assets, typed exports, callouts, tabs and reusable local includes | Diagrams, API embeds and version/locale authoring |
 | API reference | Typed operations/schemas, examples, security, bounded property/raw previews and stable anchors | Interactive schema trees, richer operation navigation and selectable examples |
 | API client | Explicit HTTP request panel, server/auth/parameter/body controls, cURL, bounded response inspector and cancel | More client languages, browser/live compatibility corpus, OAuth workflow and declared multipart support |
 | Publishing | Portable static output, site/CLI Docker images and Compose preview | Preview/watch, optional single-binary serving, version/locale routing, migration tools |

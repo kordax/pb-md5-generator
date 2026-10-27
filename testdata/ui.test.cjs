@@ -11,6 +11,7 @@ const source = readFileSync(resolve(__dirname, "../site/_docs/site.js"), "utf8")
 // require browser tests; these tests do not claim to replace them.
 function reader(options = {}) {
   let focused;
+  let scrolled;
   class Element {
     constructor(tag = "div") {
       this.tagName = tag;
@@ -20,14 +21,34 @@ function reader(options = {}) {
       this.hidden = false;
       this.textContent = "";
       this.value = "";
+      this.id = "";
+      this.className = "";
+      this.attributes = new Map();
+      this.classList = {
+        add: value => { this.className = [...new Set(this.className.split(/\s+/).filter(Boolean).concat(value))].join(" "); },
+        contains: value => this.className.split(/\s+/).includes(value),
+      };
     }
+    setAttribute(name, value) {
+      this.attributes.set(name, String(value));
+      if (name === "id") { this.id = String(value); ids.set(this.id, this); }
+    }
+    getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+    hasAttribute(name) { return this.attributes.has(name); }
+    contains(element) { return this === element || this.children.some(child => child.contains(element)); }
+    closest(selector) {
+      if (selector !== "a[href^='#']") throw new Error("Unexpected selector: " + selector);
+      if (this.tagName === "a" && (this.getAttribute("href") || "").startsWith("#")) return this;
+      return this.parentElement ? this.parentElement.closest(selector) : null;
+    }
+    scrollIntoView() { scrolled = this; }
     addEventListener(name, callback) {
       const callbacks = this.events.get(name) || [];
       callbacks.push(callback);
       this.events.set(name, callbacks);
     }
     async emit(name, extra = {}) {
-      const event = { type: name, preventDefault() { this.prevented = true; }, ...extra };
+      const event = { type: name, target: this, defaultPrevented: false, preventDefault() { this.prevented = true; this.defaultPrevented = true; }, ...extra };
       for (const callback of this.events.get(name) || []) await callback(event);
       return event;
     }
@@ -56,13 +77,48 @@ function reader(options = {}) {
   code.textContent = "console.log('<example>');";
   const pre = new Element("pre");
   pre.append(code);
+  const groups = [];
+  function element(tag, attributes = {}) {
+    const node = new Element(tag);
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+    return node;
+  }
+  function tabGroup(name, labels) {
+    const group = element("div", { "data-docs-tabs": "" });
+    const list = element("div", { "data-docs-tablist": "", "aria-label": "Examples" });
+    const tabs = labels.map((_, i) => element("a", { id: name + "-tab-" + i, href: "#" + name + "-panel-" + i, "data-docs-tab": name + "-panel-" + i }));
+    const panels = labels.map((_, i) => element("section", { id: name + "-panel-" + i, "data-docs-tabpanel": "" }));
+    labels.forEach((label, i) => { tabs[i].textContent = label; panels[i].textContent = label + " content"; });
+    list.append(...tabs);
+    group.append(list, ...panels);
+    const fixture = { group, list, tabs, panels };
+    groups.push(fixture);
+    return fixture;
+  }
+  for (const [name, labels] of options.tabs || []) tabGroup(name, labels);
+  const navigation = new Element("details");
+  navigation.open = options.navigationOpen !== false;
+  const wide = new Element("media-query");
+  wide.matches = options.wide === false;
+  const documentEvents = new Element("document");
+  const windowEvents = new Element("window");
+  const window = {
+    isSecureContext: options.secure !== false,
+    location: { hash: options.hash || "" },
+    addEventListener: (...args) => windowEvents.addEventListener(...args),
+    emit: (...args) => windowEvents.emit(...args),
+  };
+  if (options.setup) options.setup({ groups, element, tabGroup, navigation });
   const document = {
     currentScript: { dataset: { search: "../_docs/search.json" } },
     baseURI: "https://example.test/team/product/guides/page.html",
     documentElement: new Element("html"),
     getElementById: id => ids.get(id),
-    querySelectorAll: () => [code],
+    querySelector: selector => selector === ".mobile-navigation" ? navigation : null,
+    querySelectorAll: selector => selector === "pre > code" ? [code] : selector === "[data-docs-tabs]" ? groups.map(fixture => fixture.group) : [],
     createElement: name => new Element(name),
+    addEventListener: (...args) => documentEvents.addEventListener(...args),
+    emit: (...args) => documentEvents.emit(...args),
   };
   const pending = new Map();
   const requests = [];
@@ -72,13 +128,13 @@ function reader(options = {}) {
     document,
     URL,
     Event: class { constructor(type) { this.type = type; } },
-    matchMedia: () => ({ matches: options.dark || false }),
+    matchMedia: query => query === "(max-width: 760px)" ? wide : ({ matches: options.dark || false }),
     localStorage: {
       getItem() { if (options.storageError) throw new Error("Storage disabled"); return options.theme; },
       setItem(_, value) { if (options.storageError) throw new Error("Storage disabled"); options.theme = value; },
     },
     navigator: { clipboard: { async writeText(value) { if (options.copyError) throw new Error("Denied"); copied.push(value); } } },
-    window: { isSecureContext: options.secure !== false },
+    window,
     fetch(url) {
       requests.push(url.href);
       return options.fetch ? options.fetch(url) : Promise.resolve({ ok: true, json: async () => options.entries || [] });
@@ -88,8 +144,11 @@ function reader(options = {}) {
   };
   vm.runInNewContext(source, context, { timeout: 1000 });
   return {
-    ids, document, requests, copied, code, pre,
+    ids, document, window, requests, copied, code, pre, groups, navigation,
     focused: () => focused,
+    scrolled: () => scrolled,
+    pending: () => pending.size,
+    async viewport(isWide) { wide.matches = !isWide; await wide.emit("change"); },
     async tick() {
       const callbacks = [...pending.values()];
       pending.clear();
@@ -176,4 +235,125 @@ test("copy uses the original code text and reports denied permission", async () 
   const denied = reader({ copyError: true });
   await denied.pre.children[0].emit("click");
   assert.equal(denied.pre.children[0].textContent, "Copy unavailable");
+});
+
+test("tabs progressively install relationships and keep independent selections", async () => {
+  const app = reader({ tabs: [["code", ["Go", "cURL", "JavaScript"]], ["platform", ["Linux", "Windows"]]] });
+  const [code, platform] = app.groups;
+  for (const fixture of app.groups) {
+    assert.equal(fixture.group.classList.contains("docs-tabs-ready"), true);
+    assert.equal(fixture.list.getAttribute("role"), "tablist");
+    fixture.tabs.forEach((tab, i) => {
+      assert.equal(tab.getAttribute("role"), "tab");
+      assert.equal(tab.getAttribute("aria-controls"), fixture.panels[i].id);
+      assert.equal(tab.getAttribute("aria-selected"), String(i === 0));
+      assert.equal(tab.tabIndex, i === 0 ? 0 : -1);
+      assert.equal(fixture.panels[i].getAttribute("role"), "tabpanel");
+      assert.equal(fixture.panels[i].getAttribute("aria-labelledby"), tab.id);
+      assert.equal(fixture.panels[i].tabIndex, 0);
+      assert.equal(fixture.panels[i].hidden, i !== 0);
+    });
+  }
+  const click = await code.tabs[2].emit("click");
+  assert.equal(click.defaultPrevented, true);
+  assert.equal(app.focused(), code.tabs[2]);
+  assert.equal(code.panels[2].hidden, false);
+  assert.equal(code.panels[0].hidden, true);
+  assert.equal(platform.panels[0].hidden, false);
+  assert.equal(platform.tabs[0].getAttribute("aria-selected"), "true");
+  assert.equal(app.requests.length, 0);
+  assert.equal(app.pending(), 0, "tab initialization and clicks schedule no timers");
+});
+
+test("tabs support arrow wrapping and Home/End without intercepting other keys or modified clicks", async () => {
+  const app = reader({ tabs: [["code", ["Go", "cURL", "JavaScript"]]] });
+  const { tabs, panels } = app.groups[0];
+  let event = await tabs[0].emit("keydown", { key: "ArrowLeft" });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(app.focused(), tabs[2]);
+  assert.equal(panels[2].hidden, false);
+  await tabs[2].emit("keydown", { key: "ArrowRight" });
+  assert.equal(app.focused(), tabs[0]);
+  await tabs[0].emit("keydown", { key: "End" });
+  assert.equal(app.focused(), tabs[2]);
+  await tabs[2].emit("keydown", { key: "Home" });
+  assert.equal(app.focused(), tabs[0]);
+  await tabs[0].emit("keydown", { key: "ArrowRight" });
+  assert.equal(app.focused(), tabs[1]);
+  assert.equal(tabs.filter(tab => tab.tabIndex === 0).length, 1);
+  for (const extra of [{ key: "ArrowDown" }, { key: "PageDown" }, { key: "ArrowRight", ctrlKey: true }, { key: "End", metaKey: true }]) {
+    event = await tabs[1].emit("keydown", extra);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(app.focused(), tabs[1]);
+  }
+  for (const extra of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+    event = await tabs[0].emit("click", extra);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(panels[1].hidden, false);
+  }
+});
+
+test("malformed tab relationships retain readable fallback without partial ARIA or hidden content", () => {
+  const app = reader({ tabs: [["bad", ["One", "Two"]], ["duplicate", ["A", "B"]]], setup({ groups }) {
+    groups[0].tabs[1].setAttribute("data-docs-tab", "missing-panel");
+    groups[1].tabs[1].setAttribute("id", groups[1].tabs[0].id);
+  } });
+  for (const fixture of app.groups) {
+    assert.equal(fixture.group.classList.contains("docs-tabs-ready"), false);
+    assert.equal(fixture.list.getAttribute("role"), null);
+    fixture.tabs.forEach(tab => assert.equal(tab.getAttribute("role"), null));
+    fixture.panels.forEach(panel => {
+      assert.equal(panel.hidden, false);
+      assert.equal(panel.getAttribute("role"), null);
+    });
+  }
+});
+
+test("initial and repeated fragment links reveal nested tabs without moving keyboard focus", async () => {
+  let target;
+  let link;
+  let other;
+  const app = reader({ tabs: [["outer", ["Overview", "Details"]]], hash: "#nested-%CE%BB", setup({ groups, element, tabGroup }) {
+    const inner = tabGroup("inner", ["First", "Second"]);
+    groups[0].panels[1].append(inner.group);
+    target = element("h3", { id: "nested-λ" });
+    inner.panels[1].append(target);
+    other = element("h3", { id: "overview-heading" });
+    groups[0].panels[0].append(other);
+    link = element("a", { href: "#nested-%CE%BB" });
+  } });
+  const [outer, inner] = app.groups;
+  assert.equal(outer.panels[1].hidden, false);
+  assert.equal(inner.panels[1].hidden, false);
+  assert.equal(app.focused(), undefined);
+  await outer.tabs[0].emit("click");
+  assert.equal(outer.panels[1].hidden, true);
+  await app.document.emit("click", { target: link });
+  assert.equal(outer.panels[1].hidden, false, "same fragment click works even without a hashchange event");
+  assert.equal(inner.panels[1].hidden, false);
+  assert.equal(app.scrolled(), target);
+  assert.equal(app.focused(), outer.tabs[0], "fragment activation preserves the reader's focus");
+  app.window.location.hash = "#overview-heading";
+  await app.window.emit("hashchange");
+  assert.equal(outer.panels[0].hidden, false);
+  assert.equal(app.scrolled(), other);
+  app.window.location.hash = "#%";
+  await app.window.emit("hashchange");
+  assert.equal(outer.panels[0].hidden, false, "malformed URI fragments leave current content available");
+});
+
+test("responsive navigation opens on desktop and restores the mobile reader's toggle", async () => {
+  const app = reader({ wide: false, navigationOpen: false });
+  assert.equal(app.navigation.open, false);
+  await app.viewport(true);
+  assert.equal(app.navigation.open, true);
+  await app.navigation.emit("toggle");
+  await app.viewport(false);
+  assert.equal(app.navigation.open, false);
+  app.navigation.open = true;
+  await app.navigation.emit("toggle");
+  await app.viewport(true);
+  await app.viewport(false);
+  assert.equal(app.navigation.open, true);
+  assert.equal(reader({ navigationOpen: false }).navigation.open, true, "restored collapsed state does not hide desktop navigation");
 });

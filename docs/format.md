@@ -45,6 +45,42 @@ Load only the page artifacts you need. A page has `format: "pb-docs/page"`, `ver
 
 A local inline `reference` identifies a page, asset, or anchor independently of its rendered destination. Resolving that identity still requires the project and its ownership/link checks. A `source` location records `file` and, when known, one-based `line` and `column`. Generated content uses `generated: true` and omits original line coordinates.
 
+## Directive blocks
+
+Callouts, tabs and includes are typed blocks. Their children use the same content model as ordinary Markdown; a reader can render them without executing author code or parsing generated HTML.
+
+| Kind | Fields and structure |
+| --- | --- |
+| `callout` | Required `variant` (`note`, `info`, `tip`, `warning`, or `danger`) and a nonempty resolved `title`; optional content in `children` |
+| `tabs` | One to 32 `tab` children; `id` identifies the rendered group |
+| `tab` | A nonempty plain-text `title`, optional `id` and ordinary `children`; valid only directly inside `tabs` |
+| `include` | Required `includeSource`, the resolved project-relative included filename; `children` contain its compiled content |
+
+Titles count as plain text. An omitted callout title becomes its default label, such as `Warning`. The page schema limits titles to 256 characters; the compiler enforces the tighter limit of 256 UTF-8 bytes. `title`, `variant` and `includeSource` belong to their listed block kinds, and unknown typed fields are rejected.
+
+Directive titles and include paths reject control characters. A language label matches `[A-Za-z0-9][A-Za-z0-9_+.-]{0,31}`. An include with a `language` contains exactly one `code` child. The child keeps the original text and language. With no language, the included Markdown becomes ordinary typed blocks, including nested directives. An empty Markdown file can produce an include without children. Includes retain their identity instead of flattening away the source boundary.
+
+The include block's `source` records the directive in its containing document. Each included child records its original file and line when available. This distinguishes the place that requested an include from the content it brought in:
+
+```json
+{
+  "kind": "include",
+  "source": {"file": "guide.md", "line": 7, "column": 1},
+  "includeSource": "snippets/request.json",
+  "language": "json",
+  "children": [
+    {
+      "kind": "code",
+      "source": {"file": "snippets/request.json", "line": 1, "column": 1},
+      "language": "json",
+      "text": "{}\n"
+    }
+  ]
+}
+```
+
+The compiler resolves includes locally with path confinement, cycle checks and shared resource limits. Schema validation checks their structural representation; it does not open included files or prove filesystem safety. See the [authoring guide](authoring.md) for the directive grammar.
+
 ## API content and exact numbers
 
 API pages can include an `api` graph with operations, schemas, servers, security schemes, and preserved source documents. Required collections are JSON arrays, including empty arrays; they are not `null`. Operations carry effective servers and security after inheritance. A security array is an OR of requirements, while each requirement is an AND of schemes and scope arrays. An empty requirement permits anonymous use.

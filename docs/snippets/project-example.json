@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "title": "My documentation",
+  "pages": [
+    {
+      "title": "Overview",
+      "source": "docs/index.md",
+      "path": "index.html"
+    }
+  ]
+}
