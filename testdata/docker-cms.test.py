@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Exercise the CMS image with isolated volumes and memory-only HTTP credentials."""
+
+import argparse
+import hashlib
+import http.cookies
+import io
+import json
+import os
+from pathlib import Path
+import secrets
+import shutil
+import socket
+import stat
+import subprocess
+import tarfile
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def run(arguments, *, env=None, input_data=None, expected=0, timeout=180):
+    result = subprocess.run(arguments, cwd=ROOT, env=env, input=input_data,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+    if expected is not None and result.returncode != expected:
+        # Commands never carry passwords or tokens in arguments. Captured HTTP
+        # output and headers are deliberately excluded from failure messages.
+        detail = result.stderr.decode(errors="replace")[-4096:] if "restore" in arguments else ""
+        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(arguments[:5])}\n{detail}")
+    return result
+
+
+class Client:
+    def __init__(self, origin, prefix=""):
+        self.origin = origin
+        self.prefix = prefix
+        self.cookies = {}
+        self.csrf = None
+        self.location = None
+
+    def request(self, path, method="GET", body=None, expected=200, parse=True):
+        require(path.startswith("/") and not path.startswith("//"), "HTTP path must be local")
+        lines = [f"Origin: {self.origin}"]
+        if self.cookies:
+            lines.append("Cookie: " + "; ".join(f"{key}={value}" for key, value in self.cookies.items()))
+        if self.csrf:
+            lines.append(f"X-CSRF-Token: {self.csrf}")
+        payload = None
+        if body is not None:
+            lines.append("Content-Type: application/json")
+            payload = json.dumps(body).encode()
+        # Anonymous pipes keep cookies and CSRF headers out of files and argv.
+        request_read, request_write = os.pipe()
+        response_read, response_write = os.pipe()
+        os.write(request_write, ("\n".join(lines) + "\n").encode())
+        os.close(request_write)
+        arguments = ["curl", "--silent", "--show-error", "--noproxy", "*", "--max-time", "15",
+                     "--request", method, "--header", f"@/dev/fd/{request_read}",
+                     "--dump-header", f"/dev/fd/{response_write}", "--write-out", "\n%{http_code}"]
+        if payload is not None:
+            arguments += ["--data-binary", "@-"]
+        arguments.append(self.origin + self.prefix + path)
+        try:
+            result = subprocess.run(arguments, input=payload, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, pass_fds=(request_read, response_write), timeout=20)
+        finally:
+            os.close(request_read)
+            os.close(response_write)
+        headers = bytearray()
+        try:
+            while True:
+                part = os.read(response_read, 8192)
+                if not part:
+                    break
+                headers.extend(part)
+                require(len(headers) <= 65536, "HTTP response headers exceeded their limit")
+        finally:
+            os.close(response_read)
+        require(result.returncode == 0, "Loopback HTTP request failed")
+        data, separator, code = result.stdout.rpartition(b"\n")
+        require(separator and code.isdigit(), "Missing HTTP response status")
+        require(int(code) == expected, f"Unexpected HTTP status for {method} {path}: {int(code)}")
+        self.location = None
+        for line in headers.decode("iso-8859-1").splitlines():
+            if line.lower().startswith("location:"):
+                self.location = line.partition(":")[2].strip()
+            if line.lower().startswith("set-cookie:"):
+                cookie = http.cookies.SimpleCookie()
+                cookie.load(line.partition(":")[2].strip())
+                for key, morsel in cookie.items():
+                    require(morsel["secure"] and morsel["httponly"], "Session cookie lacks required flags")
+                    self.cookies[key] = morsel.value
+        if not parse:
+            return data
+        value = json.loads(data) if data else None
+        if isinstance(value, dict) and value.get("csrfToken"):
+            self.csrf = value["csrfToken"]
+        return value
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--skip-build", action="store_true", help="test the existing pb-docs-cms:local image")
+    parser.add_argument("--skip-static", action="store_true", help="skip the separate static image check")
+    options = parser.parse_args()
+    require(os.name == "posix", "Run this Docker integration check on Linux or macOS")
+    require(shutil.which("docker") and shutil.which("curl"), "Docker Compose and curl are required")
+    os.umask(0o077)
+    project = f"pb-cms-qa-{os.getpid()}-{secrets.token_hex(3)}"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    origin = f"http://localhost:{port}"
+    env = os.environ.copy()
+    env.update({"DOCS_BIND": "127.0.0.1", "DOCS_PORT": str(port), "CMS_PUBLIC_URL": origin,
+                "CMS_STORAGE": "git", "CMS_GIT_REMOTE": "origin", "DOCS_CONFIG": "docs.json",
+                "CMS_DATA_VOLUME": project + "_data", "CMS_BACKUP_VOLUME": project + "_backups",
+                "CMS_BACKUP_FILE": "qa-state.tar.gz"})
+    base_env = env.copy()
+    volumes = {env["CMS_DATA_VOLUME"], env["CMS_BACKUP_VOLUME"]}
+    existing = run(["docker", "volume", "ls", "--filter", f"name={project}", "--format", "{{.Name}}"])
+    require(not existing.stdout.strip(), "The generated QA project name is already in use")
+    compose_prefix = ["docker", "compose", "-p", project]
+
+    def compose(*arguments, environment=None, input_data=None, expected=0, timeout=180):
+        return run(compose_prefix + list(arguments), env=environment or env,
+                   input_data=input_data, expected=expected, timeout=timeout)
+
+    def shell(source, *, environment=None, input_data=None):
+        return compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "cms", "-ec", source,
+                       environment=environment, input_data=input_data)
+
+    def fresh_env(suffix, *, backup=None, archive="qa-state.tar.gz"):
+        selected = base_env.copy()
+        selected["CMS_DATA_VOLUME"] = project + "_" + suffix
+        selected["CMS_BACKUP_FILE"] = archive
+        if backup:
+            selected["CMS_BACKUP_VOLUME"] = backup
+        volumes.add(selected["CMS_DATA_VOLUME"])
+        return selected
+
+    def assert_state(client, draft_text):
+        session = client.request("/_docs/api/v1/session")
+        require(session.get("user", {}).get("username") == "qa-owner", "Account or session did not survive")
+        page = client.request("/", parse=False)
+        require(b"Docker publication verification" in page, "Published document did not survive")
+        require(draft_text.encode() not in page, "Unpublished draft escaped into the reader")
+        drafts = client.request("/_docs/api/v1/drafts")
+        require(len(drafts["drafts"]) == 1, "Unpublished draft metadata did not survive")
+        document = client.request("/_docs/api/v1/documents/home")
+        require(document["content"] == draft_text, "Unpublished draft source did not survive")
+        branches = client.request("/_docs/api/v1/branches")
+        require(any(branch["name"] == "review" for branch in branches["branches"]), "Git branch did not survive")
+
+    try:
+        if not options.skip_build:
+            print("Building CMS image", flush=True)
+            compose("build", "cms", timeout=300)
+        password = secrets.token_urlsafe(32).encode()
+        compose("run", "--rm", "--no-deps", "-T", "cms", "admin-user", "--username", "qa-owner",
+                "--display-name", "Docker QA", "--password-stdin", input_data=password)
+        shell("mkdir -m 0700 -p /data/content; git init --bare /data/remote.git; "
+              "git -C /data/content init -b main; git -C /data/content remote add origin /data/remote.git")
+        marker = secrets.token_bytes(32)
+        shell("umask 077; cat > /data/ssh/backup-marker", input_data=marker)
+        compose("up", "-d", "--wait", "cms")
+        client = Client(origin)
+        health = client.request("/_docs/health")
+        require(health == {"status": "ready"}, "CMS health did not report control-plane readiness")
+        client.request("/_docs/api/v1/session", "POST", {"username": "qa-owner", "password": password.decode()})
+        password = b""
+        require(client.cookies and client.csrf, "Login did not return a session and CSRF token")
+        admin = client.request("/_docs/admin/", parse=False)
+        require(b"__PB_DOCS_CSP_NONCE__" not in admin, "Admin nonce placeholder was not replaced")
+        client.request("/_docs/admin/app.mjs", parse=False)
+        print("Health, login, admin assets and cookie flags passed", flush=True)
+
+        document = client.request("/_docs/api/v1/documents/home")
+        text = "# Docker publication verification\n\nPublished through the real HTTP API.\n"
+        client.request("/_docs/api/v1/documents/home", "PUT", {"revision": document["revision"], "content": text})
+        drafts = client.request("/_docs/api/v1/drafts")
+        require(len(drafts["drafts"]) == 1, "Editor did not retain the saved draft")
+        draft = drafts["drafts"][0]
+        published = client.request(f"/_docs/api/v1/drafts/{draft['id']}/publish", "POST",
+                                   {"revision": draft["revision"], "push": True, "message": "docs: verify Docker publication"})
+        require(published.get("published") is True, "Publication did not complete")
+        require(published.get("sync", {}).get("backend") == "git", "Publication lost its backend identity")
+        require(not published["sync"].get("error"), "Git publication or push failed")
+        require(b"Docker publication verification" in client.request("/", parse=False), "Reader did not update")
+        project_state = client.request("/_docs/api/v1/documents")
+        created = client.request("/_docs/api/v1/documents", "POST", {
+            "revision": project_state["revision"], "title": "Directory guide", "kind": "markdown",
+            "path": "guide/index.md", "outputPath": "guide/index.html", "content": "# Nested directory guide\n"}, expected=201)
+        nested_draft = created["draft"]
+        client.request(f"/_docs/api/v1/drafts/{nested_draft['id']}/publish", "POST",
+                       {"revision": nested_draft["revision"], "push": True, "message": "docs: add directory guide"})
+        project_state = client.request("/_docs/api/v1/documents")
+        client.request("/_docs/api/v1/branches", "POST", {"revision": project_state["revision"], "name": "review"})
+        project_state = client.request("/_docs/api/v1/documents")
+        client.request("/_docs/api/v1/branches/checkout", "POST", {"revision": project_state["revision"], "name": "review"})
+        for action in ["push", "pull"]:
+            project_state = client.request("/_docs/api/v1/documents")
+            client.request("/_docs/api/v1/sync", "POST", {"revision": project_state["revision"], "action": action})
+        project_state = client.request("/_docs/api/v1/documents")
+        client.request("/_docs/api/v1/branches/checkout", "POST", {"revision": project_state["revision"], "name": "main"})
+        document = client.request("/_docs/api/v1/documents/home")
+        draft_text = "# Unpublished Docker draft\n"
+        client.request("/_docs/api/v1/documents/home", "PUT", {"revision": document["revision"], "content": draft_text})
+        print("Editor draft, publication, actual Git commit/push, checkout and pull passed", flush=True)
+
+        viewer_password = secrets.token_urlsafe(32)
+        client.request("/_docs/api/v1/users", "POST", {"username": "qa-reader", "displayName": "QA reader",
+                       "password": viewer_password, "role": "viewer", "grants": {"read": ["index.md"], "write": []}}, expected=201)
+        viewer = Client(origin)
+        viewer.request("/_docs/api/v1/session", "POST", {"username": "qa-reader", "password": viewer_password})
+        viewer_password = ""
+        viewer.request("/", parse=False)
+        document = viewer.request("/_docs/api/v1/documents/home")
+        viewer.request("/_docs/api/v1/documents/home", "PUT",
+                       {"revision": document["revision"], "content": "# Must remain forbidden"}, expected=403)
+        viewer.request("/_docs/api/v1/users", expected=403)
+        viewer.request("/guide/", expected=404, parse=False)
+        viewer.request("/guide", expected=404, parse=False)
+        print("Read-only role enforcement passed", flush=True)
+
+        live_backup = compose("--profile", "maintenance", "run", "--rm", "--no-deps", "backup", expected=None)
+        require(live_backup.returncode != 0, "Backup accepted a live CMS")
+        compose("stop", "cms")
+        compose("--profile", "maintenance", "run", "--rm", "--no-deps", "backup")
+        compose("up", "-d", "--wait", "cms")
+        assert_state(client, draft_text)
+        compose("down")
+        compose("up", "-d", "--wait", "cms")
+        assert_state(client, draft_text)
+        print("Offline backup guard and persistence across down/up passed", flush=True)
+        compose("stop", "cms")
+        refused = compose("--profile", "maintenance", "run", "--rm", "--no-deps", "restore", expected=None)
+        require(refused.returncode != 0, "Restore accepted a non-empty data volume")
+
+        restored = fresh_env("restored")
+        compose("--profile", "maintenance", "run", "--rm", "--no-deps", "restore", environment=restored)
+        compose("up", "-d", "--wait", "cms", environment=restored)
+        assert_state(client, draft_text)
+        restored_marker = shell("cat /data/ssh/backup-marker", environment=restored).stdout
+        require(restored_marker == marker, "Private SSH state did not survive backup/restore")
+        print("Fresh-volume restore preserved sessions, sources, drafts, Git and SSH state", flush=True)
+
+        with tempfile.TemporaryDirectory(prefix="pb-cms-export-") as directory:
+            compose("--profile", "maintenance", "create", "--no-build", "backup", environment=restored)
+            container = compose("--profile", "maintenance", "ps", "--all", "-q", "backup", environment=restored).stdout.decode().strip()
+            archive = Path(directory) / "qa-state.tar.gz"
+            checksum = Path(directory) / "qa-state.tar.gz.sha256"
+            run(["docker", "cp", f"{container}:/backup/qa-state.tar.gz", str(archive)])
+            run(["docker", "cp", f"{container}:/backup/qa-state.tar.gz.sha256", str(checksum)])
+            require(stat.S_IMODE(archive.stat().st_mode) == 0o600, "Exported archive permissions are not private")
+            require(hashlib.sha256(archive.read_bytes()).hexdigest() == checksum.read_text().split()[0], "Exported archive checksum changed")
+            compose("--profile", "maintenance", "rm", "-f", "backup", environment=restored)
+            imported = fresh_env("imported-data", backup=project + "_imported-backups")
+            volumes.add(imported["CMS_BACKUP_VOLUME"])
+            for source, suffix in [(archive, ""), (checksum, ".sha256")]:
+                compose("--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "backup",
+                        "-ec", f'umask 077; set -C; cat > "/backup/$CMS_BACKUP_FILE{suffix}"',
+                        environment=imported, input_data=source.read_bytes())
+            compose("stop", "cms", environment=restored)
+            compose("--profile", "maintenance", "run", "--rm", "--no-deps", "restore", environment=imported)
+            compose("up", "-d", "--wait", "cms", environment=imported)
+            assert_state(client, draft_text)
+            print("Private archive export/import and restore passed", flush=True)
+
+        prefixed_env = imported.copy()
+        prefixed_env["CMS_PUBLIC_URL"] = origin + "/team"
+        compose("up", "-d", "--wait", "cms", environment=prefixed_env)
+        prefixed = Client(origin, "/team")
+        prefixed.cookies, prefixed.csrf = client.cookies.copy(), client.csrf
+        require(prefixed.request("/_docs/health") == {"status": "ready"}, "Prefixed health check failed")
+        prefixed.request("/_docs/admin/app.mjs", parse=False)
+        assert_state(prefixed, draft_text)
+        require(b"Nested directory guide" in prefixed.request("/guide/", parse=False), "Directory index alias did not resolve")
+        bare = Client(origin)
+        bare.cookies, bare.csrf = client.cookies.copy(), client.csrf
+        bare.request("/team", expected=308, parse=False)
+        require(bare.location == "/team/", "Bare hosting prefix did not redirect canonically")
+        bare.request("/team/guide", expected=308, parse=False)
+        require(bare.location == "/team/guide/", "Bare directory did not redirect canonically")
+        restricted = Client(origin, "/team")
+        restricted.cookies, restricted.csrf = viewer.cookies.copy(), viewer.csrf
+        restricted.request("/guide/", expected=404, parse=False)
+        restricted.request("/guide", expected=404, parse=False)
+        restricted.request("/missing/", expected=404, parse=False)
+        print("Hosting-prefix and directory aliases enforce canonical routes and read permissions", flush=True)
+
+        for kind in ["checksum", "traversal", "symlink", "hardlink"]:
+            payload = io.BytesIO()
+            with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+                entry = tarfile.TarInfo("../../escape" if kind == "traversal" else "payload")
+                if kind in {"symlink", "hardlink"}:
+                    entry.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
+                    entry.linkname = "/tmp" if kind == "symlink" else "content/index.md"
+                    archive.addfile(entry)
+                else:
+                    entry.size = 1
+                    archive.addfile(entry, io.BytesIO(b"x"))
+            bad = fresh_env("bad-" + kind, archive=kind + ".tar.gz")
+            content = payload.getvalue()
+            compose("--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "backup",
+                    "-ec", 'umask 077; cat > "/backup/$CMS_BACKUP_FILE"', environment=bad, input_data=content)
+            digest = "0" * 64 if kind == "checksum" else hashlib.sha256(content).hexdigest()
+            compose("--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "backup",
+                    "-ec", 'umask 077; cat > "/backup/$CMS_BACKUP_FILE.sha256"', environment=bad,
+                    input_data=f"{digest}  {kind}.tar.gz\n".encode())
+            refusal = compose("--profile", "maintenance", "run", "--rm", "--no-deps", "restore", environment=bad, expected=None)
+            require(refusal.returncode != 0, "Restore accepted an unsafe archive")
+            compose("--profile", "maintenance", "run", "--rm", "--no-deps", "--entrypoint", "sh", "backup",
+                    "-ec", '[ -z "$(find /data -mindepth 1 -print -quit)" ]', environment=bad)
+        print("Bad checksums, traversal, symbolic links and hard links rejected before data writes", flush=True)
+        if not options.skip_static:
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                static_port = listener.getsockname()[1]
+            static_env = base_env.copy()
+            static_env["STATIC_DOCS_PORT"] = str(static_port)
+            compose("--profile", "static", "build", "docs", environment=static_env, timeout=300)
+            compose("--profile", "static", "up", "-d", "--wait", "docs", environment=static_env)
+            static = Client(f"http://localhost:{static_port}")
+            require(static.request("/healthz", parse=False).strip() == b"ok", "Static image health failed")
+            require(b"<html" in static.request("/", parse=False), "Static reader did not serve HTML")
+            project_model = static.request("/_docs/project.json")
+            require(project_model.get("pages"), "Static project model did not contain documentation")
+            print("Separate static image and reader passed", flush=True)
+        container = compose("ps", "-q", "cms").stdout.decode().strip()
+        metrics = run(["docker", "stats", "--no-stream", "--format", "{{json .}}", container]).stdout
+        if metrics.strip():
+            selected = json.loads(metrics)
+            print("Observed CMS resource sample: " + selected["CPUPerc"] + " CPU, " + selected["MemUsage"], flush=True)
+        print("Docker CMS integration checks passed", flush=True)
+    finally:
+        cleanup = compose("--profile", "static", "--profile", "maintenance", "down", "--remove-orphans", environment=base_env, expected=None)
+        if cleanup.returncode != 0:
+            print("QA cleanup needs attention: Compose down failed", flush=True)
+        for volume in sorted(volumes):
+            run(["docker", "volume", "rm", volume], expected=None)
+
+
+if __name__ == "__main__":
+    main()

@@ -8,19 +8,83 @@ vars:
   GOVULNCHECK_VERSION: v1.6.0
   GOSEC_VERSION: v2.28.0
   ACTIONLINT_VERSION: v1.7.12
+  SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 
 tasks:
   docker:up:
-    desc: "Build and start the Docker documentation preview"
+    aliases: [cms:up]
+    desc: "Build and start the documentation CMS"
     dir: '{{.ROOT_DIR}}'
     cmds:
       - docker compose up --build -d --wait
 
   docker:down:
-    desc: "Stop the Docker documentation preview"
+    aliases: [cms:down]
+    desc: "Stop Compose services and keep persistent data"
     dir: '{{.ROOT_DIR}}'
     cmds:
-      - docker compose down
+      - docker compose --profile static --profile maintenance down
+
+  cms:bootstrap:
+    desc: "Create the first administrator from an exact password on stdin"
+    dir: '{{.ROOT_DIR}}'
+    interactive: true
+    requires:
+      vars: [CMS_USERNAME]
+    env:
+      CMS_USERNAME: '{{.CMS_USERNAME}}'
+    cmds:
+      - docker compose run --rm -T cms admin-user --username "$CMS_USERNAME" --password-stdin
+
+  cms:serve:
+    desc: "Run the native CMS binary"
+    dir: '{{.ROOT_DIR}}'
+    deps: [build]
+    cmds:
+      - ./build/pb-md5-generator serve {{.CLI_ARGS}}
+
+  cms:backup:
+    desc: "Stop the CMS, archive all data privately, and restart it"
+    dir: '{{.ROOT_DIR}}'
+    env:
+      CMS_BACKUP_FILE: '{{.CMS_BACKUP_FILE | default ""}}'
+    cmds:
+      - docker compose stop cms
+      - docker compose --profile maintenance run --rm --no-deps backup
+      - docker compose up -d --wait cms
+
+  cms:restore:
+    desc: "Restore an archive into a new empty data volume and start the CMS"
+    dir: '{{.ROOT_DIR}}'
+    requires:
+      vars: [CMS_DATA_VOLUME, CMS_BACKUP_FILE]
+    env:
+      CMS_DATA_VOLUME: '{{.CMS_DATA_VOLUME}}'
+      CMS_BACKUP_FILE: '{{.CMS_BACKUP_FILE}}'
+    cmds:
+      - docker compose stop cms
+      - docker compose --profile maintenance run --rm --no-deps restore
+      - docker compose up -d --wait cms
+
+  docker:check:
+    desc: "Validate Dockerfile and maintenance shell scripts"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker buildx build --check --target cms .
+      - docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --mount "type=bind,source={{.ROOT_DIR}}/deploy,target=/scripts,readonly" {{.SHELLCHECK_IMAGE}} /scripts/cms-entrypoint.sh /scripts/cms-healthcheck.sh /scripts/cms-archive.sh
+
+  docker:test:
+    desc: "Verify CMS login, Git publication, persistence and backup/restore in an isolated Compose project"
+    dir: '{{.ROOT_DIR}}'
+    deps: [docker:check]
+    cmds:
+      - python3 testdata/docker-cms.test.py
+
+  docker:static:
+    desc: "Build and start the static example on localhost:8081"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose --profile static up --build -d --wait docs
 
   build:
     desc: "Build the standalone binary into build/"
@@ -30,6 +94,10 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/studio/web/assets/*"
+      - "internal/studio/web/package*.json"
+      - "internal/studio/web/build.mjs"
+      - "internal/studio/api/*.yaml"
       - "document/**/*.json"
       - go.mod
       - go.sum
@@ -49,10 +117,14 @@ tasks:
       - test-ui
 
   test-ui:
-    desc: "Test local reader enhancements with Node's built-in test runner"
+    desc: "Check reader, API panel and embedded admin editor without a browser"
     deps: [site]
     cmds:
-      - node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs
+      - node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs testdata/api-client-settings.test.cjs
+      - npm ci --prefix internal/studio/web
+      - npm --prefix internal/studio/web run check
+      - npm --prefix internal/studio/web test
+      - npm --prefix internal/studio/web run security
 
   site:
     desc: "Build and verify the mixed documentation site"
@@ -74,6 +146,10 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/studio/web/assets/*"
+      - "internal/studio/web/package*.json"
+      - "internal/studio/web/build.mjs"
+      - "internal/studio/api/*.yaml"
       - "document/**/*.json"
       - go.mod
       - go.sum
@@ -86,6 +162,10 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/studio/web/assets/*"
+      - "internal/studio/web/package*.json"
+      - "internal/studio/web/build.mjs"
+      - "internal/studio/api/*.yaml"
       - "document/**/*.json"
       - go.mod
       - go.sum
@@ -152,6 +232,10 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/studio/web/assets/*"
+      - "internal/studio/web/package*.json"
+      - "internal/studio/web/build.mjs"
+      - "internal/studio/api/*.yaml"
       - "document/**/*.json"
       - go.mod
       - go.sum

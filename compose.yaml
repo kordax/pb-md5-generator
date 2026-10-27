@@ -1,5 +1,39 @@
+x-cms: &cms
+  image: pb-docs-cms:local
+  build:
+    context: .
+    target: cms
+  init: true
+  user: "65532:65532"
+  environment:
+    CMS_PUBLIC_URL: ${CMS_PUBLIC_URL:-http://localhost:${DOCS_PORT:-8080}}
+    CMS_STORAGE: ${CMS_STORAGE:-local}
+    CMS_GIT_REMOTE: ${CMS_GIT_REMOTE:-origin}
+    CMS_BACKUP_FILE: ${CMS_BACKUP_FILE:-}
+    GOMEMLIMIT: 384MiB
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 64
+  mem_limit: 512m
+  cpus: 2.0
+  stop_grace_period: 60s
+
 services:
+  cms:
+    <<: *cms
+    ports:
+      - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:-8080}:8090"
+    volumes:
+      - cms-data:/data
+    restart: unless-stopped
+
   docs:
+    profiles: [static]
     image: pb-docs:local
     build:
       context: .
@@ -7,7 +41,7 @@ services:
       args:
         DOCS_CONFIG: ${DOCS_CONFIG:-docs.json}
     ports:
-      - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:-8080}:8080"
+      - "${DOCS_BIND:-127.0.0.1}:${STATIC_DOCS_PORT:-8081}:8080"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m,mode=1777
@@ -18,3 +52,35 @@ services:
     pids_limit: 32
     mem_limit: 128m
     restart: unless-stopped
+
+  backup:
+    <<: *cms
+    profiles: [maintenance]
+    entrypoint: ["/usr/local/bin/pb-docs-archive"]
+    command: [backup]
+    volumes:
+      - cms-data:/data:ro
+      - cms-backups:/backup
+    network_mode: none
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  restore:
+    <<: *cms
+    profiles: [maintenance]
+    entrypoint: ["/usr/local/bin/pb-docs-archive"]
+    command: [restore]
+    volumes:
+      - cms-data:/data
+      - cms-backups:/backup:ro
+    network_mode: none
+    healthcheck:
+      disable: true
+    restart: "no"
+
+volumes:
+  cms-data:
+    name: ${CMS_DATA_VOLUME:-${COMPOSE_PROJECT_NAME}_data}
+  cms-backups:
+    name: ${CMS_BACKUP_VOLUME:-${COMPOSE_PROJECT_NAME}_backups}

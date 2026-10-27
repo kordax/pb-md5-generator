@@ -6,20 +6,32 @@
 
 # Introduction
 
-A documentation compiler for guides, runbooks and API reference. Write ordinary Markdown, import protobuf or local
-OpenAPI contracts, and build a portable static site with one Go binary. The protobuf-to-Markdown commands remain available.
+A documentation compiler and self-hosted CMS for guides, runbooks and API reference. Write Markdown or safe HTML,
+import protobuf or local OpenAPI contracts, and publish with one Go binary. The CMS includes sign-in, access rules,
+a source editor, drafts, revision history, Git synchronization and configurable themes. The protobuf-to-Markdown and
+static publishing commands remain available.
 
 The first reader includes navigation, a page contents list, Unicode heading anchors, local search, light/dark themes
 and code copying. It runs on any static HTTP host, including under a subpath, without a Node.js server or database.
 
-Run the complete example with Docker, then open [localhost:8080](http://localhost:8080/):
+The default Docker stack runs the CMS at [localhost:8080](http://localhost:8080/), with administration at
+[localhost:8080/_docs/admin/](http://localhost:8080/_docs/admin/). Follow the [CMS setup guide](./docs/cms.md#docker-startup)
+to create the first administrator through stdin, then start or update it:
 
 ```console
 docker compose up --build -d --wait
 ```
 
-Use `docker compose down` to stop and remove the local stack. The [deployment guide](./docs/deployment.md#docker)
-covers custom sources, ports, image transfer and the separate CLI image.
+`task docker:up` runs the same startup command. `docker compose down` or `task docker:down` stops the stack while
+retaining named data volumes. The [CMS guide](./docs/cms.md) covers persistent data, Git and offline backup/restore.
+For the complete static example without an account:
+
+```console
+docker compose --profile static up --build -d --wait docs
+```
+
+Open [localhost:8081](http://localhost:8081/). The [static deployment guide](./docs/deployment.md#docker)
+covers custom sources, ports, image transfer and the separate compiler image.
 
 From a source checkout with Go and Task installed:
 
@@ -36,7 +48,7 @@ API pages include operations, schemas and an explicit HTTP request panel. See th
 contract versions, authentication and browser limits. Every page also has a [typed JSON export](./docs/format.md), with
 standalone JSON Schemas available through `schema -kind manifest|project|page`.
 
-The format remains a draft. Grouped navigation, versions, languages, directives and the remaining MkDocs/Scalar workflow
+The format remains a draft. Grouped navigation, versions, languages and the remaining MkDocs/Scalar workflow
 are tracked in the roadmap; the current implementation does not claim full compatibility.
 
 ## Syntax

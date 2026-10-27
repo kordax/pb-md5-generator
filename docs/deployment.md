@@ -4,15 +4,17 @@ The build output is a directory of ordinary static files. Deploy that directory
 to an existing web server or static hosting provider. Reading the site requires
 no Go process, Node.js application, database or external font service.
 
-## Run the complete example with Docker {#docker}
+## Run the static example with Docker {#docker}
 
-Install Docker with the Compose plugin, then run from the repository root:
+The default Compose service is the authenticated CMS. See [CMS startup](cms.md) for accounts, the editor, persistent data and backups.
+
+For the standalone static example, install Docker with the Compose plugin and run from the repository root:
 
 ```console
-docker compose up --build -d --wait
+docker compose --profile static up --build -d --wait docs
 ```
 
-Open <http://localhost:8080/>. The image contains the complete example project:
+Open <http://localhost:8081/>. The image contains the complete example project:
 guides, syntax and format specifications, protobuf reference, and an OpenAPI page
 with the HTTP request panel. Go, Node.js and a database are not needed on the host.
 The first build downloads the base images and Go modules; later builds reuse them.
@@ -24,29 +26,29 @@ CORS requests from the documentation origin.
 Useful commands:
 
 ```console
-docker compose ps
-docker compose logs -f docs
-docker compose stop
-docker compose start
-docker compose down
+docker compose --profile static ps docs
+docker compose --profile static logs -f docs
+docker compose --profile static stop docs
+docker compose --profile static start docs
+docker compose --profile static down
 ```
 
 `stop` keeps the container for the next `start`; `down` removes this Compose
-project's container and network. The built image remains available. After editing
+project's containers and network, including the CMS if it is running. Named CMS data volumes and built images remain available. After editing
 sources, rebuild and replace the container with the same start command:
 
 ```console
-docker compose up --build -d --wait
+docker compose --profile static up --build -d --wait docs
 ```
 
 The image is a snapshot of the documentation at build time. Source edits are not
 watched automatically. To choose another port:
 
 ```console
-DOCS_PORT=8081 docker compose up --build -d --wait
+STATIC_DOCS_PORT=8082 docker compose --profile static up --build -d --wait docs
 ```
 
-Then open <http://localhost:8081/>. On PowerShell, set `$env:DOCS_PORT = "8081"`
+Then open <http://localhost:8082/>. On PowerShell, set `$env:STATIC_DOCS_PORT = "8082"`
 before running Compose. Use the same setting for later Compose commands.
 
 The default listener is bound to `127.0.0.1`. A server installation can set
@@ -55,7 +57,7 @@ existing HTTPS reverse proxy. The container listens on port `8080` internally.
 
 ## Build and move the site image
 
-Compose builds the `site` target and tags it `pb-docs:local`. The equivalent
+The `docs` service builds the `site` target and tags it `pb-docs:local`. The equivalent
 standalone build is:
 
 ```console
@@ -120,7 +122,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 The same image supports `generate`, `build`, `lint` and `schema`. Use a read-only
 mount for commands that do not write, and a writable mount for generated output.
-The CLI image does not serve HTTP; the `site` target is the ready-to-run reader.
+Use the `site` target for the static reader, or the `cms` target for the server with Git, CA certificates and persistent storage.
 
 ## Build and verify without Docker
 

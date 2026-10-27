@@ -42,5 +42,20 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Test reader enhancements
-        run: node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs
+      - name: Test reader and API enhancements
+        run: node --test testdata/ui.test.cjs testdata/api-client.test.cjs testdata/api-client-http.test.cjs testdata/api-client-settings.test.cjs
+
+      - name: Install admin editor dependencies
+        run: npm ci --prefix internal/studio/web
+
+      - name: Check embedded editor assets
+        run: npm --prefix internal/studio/web run check
+
+      - name: Test admin editor
+        run: npm --prefix internal/studio/web test
+
+      - name: Audit admin editor dependencies
+        run: npm --prefix internal/studio/web run security
+
+      - name: Verify Docker CMS and offline backups
+        run: task docker:test

@@ -39,3 +39,30 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=3s --retries=3 \
     CMD ["wget", "-q", "-T", "2", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
 ENTRYPOINT ["nginx"]
 CMD ["-g", "daemon off;"]
+
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS cms
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       ca-certificates curl git openssh-client util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 docs \
+    && useradd --uid 65532 --gid 65532 --create-home --home-dir /home/docs --shell /usr/sbin/nologin docs \
+    && install -d -m 0700 -o 65532 -g 65532 /data /backup \
+    && ln -s /data/ssh /home/docs/.ssh
+COPY --from=compiler /out/pb-md5-generator /usr/local/bin/pb-md5-generator
+COPY --chmod=0555 deploy/cms-entrypoint.sh /usr/local/bin/pb-docs-entrypoint
+COPY --chmod=0555 deploy/cms-healthcheck.sh /usr/local/bin/pb-docs-healthcheck
+COPY --chmod=0555 deploy/cms-archive.sh /usr/local/bin/pb-docs-archive
+ENV CMS_DATA_DIR=/data \
+    CMS_LISTEN=0.0.0.0:8090 \
+    CMS_PUBLIC_URL=http://localhost:8080 \
+    CMS_STORAGE=local \
+    CMS_GIT_REMOTE=origin
+WORKDIR /data
+USER 65532:65532
+EXPOSE 8090
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/local/bin/pb-docs-healthcheck"]
+ENTRYPOINT ["/usr/local/bin/pb-docs-entrypoint"]
+CMD ["serve"]
