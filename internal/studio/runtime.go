@@ -172,18 +172,17 @@ func newRuntimeAuth(config runtimeConfig, resources *runtimeResources) (*auth.Se
 }
 
 func newRuntimeContent(config runtimeConfig, authentication *auth.Service, resources *runtimeResources) (*content.Service, error) {
-	storage := content.NewLocalBackend()
-	if config.Backend == "git" {
-		git, err := content.NewGitBackend(content.GitConfig{Root: config.contentDir, Remote: config.GitRemote, Timeout: 30 * time.Second})
-		if err != nil {
-			return nil, err
-		}
-		storage = git
+	storage, err := content.NewManagedBackend(content.ManagedStorageConfig{
+		Root: config.contentDir, StateDir: filepath.Join(config.stateDir, "content"),
+		InitialBackend: config.Backend, InitialRemote: config.GitRemote, Timeout: 30 * time.Second,
+	})
+	if err != nil {
+		return nil, err
 	}
 	service, err := content.New(content.Config{
 		Root: config.contentDir, StateDir: filepath.Join(config.stateDir, "content"), OutputDir: config.outputDir,
 		Initialize: config.Initialize, PushOnPublish: config.PushOnPublish, Storage: storage,
-		OperationTimeout: 45 * time.Second, Compile: compilePublication,
+		OperationTimeout: 45 * time.Second, Compile: compilePublication, AuthorizeStorage: authorizeStorage,
 		Validate: func(ctx context.Context, root string, changes []content.Change, actor content.Actor) error {
 			return validateMutation(ctx, root, changes, actor, authentication, config.contentDir)
 		},

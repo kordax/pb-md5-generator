@@ -157,6 +157,11 @@ def main():
         require(document["content"] == draft_text, "Unpublished draft source did not survive")
         branches = client.request("/_docs/api/v1/branches")
         require(any(branch["name"] == "review" for branch in branches["branches"]), "Git branch did not survive")
+        storage = client.request("/_docs/api/v1/storage/configuration")
+        require(storage["settings"]["backend"] == "git", "Managed storage choice did not survive")
+        require(storage["settings"]["pullRemote"] == "origin", "Pull authority did not survive")
+        require(storage["settings"]["remotes"] == [{"name": "origin", "url": "/data/remote.git", "push": True}],
+                "Managed connections did not survive")
 
     try:
         if not options.skip_build:
@@ -179,7 +184,16 @@ def main():
         admin = client.request("/_docs/admin/", parse=False)
         require(b"__PB_DOCS_CSP_NONCE__" not in admin, "Admin nonce placeholder was not replaced")
         client.request("/_docs/admin/app.mjs", parse=False)
-        print("Health, login, admin assets and cookie flags passed", flush=True)
+        storage_module = client.request("/_docs/admin/storage.mjs", parse=False)
+        with open(os.path.join(ROOT, "internal/studio/web/assets/storage.mjs"), "rb") as source:
+            require(storage_module == source.read(), "Packaged storage editor module differs from the built source")
+        storage = client.request("/_docs/api/v1/storage/configuration")
+        require(storage["settings"]["backend"] == "git", "Legacy Git startup did not seed managed storage")
+        require(len(storage["settings"]["revision"]) == 64 and len(storage["projectRevision"]) == 64,
+                "Storage and project revisions must be separate complete tokens")
+        require(isinstance(storage["settings"]["remotes"], list) and isinstance(storage["remotes"], list),
+                "Connection arrays must not be null")
+        print("Health, login, admin assets, managed storage and cookie flags passed", flush=True)
 
         document = client.request("/_docs/api/v1/documents/home")
         text = "# Docker publication verification\n\nPublished through the real HTTP API.\n"

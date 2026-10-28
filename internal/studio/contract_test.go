@@ -18,7 +18,7 @@ func TestCMSContractValidatesWithoutExternalResolution(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, api)
-	assert.Equal(t, 37, len(api.Operations))
+	assert.Equal(t, 41, len(api.Operations))
 	first := APIContract()
 	first[0] = '!'
 	assert.True(t, strings.HasPrefix(string(APIContract()), "openapi:"))
@@ -72,6 +72,9 @@ func TestCMSContractMutationsDeclareCSRFAndRevisionProtection(t *testing.T) {
 		{"/branches", "post"},
 		{"/branches/checkout", "post"},
 		{"/sync", "post"},
+		{"/storage/configuration", "put"},
+		{"/storage/remotes/{name}/check", "post"},
+		{"/storage/remotes/{name}/push", "post"},
 		{"/settings", "put"},
 		{"/themes/{id}", "delete"},
 	}
@@ -147,6 +150,9 @@ func TestCMSContractHTTPRoutesAndDefaultErrors(t *testing.T) {
 		"/themes":                 {"get", "post"},
 		"/themes/{id}":            {"delete"},
 	}
+	routes["/storage/configuration"] = []string{"get", "put"}
+	routes["/storage/remotes/{name}/check"] = []string{"post"}
+	routes["/storage/remotes/{name}/push"] = []string{"post"}
 	require.Len(t, paths, len(routes))
 	for path, methods := range routes {
 		item := contractObject(t, paths[path])
@@ -179,6 +185,65 @@ func TestCMSContractHTTPRoutesAndDefaultErrors(t *testing.T) {
 	branch := contractObject(t, contractObject(t, paths["/branches"])["post"])
 	assert.Contains(t, contractObject(t, branch["responses"]), "200")
 	assert.NotContains(t, contractObject(t, branch["responses"]), "201")
+}
+
+func TestCMSStorageContractProtectsConnectionsAndIndependentRevisions(t *testing.T) {
+	var root map[string]any
+	require.NoError(t, yaml.Unmarshal(APIContract(), &root))
+	paths := contractObject(t, root["paths"])
+	components := contractObject(t, root["components"])
+	schemas := contractObject(t, components["schemas"])
+	for _, name := range []string{"StorageUpdate", "StorageRemoteCheck", "StorageRemotePush"} {
+		schema := contractObject(t, schemas[name])
+		assert.Equal(t, false, schema["additionalProperties"], name)
+		required, ok := schema["required"].([]any)
+		require.True(t, ok)
+		assert.Contains(t, required, "revision", "%s protects connection settings", name)
+		if name != "StorageRemoteCheck" {
+			assert.Contains(t, required, "baseRevision", "%s also protects the project", name)
+		}
+	}
+	update := contractObject(t, schemas["StorageUpdate"])
+	properties := contractObject(t, update["properties"])
+	assert.Equal(t, 8, contractObject(t, properties["remotes"])["maxItems"])
+	remote := contractObject(t, schemas["StorageRemote"])
+	remoteProperties := contractObject(t, remote["properties"])
+	assert.Len(t, remoteProperties, 3, "connection credentials are kept outside the public contract")
+	assert.ElementsMatch(t, []any{"name", "url", "push"}, remote["required"])
+	assert.Equal(t, 2048, contractObject(t, remoteProperties["url"])["maxLength"])
+	for _, path := range []string{"/branches", "/branches/checkout"} {
+		operation := contractObject(t, contractObject(t, paths[path])["post"])
+		body := contractObject(t, operation["requestBody"])
+		media := contractObject(t, contractObject(t, body["content"])["application/json"])
+		branch := contractObject(t, contractObject(t, media["schema"])["properties"])
+		assert.Equal(t, 128, contractObject(t, branch["name"])["maxLength"], "branch contracts match the Git command boundary")
+	}
+	parameters := contractObject(t, components["parameters"])
+	name := contractObject(t, contractObject(t, parameters["StorageRemoteName"])["schema"])
+	assert.Equal(t, "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", name["pattern"])
+	for _, path := range []string{"/storage/configuration", "/storage/remotes/{name}/check", "/storage/remotes/{name}/push"} {
+		item := contractObject(t, paths[path])
+		for _, method := range []string{"get", "put", "post"} {
+			value, exists := item[method]
+			if !exists {
+				continue
+			}
+			operation := contractObject(t, value)
+			assert.NotContains(t, operation, "security", "%s %s inherits session authentication", method, path)
+			assert.Contains(t, operation["summary"], "administrators with root access only")
+			responses := contractObject(t, operation["responses"])
+			assert.Contains(t, responses, "401")
+			assert.Contains(t, responses, "403")
+			if method != "get" {
+				assert.Contains(t, responses, "409")
+			}
+		}
+	}
+	status := contractObject(t, schemas["RemoteSyncStatus"])
+	assert.ElementsMatch(t, []any{"name", "state", "retryable"}, status["required"])
+	statusProperties := contractObject(t, status["properties"])
+	states := contractObject(t, statusProperties["state"])
+	assert.Contains(t, states["enum"], "error", "HTTP 200 does not imply successful synchronization")
 }
 
 func TestCMSContractLimitsAndPublicationMetadata(t *testing.T) {

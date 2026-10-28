@@ -103,13 +103,10 @@ func validateMutation(ctx context.Context, snapshot string, changes []content.Ch
 		}
 		return auth.ErrForbidden
 	}
-	// Checkout and pull rebuild a repository snapshot without a document
-	// author. Recheck administrator rights after waiting for the content gate.
+	// Repository rebuilds have no document author. Recheck administrator
+	// rights and root grants after waiting for the content gate.
 	if actor.ID == "" && len(changes) == 0 {
-		if auth.Can(user, auth.ActionAdmin, ".") {
-			return nil
-		}
-		return auth.ErrForbidden
+		return authorizeStorage(ctx, actor)
 	}
 	if user.ID != actor.ID {
 		return auth.ErrForbidden

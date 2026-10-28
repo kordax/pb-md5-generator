@@ -54,13 +54,13 @@ func (h *handler) documentState(r *http.Request, user *auth.User, id string, pub
 		if err != nil {
 			return state, err
 		}
-		status, err := h.opts.Content.Status(r.Context())
+		drafts, err = h.currentDrafts(r, drafts)
 		if err != nil {
 			return state, err
 		}
 		for _, draft := range drafts {
 			changes := changesOf(draft)
-			if draft.Branch != status.Branch || len(changes) != 1 || changes[0].Operation != "write" {
+			if len(changes) != 1 || changes[0].Operation != "write" {
 				continue
 			}
 			change := changes[0]
@@ -112,14 +112,14 @@ func (h *handler) documents(w http.ResponseWriter, r *http.Request, user *auth.U
 		serviceError(w, err)
 		return
 	}
-	status, err := h.opts.Content.Status(r.Context())
+	drafts, err = h.currentDrafts(r, drafts)
 	if err != nil {
 		serviceError(w, err)
 		return
 	}
 	for _, draft := range drafts {
 		changes := changesOf(draft)
-		if draft.Branch != status.Branch || len(changes) != 1 {
+		if len(changes) != 1 {
 			continue
 		}
 		change := changes[0]

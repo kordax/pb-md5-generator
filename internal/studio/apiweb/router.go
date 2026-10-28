@@ -27,7 +27,7 @@ import (
 const maxJSONBody = 8 << 20
 const noncePlaceholder = "__PB_DOCS_CSP_NONCE__"
 
-var assetNames = []string{"index.html", "studio.css", "app.mjs", "core.mjs", "editor.js", "themes.mjs", "editor.js.LEGAL.txt", "THIRD_PARTY_NOTICES.txt"}
+var assetNames = []string{"index.html", "studio.css", "app.mjs", "core.mjs", "editor.js", "themes.mjs", "storage.mjs", "editor.js.LEGAL.txt", "THIRD_PARTY_NOTICES.txt"}
 
 type handler struct {
 	opts       Options
@@ -62,7 +62,7 @@ func newHTTPHandler(options Options) (http.Handler, error) {
 	h := &handler{opts: options, base: base, api: base + "/_docs/api/v1", admin: base + "/_docs/admin", assets: make(map[string][]byte), contract: bytes.Clone(options.Contract), slots: make(chan struct{}, 4)}
 	for index, name := range assetNames {
 		data, err := fs.ReadFile(options.Assets, name)
-		if errors.Is(err, fs.ErrNotExist) && index >= 6 {
+		if errors.Is(err, fs.ErrNotExist) && index >= 7 {
 			continue
 		}
 		if err != nil || len(data) == 0 || len(data) > 4<<20 {
@@ -145,11 +145,10 @@ func (h *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		role := auth.RoleViewer
-		if request.Method != http.MethodGet && request.Method != http.MethodHead && relative != "/preview" {
+		if relative == "/storage" || strings.HasPrefix(relative, "/storage/") || relative == "/sync" || relative == "/branches" || relative == "/branches/checkout" {
+			role = auth.RoleAdmin
+		} else if request.Method != http.MethodGet && request.Method != http.MethodHead && relative != "/preview" {
 			role = auth.RoleEditor
-			if relative == "/sync" || relative == "/branches" || relative == "/branches/checkout" {
-				role = auth.RoleAdmin
-			}
 		}
 		h.authorized(role, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.contentAPI.ServeHTTP(w, withPath(r, relative)) })).ServeHTTP(writer, request)
 		return

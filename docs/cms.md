@@ -72,7 +72,7 @@ The named data volume contains:
 
 - `content/`: managed source files, attachments and the Git working tree when enabled.
 - `state/auth/`: private account and session state.
-- `state/content/`: private drafts, revision history and synchronization journal.
+- `state/content/`: private drafts, revision history, storage connections and recovery journals.
 - `site/`: the current compiled publication.
 - `ssh/`: optional private Git SSH identity and verified host keys.
 
@@ -180,13 +180,40 @@ Open <http://localhost:8090/_docs/admin/>. Stop with Ctrl+C or SIGTERM. On Unix,
 
 `--listen` controls the bind address; `--public-url` controls the address and origin used by the application. Without `--data-dir`, the CMS uses `pb-docs` in the operating system's user configuration directory. `--init=false` requires an existing managed content directory instead of creating the initial page. Run `serve --help` or `admin-user --help` for startup flags.
 
-## Git storage
+## Storage and synchronization
 
-Select `--storage git` for the native process, or `CMS_STORAGE=git` in Compose. Prepare a dedicated clone in `<data-dir>/content` before the first CMS startup. The clone must contain a valid `docs.json`; keep it separate from the development checkout. The configured remote name defaults to `origin`, with `--git-remote` or `CMS_GIT_REMOTE` selecting another name.
+The default source is local storage. Administrators with read and write access to the content root can manage it in **Storage**. The server keeps connection settings privately under `state/content/`; they are separate from `docs.json`, document Git history and theme settings. Full data backups include them.
 
-Git remotes may use local paths or SSH. Provide a private SSH identity and verified `known_hosts` for the running account. In the CMS image, those files belong under `/data/ssh`, owned by UID `65532`, with directory mode `0700` and private identity mode `0600`. Passwords embedded in remote URLs, executable Git configuration, interactive credential prompts and repository hooks are not accepted.
+To start Git history for existing local documents, select Git in Storage, choose the initial branch and save. This creates a local initial commit without contacting a remote. It preserves source files, the published site, local revision history and saved drafts. The project revision changes; a saved draft stays available until its author explicitly reviews and rebases it. Enrollment is a one-way operation in this version: returning the same data directory to local storage is unsupported. Send this new history to an empty repository or a new branch. To continue an existing repository history, [start from a dedicated clone](#start-from-an-existing-clone).
 
-Publication validates the candidate project before replacing sources and reader output. A failed remote push retains the local commit and publication, reports pending synchronization and allows a retry. Branch changes and synchronization require the current project revision. A stale draft remains saved until its author explicitly resolves and rebases it; publication checks the revision before applying changes.
+Add up to eight named connections. Each name starts with an ASCII letter or digit and contains at most 64 letters, digits, underscores or hyphens. Names are unique without regard to case; reserved Windows device names are rejected. A URL can be an SSH repository such as `git@example.test:team/docs.git`, an `ssh://` URL, or a local/file path visible to the server. URLs are at most 2048 UTF-8 bytes. HTTP(S) transport, embedded passwords, URL queries, fragments and control characters are unsupported.
+
+Select one connection as the fetch/pull source, or leave it empty when the repository only keeps local history or sends commits elsewhere. Independently enable the connections that should receive a requested push. They share one local history. Saving connections and opening Storage do not fetch or push; **Check connection** and **Push** explicitly contact the selected remote. The panel keeps a separate result and retry state for each connection.
+
+A failed push retains the local commit and publication. Other targets can still succeed, and retrying the failed target sends the retained commit without creating another document commit. Push never forces a divergent remote. Branch selection and fetch/pull remain in **Publishing** and use the selected pull source. Resolve divergence explicitly rather than discarding documents. Configuration updates protect both the storage settings revision and the project revision; stale forms cannot overwrite a newer configuration.
+
+### SSH credentials
+
+Provide a dedicated SSH identity and verified `known_hosts` for the running account before checking or pushing an SSH connection. In the CMS image, those files belong under `/data/ssh`, owned by UID `65532`, with directory mode `0700` and private identity mode `0600`. SSH runs without interactive prompts and requires a matching verified host key. Private keys are supplied on the server and are never returned by the API or placed in document sources.
+
+For a new container identity, these Bash commands stream already provisioned files into the private volume without putting their contents in command arguments. Existing destination files are not replaced:
+
+```bash
+docker compose exec -T cms sh -c \
+  'umask 077; mkdir -p /data/ssh; set -C; cat > /data/ssh/id_ed25519' \
+  < "$HOME/.ssh/pb-docs-deploy-key"
+docker compose exec -T cms sh -c \
+  'umask 077; mkdir -p /data/ssh; set -C; cat > /data/ssh/known_hosts' \
+  < "$HOME/.ssh/pb-docs-known-hosts"
+```
+
+Provision those host keys through your trusted deployment process. An identity that needs an interactive passphrase cannot be unlocked by the CMS. Executable Git configuration, credential prompts and repository hooks are rejected. The complete backup contains SSH identities, so keep exported archives private.
+
+### Start from an existing clone
+
+Before the first CMS startup, prepare a dedicated self-contained clone in `<data-dir>/content`, containing a valid `docs.json`. Select `--storage git` for the native process or `CMS_STORAGE=git` in Compose. The initial remote defaults to `origin`; `--git-remote` or `CMS_GIT_REMOTE` selects another portable connection name. Keep the clone separate from the development checkout.
+
+Startup flags seed the first storage configuration. Once a configuration is saved, it takes precedence across restarts; manage later connection changes in Storage. Do not edit recovery journals or replace Git metadata while the CMS runs. A transaction interrupted before its settings commit is rolled back; a committed transaction is completed on restart. Unexpected changed metadata fails closed and remains available for investigation. A missing storage configuration after enrollment also stops startup; restore the complete data backup rather than silently replacing the connection policy.
 
 ## Static example and publishing
 

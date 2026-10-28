@@ -12,6 +12,7 @@ const source = { id: "guide", path: "docs/guide.md", title: "Guide <img src=x on
 const json = (value, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 const controls = (doc, label) => [...doc.querySelectorAll("button")].filter(node => node.textContent === label);
+const storageSnapshot = (backend = "git", revision = "c1", projectRevision = "p1") => ({ settings: { revision, backend, pullRemote: backend === "git" ? "origin" : "", remotes: backend === "git" ? [{ name: "origin", url: "git@example.com:team/docs.git", push: true }, { name: "backup", url: "/backups/docs.git", push: true }] : [] }, projectRevision, sync: { backend, branch: backend === "git" ? "main" : "", head: backend === "git" ? "abc123" : "", state: "ready", dirty: false }, remotes: backend === "git" ? [{ name: "origin", state: "ready", head: "abc123", lastPushedHead: "abc123", branch: "main", retryable: false }, { name: "backup", state: "pending", head: "abc123", lastPushedHead: "", branch: "main", retryable: true }] : [] });
 
 function environment(options = {}) {
   const { document, window } = parseHTML(html);
@@ -25,7 +26,7 @@ function environment(options = {}) {
   Object.defineProperty(window.HTMLSelectElement.prototype, "value", { configurable: true, get() { return [...this.options].find(item => item.selected)?.value || this.options[0]?.value || ""; }, set(value) { for (const item of this.options) item.selected = item.value === String(value); } });
   const requests = [];
   let session = options.anonymous ? { user: null } : { user: { ...admin, ...(options.user || {}) }, csrfToken: "csrf-memory" };
-  let draft = null, conflict = false;
+  let draft = null, conflict = false, storage = options.storage || storageSnapshot(), storageSaves = 1;
   let settings = { revision: "s1", title: "Docs", description: "Description", logo: "", favicon: "", footer: "Footer", themeId: "paper", theme: { id: "paper", name: "Paper", mode: "auto", accent: "#315be8", font: "system", density: "comfortable", width: "normal", radius: 10 }, navigation: { showTOC: true, showPreviousNext: false, stickyHeader: true }, editor: { defaultFormat: "markdown", previewOnSave: false }, api: { enabled: true, showCurl: true, requestTimeoutMs: 18000, maxResponseBytes: 65536 }, publishing: { autoPublish: false, gitPushOnPublish: true } };
   const fetcher = async (url, request) => {
     const route = url.pathname.replace("/team/_docs/api/v1/", "");
@@ -54,6 +55,11 @@ function environment(options = {}) {
     if (route.startsWith("users/")) return request.method === "DELETE" ? json(null, 204) : json({ id: "u2", username: "reader", ...body });
     if (route === "files") return request.method === "POST" ? json({ revision: "p1", published: false, draft: { id: "dir", revision: "d2", baseRevision: "p1", path: body.path, operation: "mkdir" } }, 201) : json({ files: [{ path: "assets/image.png", name: "image.png", directory: false, size: 128, revision: "p1", canWrite: true }], revision: "p1" });
     if (route === "drafts") return json({ drafts: draft ? [draft] : [] });
+    if (route === "storage/configuration") {
+      if (request.method === "PUT") { const enrolling = storage.settings.backend === "local" && body.backend === "git"; storage = { ...storage, settings: { revision: "c" + (++storageSaves), backend: body.backend, pullRemote: body.pullRemote, remotes: body.remotes }, projectRevision: enrolling ? "p2" : storage.projectRevision, sync: { ...storage.sync, backend: body.backend, branch: body.backend === "git" ? body.initialBranch || "main" : "" } }; }
+      return json(storage);
+    }
+    if (route.startsWith("storage/remotes/")) return json({ name: route.split("/")[2], state: "ready", retryable: false, branch: "main", head: "abc123", lastPushedHead: "abc123" });
     if (route === "sync/status") return json({ backend: "git", branch: "main", revision: "p1", ahead: 1, behind: 0, pendingPush: true });
     if (route === "branches") return request.method === "POST" ? json({ name: body.name }, 201) : json({ branches: [{ name: "main", current: true }, { name: "drafts", current: false }] });
     if (route === "sync" || route === "branches/checkout") return json({ backend: "git", revision: "p1", branch: body.name || "main" });
@@ -199,4 +205,216 @@ test("theme selection sends only the selected theme and preserves broad settings
 test("attachment uploads keep original bytes, quote revision and report staged changes accurately", async () => {
   const env = environment(); await env.app.ready; await env.app.navigate("files"); const upload = env.document.querySelector('input[type="file"]'); const file = new File([new Uint8Array([0, 255, 1])], "sample.pdf", { type: "application/pdf" }); Object.defineProperty(upload, "files", { value: [file] }); env.event(upload, "change"); await settle();
   const request = env.requests.find(item => item.route === "files/content" && item.method === "PUT"); assert.equal(request.body, file); assert.deepEqual([...new Uint8Array(await request.body.arrayBuffer())], [0, 255, 1]); assert.equal(request.headers["If-Match"], '\"p1\"'); assert.equal(request.headers["Content-Type"], "application/octet-stream"); assert.match(env.document.getElementById("message").textContent, /1 file\(s\) saved as drafts; 0 file\(s\) published/); env.app.dispose();
+});
+
+test("storage is administrator-only and loads atomic local status without remote traffic or credential inputs", async () => {
+  for (const role of ["viewer", "editor"]) {
+    const env = environment({ user: { role } }); await env.app.ready;
+    assert.equal(env.document.querySelector('[data-view="storage"]').hidden, true);
+    await assert.rejects(env.app.navigate("storage"), error => error.status === 403);
+    assert.equal(env.requests.some(item => item.route.startsWith("storage/")), false); env.app.dispose();
+  }
+  const env = environment({ storage: storageSnapshot("local") }); await env.app.ready;
+  assert.equal(env.requests.some(item => item.route.startsWith("storage/")), false);
+  await env.app.navigate("storage");
+  assert.equal(env.document.getElementById("view-title").textContent, "Storage");
+  assert.match(env.document.getElementById("view").textContent, /Local files/);
+  assert.equal(env.requests.filter(item => item.route.startsWith("storage/")).length, 1);
+  assert.equal(env.document.querySelector('.storage-form input[type="password"]'), null);
+  assert.equal(env.document.querySelector('.storage-form [name="privateKey"]'), null);
+  assert.match(env.document.getElementById("view").textContent, /known_hosts/); env.app.dispose();
+});
+
+test("storage controls follow full-project read/write grants without changing other admin sections", async () => {
+  for (const scenario of [
+    { name: "viewer", user: { role: "viewer" }, allowed: false },
+    { name: "editor", user: { role: "editor" }, allowed: false },
+    { name: "scoped read admin", user: { role: "admin", grants: { read: ["docs"], write: ["."] } }, allowed: false },
+    { name: "scoped write admin", user: { role: "admin", grants: { read: ["."], write: ["docs"] } }, allowed: false },
+    { name: "unrestricted admin", user: { role: "admin" }, allowed: true },
+    { name: "explicit root grants admin", user: { role: "admin", grants: { read: ["."], write: ["."] } }, allowed: true },
+  ]) {
+    const env = environment({ user: scenario.user }); await env.app.ready;
+    assert.equal(env.document.querySelector('[data-view="storage"]').hidden, !scenario.allowed, scenario.name);
+    for (const section of ["people", "settings", "appearance"]) assert.equal(env.document.querySelector('[data-view="' + section + '"]').hidden, scenario.user.role !== "admin", scenario.name + ": " + section);
+    await env.app.navigate("publishing");
+    assert.equal(controls(env.document, "Manage storage connections").length, scenario.allowed ? 1 : 0, scenario.name);
+    if (scenario.allowed) { await env.app.navigate("storage"); assert.ok(env.document.querySelector(".storage-form"), scenario.name); }
+    else { await assert.rejects(env.app.navigate("storage"), error => error.status === 403, scenario.name); assert.equal(env.requests.some(item => item.route.startsWith("storage/")), false, scenario.name); }
+    env.app.dispose();
+  }
+});
+
+test("Git enrollment confirms history changes and retains dirty editor text, document identity and saved-draft CAS", async () => {
+  const env = environment({ storage: storageSnapshot("local"), confirm: false }); await env.app.ready; await env.app.openDocument("guide");
+  env.app.workspace.document = { ...env.app.workspace.document, draft: true, draftId: "retained-draft", draftRevision: "d8", baseRevision: "p1" };
+  const document = env.app.workspace.document; env.app.workspace.edit("retain this unsaved source");
+  await env.app.navigate("storage"); const form = env.document.querySelector(".storage-form");
+  form.querySelector('[name="storageBackend"]').value = "git"; env.event(form, "change"); env.event(form, "submit"); await settle();
+  assert.equal(env.requests.some(item => item.route === "storage/configuration" && item.method === "PUT"), false);
+  assert.equal(env.app.workspace.content, "retain this unsaved source");
+  assert.match(env.confirmations[0], /history.*revision/); assert.match(env.confirmations[0], /retained/);
+  env.window.confirm = () => true; env.event(form, "submit"); await settle();
+  const request = env.requests.find(item => item.route === "storage/configuration" && item.method === "PUT");
+  assert.deepEqual(request.body, { revision: "c1", baseRevision: "p1", backend: "git", initialBranch: "main", pullRemote: "", remotes: [] });
+  assert.equal(env.app.workspace.document, document); assert.equal(env.app.workspace.document.draftRevision, "d8");
+  assert.equal(env.app.workspace.content, "retain this unsaved source"); assert.equal(env.app.workspace.dirty, true);
+  assert.match(env.document.getElementById("message").textContent, /drafts were retained/);
+  await env.app.navigate("documents"); assert.equal(env.document.querySelector(".source-editor").value, "retain this unsaved source"); env.app.dispose();
+});
+
+test("connection settings use independent settings and project revisions and refresh CAS after each save", async () => {
+  const env = environment(); await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("unsaved while configuring"); const document = env.app.workspace.document;
+  await env.app.navigate("storage"); let form = env.document.querySelector(".storage-form");
+  const rows = [...form.querySelectorAll("[data-storage-remote]")]; rows[0].querySelector('[name="remoteURL"]').value = "ssh://git@primary.example/team/docs.git";
+  env.event(rows[1].querySelector('input[type="radio"]'), "change"); env.event(form, "submit"); await settle();
+  let requests = env.requests.filter(item => item.route === "storage/configuration" && item.method === "PUT");
+  assert.equal(requests[0].body.revision, "c1"); assert.equal(requests[0].body.baseRevision, "p1"); assert.equal(requests[0].body.pullRemote, "backup");
+  assert.equal(requests[0].body.remotes[0].url, "ssh://git@primary.example/team/docs.git"); assert.equal(Object.hasOwn(requests[0].body, "initialBranch"), false);
+  form = env.document.querySelector(".storage-form"); assert.equal(form.querySelector('option[value="local"]').disabled, true);
+  env.event(form, "submit"); await settle(); requests = env.requests.filter(item => item.route === "storage/configuration" && item.method === "PUT");
+  assert.equal(requests[1].body.revision, "c2"); assert.equal(requests[1].body.baseRevision, "p1");
+  assert.equal(env.app.workspace.document, document); assert.equal(env.app.workspace.content, "unsaved while configuring"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("explicit per-remote checks and push retries preserve the form and independent target outcomes", async () => {
+  let backupAttempts = 0;
+  const env = environment({ respond({ route }) {
+    if (route === "storage/remotes/backup/push") return json({ name: "backup", state: ++backupAttempts === 1 ? "error" : "ready", retryable: backupAttempts === 1, error: backupAttempts === 1 ? "Remote push failed; local commit retained." : "", head: "abc123", lastPushedHead: backupAttempts === 1 ? "" : "abc123", branch: "main" });
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep editor state"); await env.app.navigate("storage");
+  const form = env.document.querySelector(".storage-form"); const address = form.querySelector('[name="remoteURL"]'); address.value = "git@edited.example:docs.git"; env.event(address, "input");
+  env.event(env.document.querySelector('[aria-label="Check connection origin"]'), "click"); await settle();
+  env.event(env.document.querySelector('[aria-label="Push commits to backup"]'), "click"); await settle();
+  assert.match(env.document.querySelector('[data-remote-status="backup"]').textContent, /Failed/);
+  assert.match(env.document.getElementById("message").textContent, /failed.*local commit retained/);
+  assert.match(env.document.querySelector('[data-remote-status="origin"]').textContent, /Connection ready/);
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@edited.example:docs.git");
+  const check = env.requests.find(item => item.route === "storage/remotes/origin/check"); assert.deepEqual(check.body, { revision: "c1" });
+  const push = env.requests.find(item => item.route === "storage/remotes/backup/push"); assert.deepEqual(push.body, { revision: "c1", baseRevision: "p1" }); assert.equal(push.headers["X-CSRF-Token"], "csrf-memory");
+  env.event(env.document.querySelector('[aria-label="Push commits to backup"]'), "click"); await settle();
+  assert.match(env.document.querySelector('[data-remote-status="backup"]').textContent, /Connection ready/); assert.match(env.document.getElementById("message").textContent, /completed/);
+  assert.equal(backupAttempts, 2); assert.equal(env.app.workspace.content, "keep editor state"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("storage conflicts retain edits and require reviewing new revisions before an explicit rebase", async () => {
+  let reads = 0, writes = 0;
+  const env = environment({ respond({ route, request, body }) {
+    if (route !== "storage/configuration") return;
+    if (request.method === "GET") return json(storageSnapshot("git", ++reads === 1 ? "c1" : "c2", reads === 1 ? "p1" : "p2"));
+    if (++writes === 1) return json({ error: { code: "conflict", message: "Storage settings changed elsewhere" } }, 409);
+    return json({ ...storageSnapshot("git", "c3", "p2"), settings: { revision: "c3", backend: body.backend, pullRemote: body.pullRemote, remotes: body.remotes } });
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("my unsaved document"); await env.app.navigate("storage");
+  const form = env.document.querySelector(".storage-form"), address = form.querySelector('[name="remoteURL"]'); address.value = "git@my.example:docs.git"; env.event(address, "input"); env.event(form, "submit"); await settle();
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@my.example:docs.git"); assert.match(env.document.querySelector('#view [role="alert"]').textContent, /retained/);
+  env.event(controls(env.document, "Refresh storage status")[0], "click"); await settle();
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@my.example:docs.git");
+  const comparison = env.document.querySelector('[aria-label="Storage revision conflict"]'); assert.equal(comparison.hidden, false); assert.match(comparison.textContent, /c2/);
+  assert.equal(form.querySelector('button[type="submit"]').disabled, true);
+  env.event(controls(env.document, "Use reviewed revisions")[0], "click"); env.event(form, "submit"); await settle();
+  const request = env.requests.filter(item => item.route === "storage/configuration" && item.method === "PUT")[1];
+  assert.equal(request.body.revision, "c2"); assert.equal(request.body.baseRevision, "p2"); assert.equal(request.body.remotes[0].url, "git@my.example:docs.git");
+  assert.equal(env.app.workspace.content, "my unsaved document"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("late storage loads and refreshes cannot replace another view or newer saved settings", async () => {
+  let finishInitial;
+  const pending = new Promise(resolve => { finishInitial = resolve; });
+  const env = environment({ respond({ route, request }) { if (route === "storage/configuration" && request.method === "GET") return pending; } });
+  await env.app.ready; const navigation = env.app.navigate("storage"); await settle(); await env.app.navigate("settings");
+  const settingsForm = env.document.querySelector(".settings-form"); finishInitial(json(storageSnapshot())); await navigation;
+  assert.equal(env.document.querySelector(".settings-form"), settingsForm); assert.equal(env.document.querySelector(".storage-form"), null); env.app.dispose();
+
+  let finishRefresh, reads = 0;
+  const refresh = new Promise(resolve => { finishRefresh = resolve; });
+  const other = environment({ respond({ route, request }) { if (route === "storage/configuration" && request.method === "GET" && ++reads === 2) return refresh; } });
+  await other.app.ready; await other.app.navigate("storage"); other.event(controls(other.document, "Refresh storage status")[0], "click"); await settle();
+  const form = other.document.querySelector(".storage-form"); form.querySelector('[name="remoteURL"]').value = "git@new.example:docs.git"; other.event(form, "submit"); await settle();
+  finishRefresh(json(storageSnapshot("git", "obsolete", "obsolete-project"))); await settle();
+  assert.match(other.document.getElementById("view").textContent, /c2/); assert.doesNotMatch(other.document.getElementById("view").textContent, /obsolete/);
+  assert.equal(other.document.querySelector('.storage-form [name="remoteURL"]').value, "git@new.example:docs.git"); other.app.dispose();
+});
+
+test("storage connection limit, removal and canceled form navigation keep the user's entries", async () => {
+  const env = environment({ confirm: false }); await env.app.ready; await env.app.navigate("storage");
+  for (let i = 0; i < 6; i++) env.event(controls(env.document, "Add connection")[0], "click");
+  assert.equal(env.document.querySelectorAll("[data-storage-remote]").length, 8); assert.equal(controls(env.document, "Add connection")[0].disabled, true);
+  const form = env.document.querySelector(".storage-form"); await env.app.navigate("settings"); assert.equal(env.document.querySelector(".storage-form"), form);
+  env.event(controls(env.document, "Remove connection")[0], "click"); assert.equal(env.document.querySelectorAll("[data-storage-remote]").length, 7); assert.equal(controls(env.document, "Add connection")[0].disabled, false);
+  env.event(controls(env.document, "Reload saved settings")[0], "click"); await settle(); assert.equal(env.document.querySelector(".storage-form"), form);
+  assert.equal(env.requests.filter(item => item.route === "storage/configuration").length, 1); env.app.dispose();
+});
+
+test("recoverable storage load failures and push HTTP failures retain the editor and entered configuration", async () => {
+  let reads = 0;
+  const env = environment({ respond({ route, request }) {
+    if (route === "storage/configuration" && request.method === "GET" && ++reads === 1) return json({ error: { code: "busy", message: "Storage is busy. Try again." } }, 503);
+    if (route === "storage/remotes/backup/push") return json({ error: { code: "busy", message: "Connection slot is busy. Retry later." } }, 503);
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("retained through failures"); await env.app.navigate("storage");
+  assert.equal(env.document.querySelector(".storage-form"), null); assert.match(env.document.querySelector('#view [role="alert"]').textContent, /busy/);
+  env.event(controls(env.document, "Refresh storage status")[0], "click"); await settle();
+  const form = env.document.querySelector(".storage-form"), address = form.querySelector('[name="remoteURL"]'); address.value = "git@retained.example:docs.git"; env.event(address, "input");
+  env.event(env.document.querySelector('[aria-label="Push commits to backup"]'), "click"); await settle();
+  assert.match(env.document.querySelector('[data-remote-status="backup"]').textContent, /Failed.*slot is busy/s);
+  assert.match(env.document.querySelector('[data-remote-status="origin"]').textContent, /Connection ready/);
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@retained.example:docs.git");
+  assert.equal(env.app.workspace.content, "retained through failures"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("pending push responses are not reported as completed and duplicate requests are gated", async () => {
+  let finishPush;
+  const pending = new Promise(resolve => { finishPush = resolve; });
+  const env = environment({ respond({ route }) { if (route === "storage/remotes/backup/push") return pending; } });
+  await env.app.ready; await env.app.navigate("storage");
+  const push = env.document.querySelector('[aria-label="Push commits to backup"]'); env.event(push, "click"); env.event(push, "click"); await settle();
+  assert.equal(env.requests.filter(item => item.route === "storage/remotes/backup/push").length, 1);
+  assert.equal(env.document.querySelector('.storage-form [name="remoteURL"]').disabled, true);
+  finishPush(json({ name: "backup", state: "pending", retryable: true, branch: "main" })); await settle();
+  assert.match(env.document.getElementById("message").textContent, /remains pending/); assert.doesNotMatch(env.document.getElementById("message").textContent, /completed/);
+  assert.equal(env.document.querySelector('.storage-form [name="remoteURL"]').disabled, false); env.app.dispose();
+});
+
+test("late successful storage saves do not replace a new view or clear that view's dirty form", async () => {
+  let finishSave;
+  const pending = new Promise(resolve => { finishSave = resolve; });
+  const env = environment({ respond({ route, request }) { if (route === "storage/configuration" && request.method === "PUT") return pending; } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("still my editor text"); await env.app.navigate("storage");
+  const storageForm = env.document.querySelector(".storage-form"); env.event(storageForm, "input"); env.event(storageForm, "submit"); await settle();
+  await env.app.navigate("settings"); const settingsForm = env.document.querySelector(".settings-form"); settingsForm.querySelector('[name="title"]').value = "Unsaved new settings"; env.event(settingsForm, "input");
+  env.window.confirm = () => false; finishSave(json(storageSnapshot("git", "c9", "p9"))); await settle();
+  assert.equal(env.document.querySelector(".settings-form"), settingsForm); assert.equal(settingsForm.querySelector('[name="title"]').value, "Unsaved new settings");
+  await env.app.navigate("documents"); assert.equal(env.document.querySelector(".settings-form"), settingsForm, "late storage success cannot clear another form's dirty flag");
+  assert.equal(env.app.workspace.content, "still my editor text"); assert.doesNotMatch(env.document.getElementById("message").textContent, /Storage settings saved/); env.app.dispose();
+});
+
+test("explicit storage reload replaces only the connection form and failed settings responses keep it editable", async () => {
+  const env = environment({ respond({ route, request }) { if (route === "storage/configuration" && request.method === "PUT") return json({ settings: { revision: "broken" } }); } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep my source"); await env.app.navigate("storage");
+  const form = env.document.querySelector(".storage-form"), address = form.querySelector('[name="remoteURL"]'); address.value = "git@edit.example:docs.git"; env.event(address, "input"); env.event(form, "submit"); await settle();
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.disabled, false); assert.equal(address.value, "git@edit.example:docs.git");
+  assert.match(env.document.querySelector('#view [role="alert"]').textContent, /incomplete/);
+  env.event(controls(env.document, "Reload saved settings")[0], "click"); await settle();
+  assert.notEqual(env.document.querySelector(".storage-form"), form); assert.equal(env.document.querySelector('.storage-form [name="remoteURL"]').value, "git@example.com:team/docs.git");
+  assert.equal(env.app.workspace.content, "keep my source"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("Publishing reports partial push targets as pending and keeps dirty source after a failed push", async () => {
+  const env = environment({ respond({ route }) { if (route === "sync") return json({ backend: "git", pendingPush: true, lastError: "Backup connection failed; local commit retained." }); } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("unsaved source"); await env.app.navigate("publishing"); env.event(controls(env.document, "Push commits")[0], "click"); await settle();
+  assert.match(env.document.getElementById("message").textContent, /did not finish.*Backup connection failed/);
+  assert.doesNotMatch(env.document.getElementById("message").textContent, /synchronization completed/);
+  assert.equal(env.app.workspace.content, "unsaved source"); assert.equal(env.app.workspace.dirty, true); assert.ok(controls(env.document, "Manage storage connections").length); env.app.dispose();
+});
+
+test("an active storage timeout is visible and retains edits instead of silently claiming success", async () => {
+  const env = environment({ respond({ route }) { if (route === "storage/remotes/backup/push") throw new DOMException("Canceled", "AbortError"); } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("retained after timeout"); await env.app.navigate("storage");
+  const form = env.document.querySelector(".storage-form"), address = form.querySelector('[name="remoteURL"]'); address.value = "git@timeout.example:docs.git"; env.event(address, "input");
+  env.event(env.document.querySelector('[aria-label="Push commits to backup"]'), "click"); await settle();
+  assert.match(env.document.querySelector('#view [role="alert"]').textContent, /timed out.*retained/);
+  assert.match(env.document.querySelector('[data-remote-status="backup"]').textContent, /timed out/);
+  assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@timeout.example:docs.git"); assert.equal(address.disabled, false);
+  assert.equal(env.app.workspace.content, "retained after timeout"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
 });

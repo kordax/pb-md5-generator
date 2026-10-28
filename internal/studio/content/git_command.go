@@ -13,6 +13,9 @@ func (g *GitBackend) validCommand(input string, arguments []string) bool {
 	if len(arguments) == 0 || input != "" && arguments[0] != "add" {
 		return false
 	}
+	if g.validStorageCommand(input, arguments) {
+		return true
+	}
 	match := func(expected ...string) bool { return slices.Equal(arguments, expected) }
 	switch arguments[0] {
 	case "rev-parse":

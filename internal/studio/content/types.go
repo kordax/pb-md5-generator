@@ -42,6 +42,7 @@ type Config struct {
 	OperationTimeout time.Duration
 	Compile          func(context.Context, string, string) error
 	Validate         func(context.Context, string, []Change, Actor) error
+	AuthorizeStorage func(context.Context, Actor) error
 	Storage          Backend
 }
 

@@ -72,6 +72,10 @@ func (h *handler) serveContent(w http.ResponseWriter, r *http.Request) {
 	case "/branches", "/branches/checkout", "/sync", "/sync/status":
 		h.storage(w, r, user)
 	default:
+		if r.URL.Path == "/storage" || strings.HasPrefix(r.URL.Path, "/storage/") {
+			h.managedStorage(w, r, user)
+			return
+		}
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 		if len(parts) >= 2 && len(parts) <= 3 && validIdentifier(parts[1]) {
 			if parts[0] == "documents" {

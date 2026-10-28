@@ -619,7 +619,7 @@ paths:
               additionalProperties: false
               required: [name, revision]
               properties:
-                name: {type: string, minLength: 1, maxLength: 200}
+                name: {type: string, minLength: 1, maxLength: 128, description: At most 128 UTF-8 bytes and a valid Git branch name}
                 revision: {$ref: '#/components/schemas/Revision'}
       responses:
         default: {$ref: '#/components/responses/Failure'}
@@ -646,7 +646,7 @@ paths:
               additionalProperties: false
               required: [name, revision]
               properties:
-                name: {type: string, minLength: 1, maxLength: 200}
+                name: {type: string, minLength: 1, maxLength: 128, description: At most 128 UTF-8 bytes and a valid Git branch name}
                 revision: {$ref: '#/components/schemas/Revision'}
       responses:
         default: {$ref: '#/components/responses/Failure'}
@@ -695,6 +695,108 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SyncStatus'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /storage/configuration:
+    get:
+      operationId: getStorageConfiguration
+      tags: [Storage]
+      summary: Read managed storage settings and cached connection states; administrators with root access only
+      description: This operation does not contact a remote repository. Connection URLs never contain passwords; SSH credentials stay in the private server volume.
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Consistent settings, project revision and cached synchronization state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      operationId: configureStorage
+      tags: [Storage]
+      summary: Enroll local content into Git or update named connections; administrators with root access only
+      description: |
+        Both storage settings and project revisions must match. Enrollment creates
+        one local Git history without fetching or pushing. Source, published output,
+        local history and saved drafts are retained. Existing drafts become stale
+        and require an explicit reviewed rebase. Returning from Git to local storage
+        is unsupported. One connection supplies fetch/pull; multiple connections
+        may receive the same local commits. Connection changes never silently
+        overwrite documents or resolve divergence.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StorageUpdate'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Persisted configuration and current local synchronization state; no remote traffic occurred
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageResult'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /storage/remotes/{name}/check:
+    parameters: [{$ref: '#/components/parameters/StorageRemoteName'}]
+    post:
+      operationId: checkStorageRemote
+      tags: [Storage]
+      summary: Explicitly check one configured connection; administrators with root access only
+      description: |
+        Reads remote references without changing source files or publishing.
+        A completed attempt returns its explicit state. HTTP 200 with state:error
+        reports an unsuccessful connection and includes a safe retryable status.
+        Authentication, validation and stale revisions use ordinary error responses.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StorageRemoteCheck'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Explicit result of the connection attempt; inspect state and retryable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteSyncStatus'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /storage/remotes/{name}/push:
+    parameters: [{$ref: '#/components/parameters/StorageRemoteName'}]
+    post:
+      operationId: pushStorageRemote
+      tags: [Storage]
+      summary: Explicitly push or retry one configured target; administrators with root access only
+      description: |
+        Both revisions must match. A target failure retains the local commit and
+        does not undo successful pushes to other targets. HTTP 200 alone does not
+        establish synchronization: inspect state and retryable. Push never forces
+        remote history or changes the selected pull authority.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StorageRemotePush'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Explicit result for this target, including a safe retryable failure when needed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteSyncStatus'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
         '409': {$ref: '#/components/responses/Conflict'}
   /settings:
     get:
@@ -806,6 +908,12 @@ components:
       name: id
       required: true
       schema: {type: string, minLength: 1, maxLength: 256}
+    StorageRemoteName:
+      in: path
+      name: name
+      required: true
+      description: Configured connection name; case-folding duplicates and reserved Windows device names are rejected
+      schema: {type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'}
     Path:
       in: query
       name: path
@@ -1035,6 +1143,90 @@ components:
         pendingPush: {type: boolean}
         lastCommit: {type: string}
         lastError: {type: string, maxLength: 1024}
+    StorageSyncStatus:
+      type: object
+      additionalProperties: false
+      required: [backend, state, ahead, behind, dirty, retryable]
+      properties:
+        backend: {type: string, enum: [local, git]}
+        branch: {type: string}
+        head: {type: string}
+        state: {type: string, enum: [local, clean, modified, pending, behind, error]}
+        ahead: {type: integer, minimum: 0}
+        behind: {type: integer, minimum: 0}
+        dirty: {type: boolean}
+        retryable: {type: boolean}
+        error: {type: string, maxLength: 1024}
+    StorageRemote:
+      type: object
+      additionalProperties: false
+      required: [name, url, push]
+      properties:
+        name: {$ref: '#/components/parameters/StorageRemoteName/schema'}
+        url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: At most 2048 UTF-8 bytes. SSH or local/file transport only, without embedded passwords, query, fragment or control characters. SSH keys and verified known_hosts remain in private server storage.
+        push: {type: boolean, description: Include this connection in requested publication pushes; each target keeps its own retry state}
+    StorageSettings:
+      type: object
+      additionalProperties: false
+      required: [revision, backend, pullRemote, remotes]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision', description: Storage settings revision; separate from the project revision}
+        backend: {type: string, enum: [local, git]}
+        pullRemote: {type: string, maxLength: 64, description: Name of the single fetch/pull authority, or an empty string for none}
+        remotes:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/StorageRemote'}
+          description: Names must be unique under case folding; local storage has no remotes
+    StorageUpdate:
+      type: object
+      additionalProperties: false
+      required: [revision, baseRevision, backend, pullRemote, remotes]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision', description: Expected storage settings revision}
+        baseRevision: {$ref: '#/components/schemas/Revision', description: Expected project revision}
+        backend: {type: string, enum: [local, git]}
+        initialBranch: {type: string, maxLength: 128, default: main, description: Initial branch for local-to-Git enrollment only; at most 128 UTF-8 bytes and a portable valid Git branch name}
+        pullRemote: {type: string, maxLength: 64, description: Configured connection name or an empty string for no fetch/pull authority}
+        remotes: {type: array, maxItems: 8, items: {$ref: '#/components/schemas/StorageRemote'}}
+    StorageResult:
+      type: object
+      additionalProperties: false
+      required: [settings, projectRevision, sync, remotes]
+      properties:
+        settings: {$ref: '#/components/schemas/StorageSettings'}
+        projectRevision: {$ref: '#/components/schemas/Revision'}
+        sync: {$ref: '#/components/schemas/StorageSyncStatus'}
+        remotes: {type: array, maxItems: 8, items: {$ref: '#/components/schemas/RemoteSyncStatus'}}
+    RemoteSyncStatus:
+      type: object
+      additionalProperties: false
+      required: [name, state, retryable]
+      properties:
+        name: {$ref: '#/components/parameters/StorageRemoteName/schema'}
+        branch: {type: string, maxLength: 128}
+        head: {type: string, maxLength: 64}
+        lastPushedHead: {type: string, maxLength: 64}
+        state: {type: string, enum: [unknown, ready, pending, error, disabled]}
+        retryable: {type: boolean}
+        error: {type: string, maxLength: 1024, description: Safe fixed message; command output and credential material are never returned}
+    StorageRemoteCheck:
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision', description: Expected storage settings revision}
+    StorageRemotePush:
+      type: object
+      additionalProperties: false
+      required: [revision, baseRevision]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision', description: Expected storage settings revision}
+        baseRevision: {$ref: '#/components/schemas/Revision', description: Expected project revision}
     ThemePalette:
       type: object
       additionalProperties: false

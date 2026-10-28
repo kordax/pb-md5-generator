@@ -160,6 +160,14 @@ func New(config Config) (*Service, error) {
 	if rooted, ok := config.Storage.(interface{ ManagedRoot() string }); ok && rooted.ManagedRoot() != config.Root {
 		return nil, ErrOwnership
 	}
+	if managed, ok := config.Storage.(*ManagedBackend); ok {
+		if managed.managedState() != config.StateDir {
+			return nil, ErrOwnership
+		}
+		if err := managed.Recover(context.Background()); err != nil {
+			return nil, err
+		}
+	}
 	service := &Service{cfg: config, gate: make(chan struct{}, 1), locks: locks}
 	if _, err := service.Project(context.Background()); err != nil {
 		return nil, errors.Join(err, service.Close())

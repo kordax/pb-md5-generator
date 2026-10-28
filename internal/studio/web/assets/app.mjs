@@ -1,5 +1,6 @@
 import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, cleanPath, mergeSettings, formatLanguage, previewDocument } from "./core.mjs";
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
+import { renderStorage, canManageStorage } from "./storage.mjs";
 
 export function boot({ document: doc = globalThis.document, window: win = globalThis.window, fetcher = globalThis.fetch, loadEditor = () => import("./editor.js") } = {}) {
   const $ = id => doc.getElementById(id);
@@ -59,6 +60,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("setup-notice").hidden = true; $("login-view").hidden = true; $("app").hidden = false;
     $("identity").textContent = user.displayName || user.username; $("identity-role").textContent = user.role;
     doc.querySelectorAll("[data-admin]").forEach(node => { node.hidden = !can(user, "admin"); });
+    doc.querySelector('[data-view="storage"]').hidden = !canManageStorage(user);
     $("create-document").hidden = user.role === "viewer";
     await Promise.all([refreshDocuments(), loadSettings().then(value => { $("project-name").textContent = value.title; applyAppearance(value.theme); }).catch(error => { if (error.status !== 403) showError(error); })]); await navigate("documents");
   }
@@ -85,17 +87,19 @@ export function boot({ document: doc = globalThis.document, window: win = global
   }
   async function allowViewChange() { if (formDirty && !win.confirm("Discard the unsaved changes in this form?")) return false; formDirty = false; return true; }
   async function navigate(view) {
+    if (view === "storage" && !canManageStorage(user)) throw new APIError("An administrator with read and write access to the entire project is required.", 403);
     if (!await allowViewChange()) return;
-    if (["people", "settings", "appearance"].includes(view) && !can(user, "admin")) throw new APIError("An administrator account is required.", 403);
+    if (["people", "settings", "appearance", "storage"].includes(view) && !can(user, "admin")) throw new APIError("An administrator account is required.", 403);
     viewLoad?.abort(); filesLoad?.abort(); filesSequence++; viewLoad = new AbortController(); const sequence = ++viewSequence;
     currentView = view; destroyEditor(); $("error").hidden = true;
     doc.querySelectorAll("[data-view]").forEach(node => { if (node.dataset.view === view) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); });
-    $("view-title").textContent = ({ documents: workspace.document?.title || "Documents", files: "Files", publishing: "Publishing", appearance: "Appearance", settings: "Site settings", people: "People" })[view] || "Workspace";
+    $("view-title").textContent = ({ documents: workspace.document?.title || "Documents", files: "Files", publishing: "Publishing", storage: "Storage", appearance: "Appearance", settings: "Site settings", people: "People" })[view] || "Workspace";
     $("view").replaceChildren(h("p", { class: "muted" }, "Loading…"));
     const active = () => sequence === viewSequence && !viewLoad.signal.aborted;
     if (view === "documents") { if (workspace.document) await renderEditor(sequence); else renderDocuments(); }
     if (view === "files") await renderFiles(".", active);
     if (view === "publishing") await renderPublishing(active);
+    if (view === "storage") await renderStorage({ host: $("view"), api, user, h, button, field, workspace, mutate: mutation, confirm: message => win.confirm(message), active, signal: viewLoad.signal, onDirty: value => { if (active()) formDirty = value; }, onRevision: value => { if (active()) projectRevision = value; }, notify: message => { if (active()) note(message); } });
     if (view === "settings") await renderSettings(active);
     if (view === "appearance") await renderAppearance(active);
     if (view === "people") await renderPeople(active);
@@ -243,13 +247,20 @@ export function boot({ document: doc = globalThis.document, window: win = global
   }
   function appearanceMessage(message) { return result => result?.sync && (result.sync.retryable || result.sync.pendingPush || result.sync.state === "pending" || result.sync.error) ? message.replace(/\.$/, "") + " locally. " + (result.sync.error || "Git synchronization remains pending. Retry the push from Publishing.") : message; }
   function publicationMessage(result) { return result?.published ? (result.sync?.pendingPush ? "Published locally. The repository still needs to be pushed." : "Documentation published.") : "Draft saved. The published site has not changed."; }
+  function synchronizationMessage(action, result) {
+    const failure = result?.lastError || result?.error;
+    if (failure || result?.state === "error") return "Repository synchronization did not finish. " + (failure || "Local commits are retained; retry the failed connection from Storage.");
+    if (action === "push" && (result?.pendingPush || result?.retryable || result?.state === "pending")) return "Local commits are retained. Some push targets remain pending; retry them from Storage.";
+    return "Repository synchronization completed.";
+  }
   async function renderPublishing(active) {
     const [draftResult, status] = await Promise.all([api.request("drafts", { signal: viewLoad.signal }), api.request("sync/status", { signal: viewLoad.signal })]); if (!active()) return; projectRevision = status.revision || projectRevision;
     const summary = h("dl", { class: "status-grid" }, [["Storage", status.backend === "git" ? "Git repository" : "Local files"], ["Branch", status.branch || "—"], ["Ahead", status.ahead ?? "—"], ["Behind", status.behind ?? "—"], ["Push", status.pendingPush ? "Pending" : "Up to date"]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
     const rows = (draftResult.drafts || []).map(draft => h("tr", {}, h("td", { class: "path" }, draft.path), h("td", {}, draft.operation), h("td", {}, draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : ""), h("td", {}, h("div", { class: "actions" }, can(user, "write", draft.path) ? [button("Publish", async () => { const result = await mutation(() => api.request("drafts/" + key(draft.id) + "/publish", { method: "POST", body: { revision: draft.revision, message: "", push: false } }), publicationMessage); await refreshDocuments(); await renderPublishing(active); if (workspace.document?.draftId === draft.id && !workspace.dirty) workspace.clear(); return result; }, { class: "primary" }), button("Discard", async () => { if (workspace.document?.draftId === draft.id && !await workspace.discardAllowed()) return; if (!win.confirm("Discard this saved draft? Published content will not change.")) return; await mutation(() => api.request("drafts/" + key(draft.id), { method: "DELETE", headers: { "If-Match": match(draft.revision) } }), "Draft discarded."); if (workspace.document?.draftId === draft.id) workspace.clear(); await refreshDocuments(); await renderPublishing(active); }, { class: "danger" })] : h("span", { class: "muted" }, "Read only")))));
     const storage = h("section", { class: "card" }, h("h2", {}, "Storage and synchronization"), summary, status.lastError ? h("p", { class: "notice" }, status.lastError) : null);
+    if (canManageStorage(user)) storage.append(button("Manage storage connections", () => navigate("storage")));
     if (status.backend === "git" && can(user, "admin")) {
-      storage.append(h("div", { class: "actions" }, ["fetch", "pull", "push"].map(action => button(({ fetch: "Fetch remote state", pull: "Pull updates", push: "Push commits" })[action], async () => { if (action === "pull" && !await workspace.discardAllowed()) return; await mutation(() => api.request("sync", { method: "POST", body: { action, revision: projectRevision } }), "Repository synchronization completed."); if (action === "pull") workspace.clear(); await refreshDocuments(); await renderPublishing(active); }))));
+      storage.append(h("div", { class: "actions" }, ["fetch", "pull", "push"].map(action => button(({ fetch: "Fetch remote state", pull: "Pull updates", push: "Push commits" })[action], async () => { if (action === "pull" && !await workspace.discardAllowed()) return; await mutation(() => api.request("sync", { method: "POST", body: { action, revision: projectRevision } }), result => synchronizationMessage(action, result)); if (action === "pull") workspace.clear(); await refreshDocuments(); await renderPublishing(active); }))));
       const result = await api.request("branches", { signal: viewLoad.signal }); if (!active()) return; const select = h("select", { "aria-label": "Repository branch" }, (result.branches || []).map(branch => h("option", { value: branch.name }, branch.name))); select.value = result.branches?.find(branch => branch.current)?.name || status.branch || "";
       storage.append(h("h3", {}, "Branches"), h("div", { class: "actions" }, select, button("Switch branch", async () => { if (!await workspace.discardAllowed()) return; await mutation(() => api.request("branches/checkout", { method: "POST", body: { name: select.value, revision: projectRevision } }), "Branch selected."); workspace.clear(); await refreshDocuments(); await renderPublishing(active); }), button("New branch", () => dialog("Create branch", [{ name: "name", label: "Branch name", required: true, maxlength: 200 }], "Create branch", async data => { await mutation(() => api.request("branches", { method: "POST", body: { name: data.name, revision: projectRevision } }), "Branch created."); await renderPublishing(active); }))));
     }

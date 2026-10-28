@@ -261,24 +261,35 @@ protect concurrent edits; an explicit rebase preserves the author's text when
 the published revision changes.
 
 Git publication records the authenticated author, commits managed changes and can
-push after publication. A failed push retains the local commit and exposes a
-retryable status. Administrators can create and switch branches, fetch, pull and
-push. Source, state and publication directories stay separate from the project's
-development checkout. Repository snapshots and include/import consumers are
-validated before publication; unsafe paths, symlinks and external resolution are
-rejected.
+push after publication. The Storage panel enrolls existing local content into Git
+without changing sources or the published site. Saved drafts retain their bytes
+and require explicit rebase; local history belongs to the enrolled initial branch.
+Persisted connections use one pull authority and up to eight independent push
+targets that share the same local history. Each target records its own result and
+retry state; a failed target does not undo a successful push or local publication.
+Connection reads and configuration saves do not contact remotes. SSH credentials
+stay in private server storage, outside document Git history and API responses.
+
+Administrators with root read/write grants can create and switch branches, fetch,
+pull, push and configure storage. Settings and project revisions are checked
+separately, and permissions are refreshed after waiting for the content gate.
+An interrupted enrollment uses a private recovery journal and a durable settings
+commit point. Source, state and publication directories stay separate from the
+project's development checkout. Repository snapshots and include/import consumers
+are validated before publication; unsafe paths, symlinks and external resolution
+are rejected.
 
 The server renders authorized navigation, search and portable models instead of
 exposing its complete generated output directory. Themes and site settings use
 the same draft/publication transaction, with portable tokens stored in the
 manifest. The [appearance guide](appearance.md) describes the current controls.
 
-The broader Wiki.js-style target remains active. Follow-up work includes a
-connector management UI and more storage providers, recursive folder operations
-and broader attachment handling, a format registration contract, richer editing
-workflows, grouped navigation, versions/locales and migration tools. Browser and
-native-platform acceptance checks must cover the complete workflows before a
-release claims that scope.
+The broader Wiki.js-style target remains active. Follow-up work includes more
+storage providers, private credential provisioning controls, safe Git-to-local
+migration, recursive folder operations and broader attachment handling, a format
+registration contract, richer editing workflows, grouped navigation,
+versions/locales and migration tools. Browser and native-platform acceptance
+checks must cover the complete workflows before a release claims that scope.
 
 ## UI behavior
 

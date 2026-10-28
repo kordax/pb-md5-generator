@@ -224,8 +224,12 @@ func (h *handler) storage(w http.ResponseWriter, r *http.Request, user *auth.Use
 		h.storageStatus(w, r)
 		return
 	}
-	if !auth.Can(user, auth.ActionAdmin, "") {
+	if !storageAccess(user) {
 		serviceError(w, auth.ErrForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" {
+		serviceError(w, content.ErrInvalid)
 		return
 	}
 	if r.URL.Path == "/branches" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
@@ -325,7 +329,7 @@ func (h *handler) storageStatus(w http.ResponseWriter, r *http.Request) {
 		serviceError(w, err)
 		return
 	}
-	if !auth.Can(user, auth.ActionAdmin, "") {
+	if !storageAccess(user) {
 		result = syncDTO{Backend: status.Backend, Revision: project.Revision}
 	}
 	writeJSON(w, http.StatusOK, result)

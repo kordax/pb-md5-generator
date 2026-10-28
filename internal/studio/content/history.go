@@ -175,7 +175,7 @@ func (s *Service) History(ctx context.Context, name string) ([]Revision, error) 
 	documentID := historyPage(s.cfg.Root, s.cfg.Root, name).ID
 	result := []Revision{}
 	for i := len(revisions) - 1; i >= 0; i-- {
-		if (revisions[i].Path == name || (documentID != "" && revisions[i].DocumentID == documentID)) && revisions[i].Branch == status.Branch {
+		if (revisions[i].Path == name || (documentID != "" && revisions[i].DocumentID == documentID)) && s.historyBranchMatches(revisions[i].Branch, status.Branch) {
 			result = append(result, revisions[i])
 		}
 	}
@@ -204,7 +204,7 @@ func (s *Service) Restore(ctx context.Context, name, id, baseRevision string, ac
 		return Draft{}, ErrInvalid
 	}
 	status, err := s.cfg.Storage.Status(ctx)
-	if err != nil || status.Branch != revision.Branch {
+	if err != nil || !s.historyBranchMatches(revision.Branch, status.Branch) {
 		done()
 		return Draft{}, ErrConflict
 	}

@@ -649,6 +649,9 @@ func (s *Service) Branches(ctx context.Context) ([]Branch, error) {
 		return nil, err
 	}
 	defer done()
+	if err := s.authorizeStorage(ctx, Actor{}); err != nil {
+		return nil, err
+	}
 	return s.cfg.Storage.Branches(ctx)
 }
 
@@ -658,6 +661,9 @@ func (s *Service) branchOperation(ctx context.Context, action, name, revision st
 		return SyncStatus{}, err
 	}
 	defer done()
+	if err := s.authorizeStorage(ctx, Actor{}); err != nil {
+		return SyncStatus{}, err
+	}
 	s.cached = sourceTree{}
 	project, tree, err := s.project(ctx)
 	if err != nil {
