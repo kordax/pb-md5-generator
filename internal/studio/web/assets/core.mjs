@@ -32,7 +32,7 @@ export function can(user, action, path = "") {
 
 export class API {
   constructor(base, fetcher = globalThis.fetch, onExpired = () => {}) {
-    this.base = new URL(base); this.fetcher = fetcher; this.csrfToken = ""; this.onExpired = onExpired; this.pending = new Set();
+    this.base = new URL(base); this.fetcher = fetcher.bind(globalThis); this.csrfToken = ""; this.onExpired = onExpired; this.pending = new Set();
   }
   session(value) { this.csrfToken = value?.csrfToken || ""; }
   abortAll() { for (const controller of this.pending) controller.abort(); }
