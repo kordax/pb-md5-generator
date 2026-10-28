@@ -156,7 +156,7 @@ func TestImportedAdministrationModulesAreRequiredAndServedExactly(t *testing.T) 
 		require.NoError(t, err)
 		assets[name] = &fstest.MapFile{Data: data}
 	}
-	for _, required := range []string{"navigation.mjs", "storage.mjs"} {
+	for _, required := range []string{"navigation.mjs", "storage.mjs", "files.mjs"} {
 		incomplete := fstest.MapFS{}
 		for name, file := range assets {
 			if name != required {

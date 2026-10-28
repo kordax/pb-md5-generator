@@ -146,7 +146,7 @@ func validateMutation(ctx context.Context, snapshot string, changes []content.Ch
 			continue
 		}
 		switch strings.ToLower(filepath.Ext(change.Path)) {
-		case "", ".md", ".markdown", ".proto", ".json", ".yaml", ".yml", ".html", ".htm", ".txt":
+		case "", ".md", ".markdown", ".proto", ".json", ".yaml", ".yml", ".html", ".htm", ".txt", ".go", ".js", ".ts", ".sh", ".sql", ".css", ".xml":
 			secondaryChanges = append(secondaryChanges, change)
 		}
 	}

@@ -18,7 +18,7 @@ func (h *handler) authorizeChanges(r *http.Request, user *auth.User, changes []c
 		if !permitted(user, auth.ActionRead, change.Path) || !permitted(user, auth.ActionWrite, change.Path) || change.To != "" && (!permitted(user, auth.ActionRead, change.To) || !permitted(user, auth.ActionWrite, change.To)) {
 			return auth.ErrForbidden
 		}
-		if change.Operation != "move" && change.Operation != "delete" && change.Operation != "rmdir" {
+		if change.Operation != "move" && change.Operation != "delete" && change.Operation != "rmdir" && change.Operation != "delete-tree" {
 			continue
 		}
 		for _, entry := range project.Files {

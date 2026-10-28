@@ -12,6 +12,7 @@ const source = { id: "guide", path: "docs/guide.md", title: "Guide <img src=x on
 const json = (value, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 const controls = (doc, label) => [...doc.querySelectorAll("button")].filter(node => node.textContent === label);
+const deletionPlan = (count = 3) => ({ path: "docs", revision: "p1", planRevision: "plan-1", fileCount: count - 1, directoryCount: 1, documentCount: 1, totalBytes: count - 1, entries: Array.from({ length: Math.min(count, 100) }, (_, index) => index === 0 ? { path: "docs", directory: true, size: 0 } : { path: index === 1 ? "docs/guide.md" : "docs/file" + index + ".go", directory: false, size: 1 }), truncated: count > 100 });
 const storageSnapshot = (backend = "git", revision = "c1", projectRevision = "p1") => ({ settings: { revision, backend, pullRemote: backend === "git" ? "origin" : "", remotes: backend === "git" ? [{ name: "origin", url: "git@example.com:team/docs.git", push: true }, { name: "backup", url: "/backups/docs.git", push: true }] : [] }, projectRevision, sync: { backend, branch: backend === "git" ? "main" : "", head: backend === "git" ? "abc123" : "", state: "ready", dirty: false }, remotes: backend === "git" ? [{ name: "origin", state: "ready", head: "abc123", lastPushedHead: "abc123", branch: "main", retryable: false }, { name: "backup", state: "pending", head: "abc123", lastPushedHead: "", branch: "main", retryable: true }] : [] });
 
 function environment(options = {}) {
@@ -31,7 +32,7 @@ function environment(options = {}) {
   if (options.settings) settings = { ...settings, ...options.settings };
   const fetcher = async (url, request) => {
     const route = url.pathname.replace("/team/_docs/api/v1/", "");
-    const body = request.body && typeof request.body === "string" ? JSON.parse(request.body) : request.body;
+    const body = request.body && typeof request.body === "string" && request.headers["Content-Type"] === "application/json" ? JSON.parse(request.body) : request.body;
     requests.push({ route, search: url.search, method: request.method, body, headers: request.headers, credentials: request.credentials });
     if (options.respond) { const result = await options.respond({ route, search: url.search, request, body }); if (result !== undefined) return result; }
     if (route === "session") {
@@ -55,8 +56,8 @@ function environment(options = {}) {
     if (route === "themes") return request.method === "POST" ? json(body) : json({ themes: [{ ...settings.theme, builtin: true }, { ...settings.theme, id: "custom", name: "Custom", builtin: false, revision: "theme-r1" }] });
     if (route === "users") return request.method === "POST" ? json({ id: "u2", ...body }, 201) : json({ users: [admin, { id: "u2", username: "reader", displayName: "Reader", role: "viewer", disabled: false, grants: { read: ["docs"], write: [] } }] });
     if (route.startsWith("users/")) return request.method === "DELETE" ? json(null, 204) : json({ id: "u2", username: "reader", ...body });
-    if (route === "files") return request.method === "POST" ? json({ revision: "p1", published: false, draft: { id: "dir", revision: "d2", baseRevision: "p1", path: body.path, operation: "mkdir" } }, 201) : json({ files: [{ path: "assets/image.png", name: "image.png", directory: false, size: 128, revision: "p1", canWrite: true }], revision: "p1" });
-    if (route === "drafts") return json({ drafts: draft ? [draft] : [] });
+    if (route === "files") return request.method === "POST" ? json({ revision: "p1", published: false, draft: { id: "dir", revision: "d2", baseRevision: "p1", path: body.path, operation: "mkdir" } }, 201) : json({ files: options.files || [{ path: "assets/image.png", name: "image.png", directory: false, size: 128, revision: "p1", canWrite: true }], revision: "p1" });
+    if (route === "drafts") return json({ drafts: options.drafts || (draft ? [draft] : []) });
     if (route === "storage/configuration") {
       if (request.method === "PUT") { const enrolling = storage.settings.backend === "local" && body.backend === "git"; storage = { ...storage, settings: { revision: "c" + (++storageSaves), backend: body.backend, pullRemote: body.pullRemote, remotes: body.remotes }, projectRevision: enrolling ? "p2" : storage.projectRevision, sync: { ...storage.sync, backend: body.backend, branch: body.backend === "git" ? body.initialBranch || "main" : "" } }; }
       return json(storage);
@@ -524,4 +525,188 @@ test("published page picker and section labels remain text while adding an unpla
   assert.equal(env.document.querySelectorAll('[data-navigation-group="guides"] [data-navigation-page]').length, 2);
   env.event(env.document.querySelector(".navigation-form"), "submit"); await settle(); const request = env.requests.find(item => item.route === "settings" && item.method === "PUT");
   assert.equal(request.body.navigation.tree.items[0].title, "<img src=x onerror=attack()>"); assert.equal(request.body.navigation.tree.items[0].children[1].pageId, "reference"); assert.equal(Object.hasOwn(request.body, "sync"), false); env.app.dispose();
+});
+
+test("folder deletion reviews the full plan and always stages before an explicit publish", async () => {
+  let draft = null;
+  const env = environment({ settings: { publishing: { autoPublish: true, gitPushOnPublish: false } }, files: [{ path: "docs", name: "docs", directory: true, revision: "p1", canWrite: true }], respond({ route }) {
+    if (route === "files/delete-preview") return json(deletionPlan());
+    if (route === "files/delete-tree") { draft = { id: "delete-draft", revision: "delete-cas", baseRevision: "p1", path: "docs", operation: "delete-tree" }; return json({ revision: "p1", published: false, draft }); }
+    if (route === "drafts") return json({ drafts: draft ? [draft] : [] });
+    if (route === "drafts/delete-draft/publish") return json({ revision: "p2", published: true });
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("unsaved document remains"); const document = env.app.workspace.document;
+  await env.app.navigate("files"); env.event(controls(env.document, "Review folder deletion")[0], "click"); await settle();
+  assert.match(env.document.querySelector('[aria-label="Folder deletion review"]').textContent, /2 file\(s\), 1 folder\(s\), 1 document\(s\)/);
+  assert.match(env.document.querySelector('[aria-label="Folder deletion review"]').textContent, /open source.*docs\/guide.md.*unsaved/s);
+  assert.equal(env.requests.some(item => item.route === "files/delete-tree"), false);
+  env.event(controls(env.document, "Stage folder deletion")[0], "click"); await settle();
+  const staged = env.requests.find(item => item.route === "files/delete-tree"); assert.deepEqual(staged.body, { path: "docs", revision: "p1", planRevision: "plan-1" });
+  assert.equal(staged.headers["X-CSRF-Token"], "csrf-memory"); assert.equal(env.requests.some(item => item.route.endsWith("/publish")), false);
+  assert.equal(env.document.getElementById("view-title").textContent, "Publishing"); assert.match(env.document.getElementById("message").textContent, /Published files are unchanged/);
+  assert.equal(env.app.workspace.document, document); assert.equal(env.app.workspace.content, "unsaved document remains"); assert.equal(env.app.workspace.dirty, true);
+  env.window.confirm = () => false; env.event(controls(env.document, "Publish")[0], "click"); await settle(); assert.equal(env.requests.some(item => item.route === "drafts/delete-draft/publish"), false);
+  env.window.confirm = () => true; env.event(controls(env.document, "Publish")[0], "click"); await settle(); assert.equal(env.requests.filter(item => item.route === "drafts/delete-draft/publish").length, 1);
+  assert.equal(env.app.workspace.content, "unsaved document remains"); assert.equal(env.app.workspace.document, document); env.app.dispose();
+});
+
+test("truncated folder plans explain their scope and cancellation or stale CAS never stages again", async () => {
+  const env = environment({ confirm: false, files: [{ path: "docs", name: "docs", directory: true, revision: "p1", canWrite: true }], respond({ route }) {
+    if (route === "files/delete-preview") return json(deletionPlan(128));
+    if (route === "files/delete-tree") return json({ error: { code: "conflict", message: "The folder changed. Review it again." } }, 409);
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep this text"); await env.app.navigate("files"); env.event(controls(env.document, "Review folder deletion")[0], "click"); await settle();
+  assert.match(env.document.querySelector('[aria-label="Folder deletion review"]').textContent, /first 100 of 128/);
+  const stage = controls(env.document, "Stage folder deletion")[0]; env.event(stage, "click"); await settle(); assert.equal(env.requests.some(item => item.route === "files/delete-tree"), false);
+  env.window.confirm = () => true; env.event(stage, "click"); await settle(); assert.equal(env.requests.filter(item => item.route === "files/delete-tree").length, 1);
+  assert.equal(stage.disabled, true); assert.match(env.document.querySelector('#view [role="alert"]').textContent, /retained/);
+  assert.equal(env.requests.filter(item => item.route === "files/delete-preview").length, 1); assert.equal(env.app.workspace.content, "keep this text"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("partial folder access hides recursive deletion and failed authorization reveals no inventory", async () => {
+  const files = [{ path: "docs", name: "docs", directory: true, revision: "p1", canWrite: true }];
+  const partial = environment({ files, user: { role: "editor", grants: { read: ["docs/public"], write: ["."] } } }); await partial.app.ready; await partial.app.navigate("files");
+  assert.equal(controls(partial.document, "Review folder deletion").length, 0); assert.equal(partial.requests.some(item => item.route === "files/delete-preview"), false); partial.app.dispose();
+  const env = environment({ files, respond({ route }) { if (route === "files/delete-preview") return json({ error: { code: "forbidden", message: "The folder is unavailable.", entries: [{ path: "private/secret.go" }], fileCount: 932 } }, 403); } });
+  await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Review folder deletion")[0], "click"); await settle();
+  assert.equal(controls(env.document, "Stage folder deletion").length, 0); assert.doesNotMatch(env.document.getElementById("view").textContent, /private\/secret|932/); env.app.dispose();
+});
+
+test("canceling a pending plan and leaving during staging cannot replace the current editor", async () => {
+  let finishPlan; const plan = new Promise(resolve => { finishPlan = resolve; });
+  const files = [{ path: "docs", name: "docs", directory: true, revision: "p1", canWrite: true }];
+  const env = environment({ files, respond({ route }) { if (route === "files/delete-preview") return plan; } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("retained local draft"); await env.app.navigate("files"); env.event(controls(env.document, "Review folder deletion")[0], "click"); await settle();
+  env.event(controls(env.document, "Cancel deletion review")[0], "click"); finishPlan(json(deletionPlan())); await settle(); assert.equal(controls(env.document, "Stage folder deletion").length, 0); assert.equal(env.app.workspace.content, "retained local draft"); env.app.dispose();
+  let finishStage; const pending = new Promise(resolve => { finishStage = resolve; });
+  const other = environment({ files, respond({ route }) { if (route === "files/delete-preview") return json(deletionPlan()); if (route === "files/delete-tree") return pending; } });
+  await other.app.ready; await other.app.openDocument("guide"); other.app.workspace.edit("newer editor input"); await other.app.navigate("files"); other.event(controls(other.document, "Review folder deletion")[0], "click"); await settle(); other.event(controls(other.document, "Stage folder deletion")[0], "click"); await settle();
+  await other.app.navigate("documents"); const editor = other.document.querySelector(".source-editor"); editor.value = "even newer local input"; other.event(editor, "input"); finishStage(json({ revision: "p1", published: false, draft: { id: "d1", revision: "d-cas" } })); await settle();
+  assert.equal(other.document.querySelector(".source-editor"), editor); assert.equal(other.app.workspace.content, "even newer local input"); assert.notEqual(other.document.getElementById("view-title").textContent, "Publishing"); other.app.dispose();
+});
+
+for (const extension of ["md", "json", "html"]) test("unregistered ." + extension + " source and owner drafts reopen as literal text from Files and Publishing", async () => {
+  const path = "snippet." + extension;
+  let saved = "<script id=snippet-injection>neverRun()</script>\r\n", draft = { id: "snippet-draft", revision: "d1", baseRevision: "p1", path, operation: "write" }, language;
+  const env = environment({ files: [{ path, name: path, directory: false, size: 40, revision: "p1", canWrite: true }], settings: { editor: { defaultFormat: "markdown", previewOnSave: true } }, loadEditor: async () => ({ createEditor(_host, options) { language = options.language; throw new Error("Keep fallback"); } }), respond({ route, request, search, body }) {
+    if (route === "drafts") return json({ drafts: [draft] });
+    if (route === "files/content" && request.method === "GET") {
+      const draftId = new URLSearchParams(search).get("draftId");
+      if (draftId) assert.equal(draftId, draft.id);
+      return new Response(draftId ? saved : "published snippet\r\n", { headers: { ETag: '"' + (draftId ? draft.revision : "p1") + '"', ...(draftId ? { "X-Base-Revision": draft.baseRevision } : {}) } });
+    }
+    if (route === "files/content" && request.method === "PUT") { saved = body; draft = { ...draft, revision: "d2" }; return json({ revision: "p1", published: false, draft }); }
+  } });
+  await env.app.ready; await env.app.navigate("files");
+  assert.equal(controls(env.document, "Open source").length, 1); assert.equal(controls(env.document, "Open saved draft").length, 1);
+  env.event(controls(env.document, "Open source")[0], "click"); await settle();
+  assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.app.workspace.document.kind, undefined); assert.equal(language, "text"); assert.equal(controls(env.document, "Preview").length, 0);
+  const text = env.document.querySelector(".source-editor"); text.value = saved + "edited\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
+  const put = env.requests.find(item => item.route === "files/content" && item.method === "PUT"); assert.equal(put.body, saved); assert.equal(put.headers["If-Match"], '"p1"'); assert.equal(env.app.workspace.document.draftRevision, "d2");
+  await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.equal(env.app.workspace.content, saved); assert.equal(env.app.workspace.document.draftId, draft.id); assert.equal(env.app.workspace.document.draftRevision, "d2");
+  await env.app.navigate("publishing"); env.event(controls(env.document, "Open source draft")[0], "click"); await settle(); assert.equal(env.app.workspace.content, saved); assert.equal(env.app.workspace.document.baseRevision, "p1");
+  assert.equal(env.document.querySelector("#snippet-injection"), null); assert.equal(controls(env.document, "Preview").length, 0); assert.equal(env.requests.some(item => item.route === "preview"), false); assert.equal(env.requests.some(item => item.route.startsWith("documents/")), false); env.app.dispose();
+});
+
+test("registered source routes to the document editor and retains the selected owner draft CAS", async () => {
+  const registered = { ...source, path: "guide.md" };
+  let draft = { id: "raw-registered", revision: "d7", baseRevision: "p0", path: registered.path, operation: "write" }, content = "# Raw uploaded draft\r\n";
+  const env = environment({ files: [{ path: registered.path, name: "guide.md", directory: false, size: 20, revision: "p1", canWrite: true }], respond({ route, request, body }) {
+    if (route === "documents" && request.method === "GET") return json({ documents: [{ ...registered, content: undefined }], revision: "p1" });
+    if (route === "drafts") return json({ drafts: [draft] });
+    if (route === "documents/guide") {
+      if (request.method === "PUT") { assert.equal(body.draftId, draft.id); assert.equal(body.draftRevision, draft.revision); assert.equal(body.baseRevision, "p0"); assert.equal(body.revision, "p0"); content = body.content; draft = { ...draft, revision: "d8" }; return json({ revision: "p0", published: false, draft, document: { ...registered, revision: "p0", content, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: "p0" } }); }
+      return json({ ...registered, revision: "p0", content, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: "p0" });
+    }
+  } });
+  await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open source")[0], "click"); await settle();
+  assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.document.resource, undefined); assert.equal(controls(env.document, "Preview").length, 1); assert.equal(controls(env.document, "History").length, 1);
+  await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.draftId, "raw-registered"); assert.equal(env.app.workspace.document.draftRevision, "d7");
+  const text = env.document.querySelector(".source-editor"); text.value += "kept in same draft\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.draftRevision, "d8");
+  await env.app.navigate("publishing"); env.event(controls(env.document, "Open source draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.content, content); assert.equal(env.app.workspace.document.baseRevision, "p0"); assert.equal(env.requests.some(item => item.route === "files/content"), false); env.app.dispose();
+});
+
+test("registered source redirect preserves unsaved literal text on cancellation and newer selected draft conflicts", async () => {
+  const registered = { ...source, path: "guide.md" };
+  const draft = { id: "raw-registered", revision: "d7", baseRevision: "p0", path: registered.path, operation: "write" };
+  const env = environment({ confirm: false, drafts: [draft], files: [{ path: registered.path, name: "guide.md", directory: false, size: 20, revision: "p1", canWrite: true }], respond({ route, request }) {
+    if (route === "documents" && request.method === "GET") return json({ documents: [{ ...registered, content: undefined }], revision: "p1" });
+    if (route === "files/content") return new Response("unregistered original", { headers: { ETag: '"p1"' } });
+    if (route === "documents/guide") return json({ ...registered, content: "newer registered draft", draft: true, draftId: draft.id, draftRevision: "d8", baseRevision: "p0" });
+  } });
+  await env.app.ready; await env.app.openSource("snippet.json"); env.app.workspace.edit("keep my unsaved literal text"); const previous = env.app.workspace.document;
+  await env.app.navigate("files"); env.event(controls(env.document, "Open source")[0], "click"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "keep my unsaved literal text"); assert.equal(env.requests.some(item => item.route === "documents/guide"), false);
+  env.window.confirm = () => true; env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.match(env.document.getElementById("error").textContent, /saved document draft changed/i); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "keep my unsaved literal text"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("late registered draft responses cannot replace a more recently opened literal source", async () => {
+  let finish; const pending = new Promise(resolve => { finish = resolve; });
+  const draft = { id: "raw-registered", revision: "d7", baseRevision: "p0", path: source.path, operation: "write" };
+  const env = environment({ respond({ route }) { if (route === "documents/guide") return pending; if (route === "files/content") return new Response("latest literal source", { headers: { ETag: '"p1"' } }); } });
+  await env.app.ready; const old = env.app.openSource(source.path, draft); await settle(); await env.app.openSource("snippet.html");
+  finish(json({ ...source, content: "obsolete registered response", draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision })); await old;
+  assert.equal(env.app.workspace.document.path, "snippet.html"); assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.app.workspace.content, "latest literal source"); assert.equal(controls(env.document, "Preview").length, 0); env.app.dispose();
+});
+
+test("literal code source uses the existing text editor without preview and resaves its exact owner draft", async () => {
+  let content = "\uFEFF// пример\r\n<script>neverRun()</script>\r\n", draft = null, language = null, saves = 0;
+  const file = { path: "example.js", name: "example.js", directory: false, size: 40, revision: "p1", canWrite: true };
+  const env = environment({ files: [file], settings: { editor: { defaultFormat: "markdown", previewOnSave: true } }, loadEditor: async () => ({ createEditor(_host, options) { language = options.language; throw new Error("Keep fallback"); } }), respond({ route, request, search, body }) {
+    if (route === "drafts") return json({ drafts: draft ? [draft] : [] });
+    if (route === "files/content" && request.method === "GET") return new Response(content, { headers: { "Content-Type": "application/octet-stream", ETag: '"' + (new URLSearchParams(search).has("draftId") ? draft.revision : "p1") + '"', ...(new URLSearchParams(search).has("draftId") ? { "X-Base-Revision": "p1" } : {}) } });
+    if (route === "files/content" && request.method === "PUT") { content = body; draft = { id: "source-draft", revision: "d" + (++saves), baseRevision: "p1", path: file.path, operation: "write" }; return json({ revision: "p1", published: false, draft }); }
+  } });
+  await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open source")[0], "click"); await settle();
+  assert.equal(language, "text"); assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.document.querySelector(".source-editor").value, content); assert.equal(env.document.querySelector(".editor-host script"), null);
+  assert.equal(controls(env.document, "Preview").length, 0); assert.equal(controls(env.document, "History").length, 0);
+  const text = env.document.querySelector(".source-editor"); text.value += "// edited\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
+  let put = env.requests.find(item => item.route === "files/content" && item.method === "PUT"); assert.equal(put.body, content); assert.equal(put.headers["If-Match"], '\"p1\"'); assert.equal(put.headers["Content-Type"], "application/octet-stream"); assert.equal(env.requests.some(item => item.route === "preview"), false);
+  await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.draftRevision, "d1");
+  const next = env.document.querySelector(".source-editor"); next.value += "// second\r\n"; env.event(next, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
+  put = env.requests.filter(item => item.route === "files/content" && item.method === "PUT")[1]; assert.equal(put.headers["X-Draft-ID"], "source-draft"); assert.equal(put.headers["X-Draft-Revision"], "d1"); assert.equal(put.headers["If-Match"], '\"p1\"'); assert.equal(env.app.workspace.document.draftRevision, "d2"); env.app.dispose();
+});
+
+test("opening source never silently replaces an unsaved document and viewers remain readonly", async () => {
+  const files = [{ path: "sample.go", name: "sample.go", directory: false, size: 8, revision: "p1", canWrite: true }];
+  const env = environment({ files, confirm: false }); await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep registered doc"); const document = env.app.workspace.document;
+  await env.app.navigate("files"); env.event(controls(env.document, "Open source")[0], "click"); await settle(); assert.equal(env.app.workspace.document, document); assert.equal(env.app.workspace.content, "keep registered doc"); assert.equal(env.requests.some(item => item.route === "files/content"), false); env.app.dispose();
+  const viewer = environment({ files, user: { role: "viewer" }, respond({ route }) { if (route === "files/content") return new Response("package main\n", { headers: { ETag: '\"p1\"' } }); } });
+  await viewer.app.ready; await viewer.app.navigate("files"); viewer.event(controls(viewer.document, "Open source")[0], "click"); await settle(); assert.equal(viewer.document.querySelector(".source-editor").readOnly, true); assert.equal(controls(viewer.document, "Save draft").length, 0); assert.equal(controls(viewer.document, "Publish").length, 0); viewer.app.dispose();
+});
+
+test("draft-only literal files reopen from Files and Publishing with safe draft download links", async () => {
+  const draft = { id: "sql-draft", revision: "d4", baseRevision: "p0", path: "new.sql", operation: "write" };
+  const env = environment({ files: [], drafts: [draft], respond({ route, search }) { if (route === "files/content") { assert.equal(new URLSearchParams(search).get("draftId"), draft.id); return new Response("SELECT '<script>';\r\n", { headers: { ETag: '\"d4\"', "X-Base-Revision": "p0" } }); } } });
+  await env.app.ready; await env.app.navigate("files"); assert.match(env.document.getElementById("view").textContent, /Saved source draft/); assert.equal(controls(env.document, "Move").length, 0); assert.equal(controls(env.document, "Delete").length, 0);
+  const download = [...env.document.querySelectorAll("a")].find(node => node.textContent === "Download draft"); assert.equal(download.getAttribute("href"), "https://docs.test/team/_docs/api/v1/files/content?path=new.sql&draftId=sql-draft");
+  env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.revision, "p0"); assert.equal(env.app.workspace.document.draftRevision, "d4");
+  await env.app.navigate("publishing"); env.event(controls(env.document, "Open source draft")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "SELECT '<script>';\r\n"); assert.equal(env.document.querySelector(".editor-host script"), null); env.app.dispose();
+});
+
+test("source CAS conflicts keep text and original base while comparison never offers silent rebase", async () => {
+  const draft = { id: "saved-go", revision: "d1", baseRevision: "p0", path: "main.go", operation: "write" };
+  const env = environment({ files: [], drafts: [draft], respond({ route, request, search }) {
+    if (route !== "files/content") return;
+    if (request.method === "PUT") return json({ error: { code: "conflict", message: "A newer saved source draft exists", currentRevision: "p2" } }, 409);
+    const saved = new URLSearchParams(search).has("draftId"); return new Response(saved ? "old saved source" : "current published source", { headers: { ETag: saved ? '\"d1\"' : '\"p2\"', ...(saved ? { "X-Base-Revision": "p0" } : {}) } });
+  } });
+  await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); const text = env.document.querySelector(".source-editor"); text.value = "my retained source"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
+  assert.equal(env.app.workspace.content, "my retained source"); assert.equal(env.app.workspace.document.baseRevision, "p0"); assert.equal(env.app.workspace.document.draftRevision, "d1"); assert.equal(env.app.workspace.dirty, true);
+  env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').value, "current published source"); assert.equal(controls(env.document, "Use my merged draft")[0].hidden, true);
+  assert.equal(env.app.workspace.document.baseRevision, "p0"); env.window.confirm = () => false; env.event(controls(env.document, "Open current published source")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "my retained source"); env.app.dispose();
+});
+
+test("literal upload preflight uses the text limit and refuses overlapping saved drafts before any upload", async () => {
+  const env = environment(); await env.app.ready; await env.app.navigate("files"); const upload = env.document.querySelector('input[type="file"]');
+  assert.ok(upload.getAttribute("accept").split(",").includes(".go")); assert.ok(upload.getAttribute("accept").split(",").includes(".xml"));
+  const oversized = new File([new Uint8Array((4 << 20) + 1)], "large.go"); Object.defineProperty(upload, "files", { value: [new File(["ok"], "small.go"), oversized] }); env.event(upload, "change"); await settle(); assert.equal(env.requests.some(item => item.route === "files/content" && item.method === "PUT"), false); assert.match(env.document.getElementById("error").textContent, /4 MiB text/); env.app.dispose();
+  const overlap = environment({ drafts: [{ id: "existing", revision: "d2", baseRevision: "p1", path: "sample.ts", operation: "write" }] }); await overlap.app.ready; await overlap.app.navigate("files"); const input = overlap.document.querySelector('input[type="file"]'); Object.defineProperty(input, "files", { value: [new File(["new"], "sample.ts")] }); overlap.event(input, "change"); await settle(); assert.equal(overlap.requests.some(item => item.route === "files/content" && item.method === "PUT"), false); assert.match(overlap.document.getElementById("error").textContent, /saved change already targets/); overlap.app.dispose();
+});
+
+test("discarding a saved source draft never clears text edited after its confirmation", async () => {
+  let finish; const pending = new Promise(resolve => { finish = resolve; });
+  const draft = { id: "discard-go", revision: "d1", baseRevision: "p1", path: "sample.go", operation: "write" };
+  const env = environment({ files: [], drafts: [draft], respond({ route }) { if (route === "files/content") return new Response("saved source", { headers: { ETag: '\"d1\"', "X-Base-Revision": "p1" } }); if (route === "drafts/discard-go") return pending; } });
+  await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); await env.app.navigate("publishing"); env.event(controls(env.document, "Discard")[0], "click"); await settle(); env.app.workspace.edit("new text entered while discard was pending"); finish(json(null, 204)); await settle();
+  assert.equal(env.app.workspace.content, "new text entered while discard was pending"); assert.equal(env.app.workspace.dirty, true); assert.equal(env.app.workspace.document.path, "sample.go"); env.app.dispose();
 });

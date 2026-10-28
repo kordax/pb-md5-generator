@@ -10,7 +10,8 @@ info:
     header on every unsafe request, including login. The request Host must match
     the configured public URL. Responses containing user or document data are
     not publicly cacheable. Automatic publication settings apply to document
-    saves and file changes; manual rebase and history restore remain drafts.
+    saves and file changes; manual rebase, history restore and recursive folder
+    deletion remain drafts until explicitly published.
     String limits also enforce the documented UTF-8 byte limits. This contract
     and HTTP tests do not establish browser usability.
 servers:
@@ -513,18 +514,99 @@ paths:
               schema: {$ref: '#/components/schemas/SaveResult'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /files/delete-preview:
+    post:
+      operationId: previewFolderDeletion
+      tags: [Files]
+      summary: Review a fully authorized recursive folder deletion without changing content
+      description: |
+        Editors need fresh read and write access to the target and every entry.
+        A denied or unsafe subtree returns no inventory or counts. The plan is
+        bound to the actor, project revision, branch and complete inventory.
+        Limits are 1024 entries, 127 regular files and 64 MiB of deleted bytes.
+        Only the first 100 authorized entries are displayed; counts cover the
+        complete subtree. Overlapping current-branch drafts cause a generic
+        conflict and remain intact. Root, homepage and unmanaged content are
+        protected. This operation does not save a draft or publish anything.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteTreeInput'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Authorized bounded deletion plan
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeleteTreePlan'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+  /files/delete-tree:
+    post:
+      operationId: stageFolderDeletion
+      tags: [Files]
+      summary: Save a reviewed folder deletion as one owned draft
+      description: |
+        The server recomputes the authorized plan under the content gate.
+        A stale project or plan revision, new overlapping draft, changed branch
+        or lost permission prevents staging. This operation always returns an
+        unpublished draft, including when autoPublish is enabled. Publish it
+        explicitly through the existing draft publication operation, which
+        rechecks the plan and permissions. Other drafts are never discarded.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteTreeStage'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Folder deletion draft; published is always false
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/SaveResult'}
+                  - type: object
+                    required: [draft]
+                    properties:
+                      published: {type: boolean, const: false}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
   /files/content:
     parameters: [{$ref: '#/components/parameters/Path'}]
     get:
       operationId: downloadFile
       tags: [Files]
-      summary: Download an authorized content file
+      summary: Download an authorized content file or the caller's matching text draft
+      description: |
+        Published files require read access. An optional draftId selects only
+        the caller's single-write UTF-8 draft for this exact path and requires
+        fresh read and write access. Foreign or mismatched drafts return 404.
+        Files remain downloads with attachment, sandbox and nosniff protection.
+      parameters:
+        - in: query
+          name: draftId
+          description: Optional owned single-write text draft ID; no cross-branch draft selection
+          schema: {type: string, minLength: 32, maxLength: 32, pattern: '^[0-9a-f]{32}$'}
       responses:
         default: {$ref: '#/components/responses/Failure'}
         '200':
           description: Original bytes; active file formats are downloads rather than executable pages
           headers:
-            ETag: {schema: {type: string}}
+            ETag: {schema: {type: string}, description: Quoted project revision for published content or quoted draft revision when draftId is supplied}
+            X-Base-Revision: {schema: {type: string}, description: Stored project base revision; present only for an owned draft response}
           content:
             application/octet-stream:
               schema: {type: string, format: binary}
@@ -534,11 +616,30 @@ paths:
       operationId: uploadFile
       tags: [Files]
       summary: Save a bounded file upload as a draft or publish according to settings
-      description: Images (PNG, JPEG, GIF, WebP, AVIF, ICO) and PDF are at most 16 MiB. Markdown, protobuf, JSON, YAML, HTML and plain UTF-8 text are at most 4 MiB. Other file extensions are rejected.
+      description: |
+        Images (PNG, JPEG, GIF, WebP, AVIF, ICO) and PDF are at most 16 MiB.
+        Markdown, protobuf, JSON, YAML, HTML, plain text and literal code examples
+        (.go, .js, .ts, .sh, .sql, .css, .xml) must be valid UTF-8 without NUL
+        and at most 4 MiB. Code examples are not executable pages or assets.
+        Other file extensions are rejected. New drafts require the current
+        project If-Match revision. To save an existing owned single-write draft,
+        X-Draft-ID and X-Draft-Revision must appear together and match its exact
+        path and current branch; If-Match must equal its stored base revision.
+        Saving preserves that base even if the project advanced. No automatic
+        rebase occurs. A publication conflict retains the successfully saved
+        draft and returns its metadata in the error response.
       parameters:
         - {$ref: '#/components/parameters/CSRF'}
         - {$ref: '#/components/parameters/Origin'}
         - {$ref: '#/components/parameters/IfMatch'}
+        - in: header
+          name: X-Draft-ID
+          description: Owned single-write draft ID; requires X-Draft-Revision
+          schema: {type: string, minLength: 32, maxLength: 32, pattern: '^[0-9a-f]{32}$'}
+        - in: header
+          name: X-Draft-Revision
+          description: Expected draft revision; requires X-Draft-ID
+          schema: {$ref: '#/components/schemas/Revision'}
       requestBody:
         required: true
         content:
@@ -1085,6 +1186,43 @@ components:
         path: {type: string, minLength: 1, maxLength: 2048}
         to: {type: string, minLength: 1, maxLength: 2048}
         revision: {$ref: '#/components/schemas/Revision'}
+    DeleteTreeInput:
+      type: object
+      additionalProperties: false
+      required: [path, revision]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048, description: Clean relative managed folder path; the root is not permitted}
+        revision: {$ref: '#/components/schemas/Revision'}
+    DeleteTreeStage:
+      type: object
+      additionalProperties: false
+      required: [path, revision, planRevision]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+        planRevision: {$ref: '#/components/schemas/Revision', description: Exact proof from the reviewed deletion plan}
+    DeleteTreeEntry:
+      type: object
+      additionalProperties: false
+      required: [path, directory, size]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        directory: {type: boolean}
+        size: {type: integer, minimum: 0, maximum: 67108864, description: Regular file bytes; directories have size zero}
+    DeleteTreePlan:
+      type: object
+      additionalProperties: false
+      required: [path, revision, planRevision, fileCount, directoryCount, documentCount, totalBytes, entries, truncated]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+        planRevision: {$ref: '#/components/schemas/Revision'}
+        fileCount: {type: integer, minimum: 0, maximum: 127}
+        directoryCount: {type: integer, minimum: 1, maximum: 1024, description: Includes the target folder}
+        documentCount: {type: integer, minimum: 0, maximum: 127}
+        totalBytes: {type: integer, minimum: 0, maximum: 67108864}
+        entries: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/DeleteTreeEntry'}}
+        truncated: {type: boolean, description: Only the displayed entries are truncated; totals and authorization cover the complete subtree}
     FileEntry:
       type: object
       required: [path, directory, revision]
@@ -1103,7 +1241,7 @@ components:
         revision: {$ref: '#/components/schemas/Revision'}
         baseRevision: {$ref: '#/components/schemas/Revision'}
         path: {type: string}
-        operation: {type: string, enum: [write, delete, move, mkdir, rmdir]}
+        operation: {type: string, enum: [write, delete, delete-tree, move, mkdir, rmdir]}
         title: {type: string}
         updatedAt: {type: string, format: date-time}
     SaveResult:

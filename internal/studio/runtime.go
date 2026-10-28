@@ -183,6 +183,7 @@ func newRuntimeContent(config runtimeConfig, authentication *auth.Service, resou
 		Root: config.contentDir, StateDir: filepath.Join(config.stateDir, "content"), OutputDir: config.outputDir,
 		Initialize: config.Initialize, PushOnPublish: config.PushOnPublish, Storage: storage,
 		OperationTimeout: 45 * time.Second, Compile: compilePublication, AuthorizeStorage: authorizeStorage,
+		AuthorizeDeleteTree: authorizeDeleteTree,
 		Validate: func(ctx context.Context, root string, changes []content.Change, actor content.Actor) error {
 			return validateMutation(ctx, root, changes, actor, authentication, config.contentDir)
 		},

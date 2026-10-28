@@ -18,11 +18,12 @@ import (
 )
 
 type Service struct {
-	cfg    Config
-	gate   chan struct{}
-	locks  []*os.File
-	closed bool
-	cached sourceTree
+	cfg               Config
+	gate              chan struct{}
+	locks             []*os.File
+	closed            bool
+	cached            sourceTree
+	deleteTreePending bool
 }
 
 type ownership struct {
@@ -149,7 +150,7 @@ func New(config Config) (*Service, error) {
 	if !matchesOwnership(ownerData, config) {
 		return nil, ErrOwnership
 	}
-	for _, name := range []string{"drafts", "history"} {
+	for _, name := range []string{"drafts"} {
 		if err := os.MkdirAll(filepath.Join(config.StateDir, name), 0o700); err != nil {
 			return nil, err
 		}
@@ -169,6 +170,24 @@ func New(config Config) (*Service, error) {
 		}
 	}
 	service := &Service{cfg: config, gate: make(chan struct{}, 1), locks: locks}
+	recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), config.OperationTimeout)
+	recoveryErr := service.recoverDeleteTree(recoveryCtx)
+	cancelRecovery()
+	if recoveryErr != nil {
+		return nil, recoveryErr
+	}
+	stateRoot, err := os.OpenRoot(config.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	err = noSymlinks(stateRoot, "history")
+	if err == nil {
+		err = stateRoot.MkdirAll("history", 0o700)
+	}
+	err = errors.Join(err, stateRoot.Close())
+	if err != nil {
+		return nil, err
+	}
 	if _, err := service.Project(context.Background()); err != nil {
 		return nil, errors.Join(err, service.Close())
 	}
@@ -238,10 +257,13 @@ func (s *Service) enter(ctx context.Context) (context.Context, func(), error) {
 			cancel()
 			return nil, nil, err
 		}
-		if s.closed {
+		if s.closed || s.deleteTreePending {
 			<-s.gate
 			cancel()
-			return nil, nil, ErrOwnership
+			if s.closed {
+				return nil, nil, ErrOwnership
+			}
+			return nil, nil, fmt.Errorf("%w: interrupted folder deletion requires recovery", ErrConflict)
 		}
 		return ctx, func() { <-s.gate; cancel() }, nil
 	case <-ctx.Done():
@@ -387,7 +409,14 @@ func validateChanges(changes []Change) error {
 		if !validPath(change.Path) || (change.Path == "docs.json" && change.Operation != "write") || (change.To != "" && (!validPath(change.To) || change.To == "docs.json")) {
 			return ErrInvalid
 		}
+		if change.Operation != "delete-tree" && change.PlanRevision != "" {
+			return ErrInvalid
+		}
 		switch change.Operation {
+		case "delete-tree":
+			if len(changes) != 1 || !validRevision(change.PlanRevision) || change.To != "" || change.Title != "" || change.Kind != "" || change.OutputPath != "" || change.DocumentID != "" {
+				return ErrInvalid
+			}
 		case "write":
 			if !allowedFile(change.Path) || (change.Content != nil && len(change.Data) != 0) {
 				return ErrInvalid
@@ -474,6 +503,23 @@ func (s *Service) SaveDraft(ctx context.Context, input DraftInput, actor Actor) 
 	status, err := s.cfg.Storage.Status(ctx)
 	if err != nil {
 		return Draft{}, err
+	}
+	if old.ID != "" && !s.historyBranchMatches(old.Branch, status.Branch) {
+		return Draft{}, ErrConflict
+	}
+	if change, recursive := deleteTreeChange(changes); recursive {
+		if old.ID != "" {
+			if _, previousRecursive := deleteTreeChange(draftChanges(old)); !previousRecursive {
+				return Draft{}, ErrConflict
+			}
+		}
+		scope, err := s.planDeleteTree(ctx, DeleteTreeInput{Path: change.Path, Revision: input.BaseRevision}, actor, old.ID)
+		if err != nil {
+			return Draft{}, err
+		}
+		if scope.plan.PlanRevision != change.PlanRevision {
+			return Draft{}, ErrConflict
+		}
 	}
 	draft := Draft{ID: input.ID, BaseRevision: input.BaseRevision, Branch: status.Branch, Actor: actor, UpdatedAt: time.Now().UTC()}
 	if len(input.Changes) != 0 {

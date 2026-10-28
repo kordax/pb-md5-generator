@@ -62,7 +62,24 @@ func allowedFile(name string) bool {
 		return false
 	}
 	switch strings.ToLower(path.Ext(name)) {
-	case ".md", ".markdown", ".proto", ".json", ".yaml", ".yml", ".html", ".htm", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".pdf":
+	case ".md", ".markdown", ".proto", ".json", ".yaml", ".yml", ".html", ".htm", ".txt", ".go", ".js", ".ts", ".sh", ".sql", ".css", ".xml", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".pdf":
+		return true
+	default:
+		return false
+	}
+}
+
+// assetFile is deliberately narrower than editable source files. Code examples
+// remain inert source and cannot become executable reader assets.
+func assetFile(name string) bool {
+	if !allowedFile(name) {
+		return false
+	}
+	if binaryFile(name) {
+		return true
+	}
+	switch strings.ToLower(path.Ext(name)) {
+	case ".txt", ".json", ".yaml", ".yml", ".proto":
 		return true
 	default:
 		return false
@@ -407,7 +424,7 @@ func loadManifest(directory string) (site.Manifest, error) {
 		return manifest, fmt.Errorf("%w: index.html homepage is required", ErrInvalid)
 	}
 	for _, asset := range manifest.Assets {
-		if !allowedFile(asset) || seen["a:"+strings.ToLower(asset)] {
+		if !assetFile(asset) || seen["a:"+strings.ToLower(asset)] {
 			return manifest, fmt.Errorf("%w: invalid attachment", ErrInvalid)
 		}
 		seen["a:"+strings.ToLower(asset)] = true

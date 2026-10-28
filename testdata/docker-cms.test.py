@@ -43,8 +43,9 @@ class Client:
         self.cookies = {}
         self.csrf = None
         self.location = None
+        self.response_headers = {}
 
-    def request(self, path, method="GET", body=None, expected=200, parse=True):
+    def request(self, path, method="GET", body=None, expected=200, parse=True, headers=None):
         require(path.startswith("/") and not path.startswith("//"), "HTTP path must be local")
         lines = [f"Origin: {self.origin}"]
         if self.cookies:
@@ -53,8 +54,15 @@ class Client:
             lines.append(f"X-CSRF-Token: {self.csrf}")
         payload = None
         if body is not None:
-            lines.append("Content-Type: application/json")
-            payload = json.dumps(body).encode()
+            if isinstance(body, bytes):
+                lines.append("Content-Type: application/octet-stream")
+                payload = body
+            else:
+                lines.append("Content-Type: application/json")
+                payload = json.dumps(body).encode()
+        for name, value in (headers or {}).items():
+            require(not any(char in name + value for char in "\r\n"), "Invalid test request header")
+            lines.append(f"{name}: {value}")
         # Anonymous pipes keep cookies and CSRF headers out of files and argv.
         request_read, request_write = os.pipe()
         response_read, response_write = os.pipe()
@@ -87,7 +95,12 @@ class Client:
         require(separator and code.isdigit(), "Missing HTTP response status")
         require(int(code) == expected, f"Unexpected HTTP status for {method} {path}: {int(code)}")
         self.location = None
+        self.response_headers = {}
         for line in headers.decode("iso-8859-1").splitlines():
+            name, _, value = line.partition(":")
+            if name.lower() in {"etag", "x-base-revision", "content-type", "content-disposition",
+                                "content-security-policy", "x-content-type-options"}:
+                self.response_headers[name.lower()] = value.strip()
             if line.lower().startswith("location:"):
                 self.location = line.partition(":")[2].strip()
             if line.lower().startswith("set-cookie:"):
@@ -102,6 +115,60 @@ class Client:
         if isinstance(value, dict) and value.get("csrfToken"):
             self.csrf = value["csrfToken"]
         return value
+
+
+def exercise_source_and_folder_deletion(client):
+    path = "/_docs/api/v1/files/content?path=examples/client.js"
+    original = b"export const message = '<script>literal example</script>';\n"
+    updated = original + b"export const version = 2;\n"
+    project = client.request("/_docs/api/v1/documents")
+    base = project["revision"]
+    saved = client.request(path, "PUT", original, headers={"If-Match": f'"{base}"'})
+    require(saved.get("published") is False and saved.get("draft"), "Code upload must start as a draft")
+    draft = saved["draft"]
+    require(client.request(path + "&draftId=" + draft["id"], parse=False) == original,
+            "New unpublished source draft could not be reopened")
+    require(client.response_headers.get("etag") == f'"{draft["revision"]}"', "Draft ETag is not its current revision")
+    require(client.response_headers.get("x-base-revision") == base, "Draft response lost its original project base")
+    headers = {"If-Match": f'"{base}"', "X-Draft-ID": draft["id"], "X-Draft-Revision": draft["revision"]}
+    saved = client.request(path, "PUT", updated, headers=headers)
+    current = saved["draft"]
+    require(current["id"] == draft["id"] and current["revision"] != draft["revision"], "Source save did not use draft CAS")
+    client.request(path, "PUT", original, expected=409, headers=headers)
+    require(client.request(path + "&draftId=" + current["id"], parse=False) == updated,
+            "A stale save overwrote the newer source draft")
+    published = client.request(f"/_docs/api/v1/drafts/{current['id']}/publish", "POST",
+                               {"revision": current["revision"], "push": True, "message": "docs: add literal code example"})
+    require(published.get("published") is True, "Code example publication failed")
+    require(client.request(path, parse=False) == updated, "Published code bytes changed")
+    require(client.response_headers.get("content-type") == "application/octet-stream", "Code source has an executable MIME type")
+    require(client.response_headers.get("content-disposition", "").startswith("attachment;"), "Code source is not a download")
+    require(client.response_headers.get("x-content-type-options") == "nosniff", "Code download allows MIME sniffing")
+    require("sandbox" in client.response_headers.get("content-security-policy", ""), "Code download lacks sandbox policy")
+    client.request("/examples/client.js", expected=404, parse=False)
+    settings = client.request("/_docs/api/v1/settings")
+    settings.pop("sync", None)
+    settings["publishing"]["autoPublish"] = True
+    client.request("/_docs/api/v1/settings", "PUT", settings)
+    project = client.request("/_docs/api/v1/documents")
+    plan = client.request("/_docs/api/v1/files/delete-preview", "POST", {"path": "examples", "revision": project["revision"]})
+    require(plan.get("fileCount") == 1 and plan.get("directoryCount") == 1 and not plan.get("truncated"),
+            "Folder deletion preview has an incorrect inventory")
+    staged = client.request("/_docs/api/v1/files/delete-tree", "POST",
+                            {"path": plan["path"], "revision": plan["revision"], "planRevision": plan["planRevision"]})
+    require(staged.get("published") is False and staged.get("draft", {}).get("operation") == "delete-tree",
+            "Recursive deletion bypassed explicit draft publication")
+    require(client.request(path, parse=False) == updated, "Staging a folder deletion removed live content")
+    deletion = staged["draft"]
+    result = client.request(f"/_docs/api/v1/drafts/{deletion['id']}/publish", "POST",
+                            {"revision": deletion["revision"], "push": True, "message": "docs: remove literal examples"})
+    require(result.get("published") is True, "Folder deletion publication failed")
+    client.request(path, expected=404, parse=False)
+    settings = client.request("/_docs/api/v1/settings")
+    settings.pop("sync", None)
+    settings["publishing"]["autoPublish"] = False
+    client.request("/_docs/api/v1/settings", "PUT", settings)
+    print("Literal source drafts, stale CAS, safe downloads and explicit folder deletion passed", flush=True)
 
 
 def main():
@@ -151,6 +218,8 @@ def main():
         page = client.request("/", parse=False)
         require(b"Docker publication verification" in page, "Published document did not survive")
         require(draft_text.encode() not in page, "Unpublished draft escaped into the reader")
+        client.request("/_docs/api/v1/files/content?path=examples/client.js", expected=404, parse=False)
+        client.request("/examples/client.js", expected=404, parse=False)
         drafts = client.request("/_docs/api/v1/drafts")
         require(len(drafts["drafts"]) == 1, "Unpublished draft metadata did not survive")
         document = client.request("/_docs/api/v1/documents/home")
@@ -188,7 +257,7 @@ def main():
         admin = client.request("/_docs/admin/", parse=False)
         require(b"__PB_DOCS_CSP_NONCE__" not in admin, "Admin nonce placeholder was not replaced")
         client.request("/_docs/admin/app.mjs", parse=False)
-        for module in ["storage.mjs", "navigation.mjs"]:
+        for module in ["storage.mjs", "navigation.mjs", "files.mjs"]:
             served_module = client.request(f"/_docs/admin/{module}", parse=False)
             with open(os.path.join(ROOT, "internal/studio/web/assets", module), "rb") as source:
                 require(served_module == source.read(), "Packaged editor module differs from the built source")
@@ -219,6 +288,7 @@ def main():
         client.request("/_docs/api/v1/settings", "PUT", settings)
         require(b"Getting started" in client.request("/", parse=False), "Published navigation group is missing")
         require(b"Docker publication verification" in client.request("/", parse=False), "Reader did not update")
+        exercise_source_and_folder_deletion(client)
         project_state = client.request("/_docs/api/v1/documents")
         created = client.request("/_docs/api/v1/documents", "POST", {
             "revision": project_state["revision"], "title": "Directory guide", "kind": "markdown",

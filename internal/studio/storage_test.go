@@ -39,7 +39,7 @@ func TestStorageAuthorizationUsesFreshSessionAndAuthenticatedActor(t *testing.T)
 	assert.ErrorIs(t, validateMutation(context.Background(), "", nil, content.Actor{ID: "system"}, nil, ""), auth.ErrForbidden)
 	var run func(string, string, any) *httptest.ResponseRecorder
 	var actor content.Actor
-	var observed, mutationObserved error
+	var observed, mutationObserved, deletionObserved error
 	revoke := false
 	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if revoke {
@@ -47,6 +47,12 @@ func TestStorageAuthorizationUsesFreshSessionAndAuthenticatedActor(t *testing.T)
 			require.Equal(t, http.StatusNoContent, response.Code)
 		}
 		observed = authorizeStorage(r.Context(), actor)
+		deletionObserved = authorizeDeleteTree(r.Context(), actor, []content.Entry{{Path: "public", Directory: true}, {Path: "public/guide.md"}})
+		if !revoke && actor.ID != "another-user" {
+			assert.ErrorIs(t, authorizeDeleteTree(r.Context(), actor, nil), auth.ErrForbidden)
+			assert.ErrorIs(t, authorizeDeleteTree(r.Context(), content.Actor{}, []content.Entry{{Path: "public"}}), auth.ErrForbidden)
+			assert.ErrorIs(t, authorizeDeleteTree(r.Context(), actor, []content.Entry{{Path: ".git/private"}}), auth.ErrForbidden)
+		}
 		if revoke || actor.ID == "another-user" {
 			mutationObserved = validateMutation(r.Context(), "", nil, actor, authentication, "")
 		}
@@ -99,16 +105,19 @@ func TestStorageAuthorizationUsesFreshSessionAndAuthenticatedActor(t *testing.T)
 	response := run(http.MethodGet, "/_docs/api/v1/settings", nil)
 	require.Equal(t, http.StatusNoContent, response.Code)
 	assert.NoError(t, observed)
+	assert.NoError(t, deletionObserved)
 	actor.ID = "another-user"
 	response = run(http.MethodGet, "/_docs/api/v1/settings", nil)
 	require.Equal(t, http.StatusNoContent, response.Code)
 	assert.ErrorIs(t, observed, auth.ErrForbidden)
 	assert.ErrorIs(t, mutationObserved, auth.ErrForbidden)
+	assert.ErrorIs(t, deletionObserved, auth.ErrForbidden)
 	actor.ID, revoke = session.User.ID, true
 	response = run(http.MethodGet, "/_docs/api/v1/settings", nil)
 	require.Equal(t, http.StatusNoContent, response.Code)
 	assert.ErrorIs(t, observed, auth.ErrUnauthorized, "an authenticated request must not retain a revoked session")
 	assert.ErrorIs(t, mutationObserved, auth.ErrUnauthorized)
+	assert.ErrorIs(t, deletionObserved, auth.ErrUnauthorized)
 }
 
 func TestInvalidStorageStartupReleasesAccountStateAndListener(t *testing.T) {

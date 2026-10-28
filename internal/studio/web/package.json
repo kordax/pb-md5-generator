@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "check": "node build.mjs --check && node --check assets/app.mjs && node --check assets/core.mjs && node --check assets/storage.mjs && node --check assets/navigation.mjs",
+    "check": "node build.mjs --check && node --check assets/app.mjs && node --check assets/core.mjs && node --check assets/storage.mjs && node --check assets/navigation.mjs && node --check assets/files.mjs",
     "test": "node --test test/*.test.mjs",
     "security": "npm audit --audit-level=moderate"
   },

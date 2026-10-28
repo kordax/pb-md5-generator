@@ -34,16 +34,17 @@ type Actor struct {
 }
 
 type Config struct {
-	Root             string
-	StateDir         string
-	OutputDir        string
-	Initialize       bool
-	PushOnPublish    bool
-	OperationTimeout time.Duration
-	Compile          func(context.Context, string, string) error
-	Validate         func(context.Context, string, []Change, Actor) error
-	AuthorizeStorage func(context.Context, Actor) error
-	Storage          Backend
+	Root                string
+	StateDir            string
+	OutputDir           string
+	Initialize          bool
+	PushOnPublish       bool
+	OperationTimeout    time.Duration
+	Compile             func(context.Context, string, string) error
+	Validate            func(context.Context, string, []Change, Actor) error
+	AuthorizeStorage    func(context.Context, Actor) error
+	AuthorizeDeleteTree func(context.Context, Actor, []Entry) error
+	Storage             Backend
 }
 
 type Entry struct {
@@ -73,15 +74,16 @@ type File struct {
 }
 
 type Change struct {
-	Operation  string  `json:"operation"`
-	Path       string  `json:"path"`
-	To         string  `json:"to,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	Kind       string  `json:"kind,omitempty"`
-	OutputPath string  `json:"outputPath,omitempty"`
-	DocumentID string  `json:"documentId,omitempty"`
-	Content    *string `json:"content,omitempty"`
-	Data       []byte  `json:"data,omitempty"`
+	Operation    string  `json:"operation"`
+	Path         string  `json:"path"`
+	To           string  `json:"to,omitempty"`
+	Title        string  `json:"title,omitempty"`
+	Kind         string  `json:"kind,omitempty"`
+	OutputPath   string  `json:"outputPath,omitempty"`
+	DocumentID   string  `json:"documentId,omitempty"`
+	PlanRevision string  `json:"planRevision,omitempty"`
+	Content      *string `json:"content,omitempty"`
+	Data         []byte  `json:"data,omitempty"`
 }
 
 type DraftInput struct {

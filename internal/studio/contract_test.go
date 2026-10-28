@@ -18,7 +18,7 @@ func TestCMSContractValidatesWithoutExternalResolution(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, api)
-	assert.Equal(t, 41, len(api.Operations))
+	assert.Equal(t, 43, len(api.Operations))
 	first := APIContract()
 	first[0] = '!'
 	assert.True(t, strings.HasPrefix(string(APIContract()), "openapi:"))
@@ -69,6 +69,8 @@ func TestCMSContractMutationsDeclareCSRFAndRevisionProtection(t *testing.T) {
 		{"/files/content", "put"},
 		{"/files/content", "delete"},
 		{"/files/move", "post"},
+		{"/files/delete-preview", "post"},
+		{"/files/delete-tree", "post"},
 		{"/branches", "post"},
 		{"/branches/checkout", "post"},
 		{"/sync", "post"},
@@ -150,6 +152,8 @@ func TestCMSContractHTTPRoutesAndDefaultErrors(t *testing.T) {
 		"/themes":                 {"get", "post"},
 		"/themes/{id}":            {"delete"},
 	}
+	routes["/files/delete-preview"] = []string{"post"}
+	routes["/files/delete-tree"] = []string{"post"}
 	routes["/storage/configuration"] = []string{"get", "put"}
 	routes["/storage/remotes/{name}/check"] = []string{"post"}
 	routes["/storage/remotes/{name}/push"] = []string{"post"}
@@ -284,6 +288,55 @@ func TestCMSNavigationContractDeclaresPresenceAndPublishedCatalog(t *testing.T) 
 	assert.Equal(t, "published", published["name"])
 	assert.Equal(t, "query", published["in"])
 	assert.Equal(t, false, contractObject(t, published["schema"])["default"])
+}
+
+func TestCMSFileContractProtectsReviewedDeletionAndDraftResaves(t *testing.T) {
+	var root map[string]any
+	require.NoError(t, yaml.Unmarshal(APIContract(), &root))
+	paths := contractObject(t, root["paths"])
+	schemas := contractObject(t, contractObject(t, root["components"])["schemas"])
+	stage := contractObject(t, schemas["DeleteTreeStage"])
+	assert.Equal(t, false, stage["additionalProperties"])
+	assert.ElementsMatch(t, []any{"path", "revision", "planRevision"}, stage["required"])
+	plan := contractObject(t, contractObject(t, schemas["DeleteTreePlan"])["properties"])
+	assert.Equal(t, 100, contractObject(t, plan["entries"])["maxItems"])
+	assert.Equal(t, 127, contractObject(t, plan["fileCount"])["maximum"])
+	assert.Equal(t, 64<<20, contractObject(t, plan["totalBytes"])["maximum"])
+	operation := contractObject(t, contractObject(t, paths["/files/delete-tree"])["post"])
+	response := contractObject(t, contractObject(t, operation["responses"])["200"])
+	media := contractObject(t, contractObject(t, response["content"])["application/json"])
+	variants, ok := contractObject(t, media["schema"])["allOf"].([]any)
+	require.True(t, ok)
+	require.Len(t, variants, 2)
+	stageResult := contractObject(t, variants[1])
+	assert.Contains(t, stageResult["required"], "draft")
+	assert.Equal(t, false, contractObject(t, contractObject(t, stageResult["properties"])["published"])["const"])
+	draft := contractObject(t, contractObject(t, schemas["Draft"])["properties"])
+	assert.Contains(t, contractObject(t, draft["operation"])["enum"], "delete-tree")
+	files := contractObject(t, paths["/files/content"])
+	get := contractObject(t, files["get"])
+	parameters, ok := get["parameters"].([]any)
+	require.True(t, ok)
+	require.Len(t, parameters, 1)
+	assert.Equal(t, "draftId", contractObject(t, parameters[0])["name"])
+	assert.Equal(t, "query", contractObject(t, parameters[0])["in"])
+	response = contractObject(t, contractObject(t, get["responses"])["200"])
+	assert.Contains(t, contractObject(t, response["headers"]), "X-Base-Revision")
+	put := contractObject(t, files["put"])
+	parameters, ok = put["parameters"].([]any)
+	require.True(t, ok)
+	headers := map[string]bool{}
+	for _, value := range parameters {
+		parameter := contractObject(t, value)
+		if parameter["in"] == "header" {
+			name, valid := parameter["name"].(string)
+			require.True(t, valid)
+			headers[name] = true
+		}
+	}
+	assert.True(t, headers["X-Draft-ID"])
+	assert.True(t, headers["X-Draft-Revision"])
+	assert.NotContains(t, headers, "X-Draft-Rebase", "file saves must not imply an unreviewed rebase")
 }
 
 func TestCMSContractLimitsAndPublicationMetadata(t *testing.T) {

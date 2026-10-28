@@ -12,7 +12,7 @@ import { protobuf } from "@codemirror/legacy-modes/mode/protobuf";
 import { MAX_SOURCE_BYTES } from "../assets/core.mjs";
 
 const encoder = new TextEncoder();
-const languages = { markdown, html, json, yaml, protobuf: () => StreamLanguage.define(protobuf) };
+const languages = { markdown, html, json, yaml, text: () => [], protobuf: () => StreamLanguage.define(protobuf) };
 
 export function createEditor(parent, { content, language = "markdown", editable = true, nonce = "", dark = false, onChange = () => {}, onError = () => {} }) {
   const permission = new Compartment();
@@ -32,7 +32,7 @@ export function createEditor(parent, { content, language = "markdown", editable 
   const state = EditorState.create({ doc: content, extensions: [
     EditorState.lineSeparator.of(lineBreak), lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(), dropCursor(), foldGutter(), indentOnInput(), bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-    (languages[language] || markdown)(), permission.of([EditorState.readOnly.of(!editable), EditorView.editable.of(editable)]), appearance.of(theme(dark)), EditorView.cspNonce.of(nonce), EditorView.contentAttributes.of({ "aria-label": "Document source. Press Escape then Tab to leave the editor." }),
+    (languages[language] || languages.text)(), permission.of([EditorState.readOnly.of(!editable), EditorView.editable.of(editable)]), appearance.of(theme(dark)), EditorView.cspNonce.of(nonce), EditorView.contentAttributes.of({ "aria-label": "Document source. Press Escape then Tab to leave the editor." }),
     EditorState.transactionFilter.of(transaction => {
       if (!transaction.docChanged || bytes + byteChange(transaction) <= MAX_SOURCE_BYTES) return transaction;
       onError(new Error("That edit would exceed the 4 MiB source limit. Your previous draft is unchanged."));

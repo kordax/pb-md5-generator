@@ -1,12 +1,8 @@
 package apiweb
 
 import (
-	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 
 	"github.com/kordax/pb-md5-generator/internal/studio/auth"
@@ -60,60 +56,10 @@ func (h *handler) files(w http.ResponseWriter, r *http.Request, user *auth.User)
 		if decode(w, r, &input) {
 			h.stage(w, r, user, content.Change{Operation: "move", Path: input.Path, To: input.To}, input.Revision, nil)
 		}
+	case "/files/delete-preview", "/files/delete-tree":
+		h.deleteTree(w, r, user)
 	case "/files/content":
-		if !allowMethod(w, r, "GET, HEAD, PUT, DELETE") {
-			return
-		}
-		name, ok := queryPath(r)
-		if !ok {
-			serviceError(w, content.ErrInvalid)
-			return
-		}
-		if !permitted(user, auth.ActionRead, name) {
-			serviceError(w, content.ErrNotFound)
-			return
-		}
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			h.download(w, r, name)
-			return
-		}
-		if !permitted(user, auth.ActionWrite, name) {
-			serviceError(w, auth.ErrForbidden)
-			return
-		}
-		if r.Method == http.MethodDelete {
-			h.deleteFile(w, r, user, name)
-			return
-		}
-		if !revision(ifMatch(r)) {
-			serviceError(w, content.ErrInvalid)
-			return
-		}
-		media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/octet-stream" || len(params) != 0 || r.Header.Get("Content-Encoding") != "" && r.Header.Get("Content-Encoding") != "identity" {
-			writeError(w, http.StatusUnsupportedMediaType, "invalid_request", "Upload original bytes with Content-Type application/octet-stream.", "", nil)
-			return
-		}
-		if r.ContentLength > content.MaxBinaryBytes {
-			serviceError(w, content.ErrLimit)
-			return
-		}
-		defer r.Body.Close()
-		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, content.MaxBinaryBytes))
-		if err != nil {
-			var maximum *http.MaxBytesError
-			if errors.As(err, &maximum) {
-				serviceError(w, content.ErrLimit)
-			} else {
-				serviceError(w, content.ErrInvalid)
-			}
-			return
-		}
-		if err := r.Context().Err(); err != nil {
-			serviceError(w, err)
-			return
-		}
-		h.stage(w, r, user, content.Change{Operation: "write", Path: name, Data: data}, ifMatch(r), nil)
+		h.fileContent(w, r)
 	}
 }
 
@@ -201,12 +147,8 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request, name string) 
 	if !file.Binary {
 		data = []byte(file.Content)
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(name)}))
-	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	w.Header().Set("ETag", "\""+file.Revision+"\"")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	if _, ok := h.filePrincipal(w, r, name, false); !ok {
+		return
+	}
+	writeFileDownload(w, r, name, data, file.Revision)
 }

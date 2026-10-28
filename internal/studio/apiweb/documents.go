@@ -266,12 +266,25 @@ func (h *handler) document(w http.ResponseWriter, r *http.Request, user *auth.Us
 				h.conflict(w, r)
 				return
 			}
+			current, err := h.opts.Content.MatchesCurrentBranch(r.Context(), draft.Branch)
+			if err != nil {
+				serviceError(w, err)
+				return
+			}
+			if !current {
+				serviceError(w, content.ErrNotFound)
+				return
+			}
 			change := changesOf(draft)[0]
-			if change.Content == nil {
+			data := change.Data
+			if change.Content != nil {
+				data = []byte(*change.Content)
+			}
+			if !sourceTextPath(state.doc.Path) || len(data) > content.MaxTextBytes || !utf8.Valid(data) {
 				serviceError(w, content.ErrInvalid)
 				return
 			}
-			state.doc.Content = *change.Content
+			state.doc.Content = string(data)
 		} else {
 			file, err := h.opts.Content.Read(r.Context(), state.doc.Path)
 			if err != nil || file.Binary {
@@ -283,6 +296,16 @@ func (h *handler) document(w http.ResponseWriter, r *http.Request, user *auth.Us
 			}
 			state.doc.Content, state.doc.Revision, state.doc.PublishedRevision = file.Content, file.Revision, file.Revision
 		}
+		user, err = Principal(r.Context())
+		if err != nil || user == nil {
+			serviceError(w, auth.ErrUnauthorized)
+			return
+		}
+		if !permitted(user, auth.ActionRead, state.doc.Path) || state.draft != nil && !draftVisible(*state.draft, user, false) {
+			serviceError(w, content.ErrNotFound)
+			return
+		}
+		state.doc.CanWrite = permitted(user, auth.ActionWrite, state.doc.Path)
 		writeJSON(w, http.StatusOK, state.doc)
 		return
 	}

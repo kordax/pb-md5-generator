@@ -67,7 +67,7 @@ func (h *handler) serveContent(w http.ResponseWriter, r *http.Request) {
 		h.drafts(w, r, user)
 	case "/preview":
 		h.preview(w, r, user)
-	case "/files", "/files/content", "/files/move":
+	case "/files", "/files/content", "/files/move", "/files/delete-preview", "/files/delete-tree":
 		h.files(w, r, user)
 	case "/branches", "/branches/checkout", "/sync", "/sync/status":
 		h.storage(w, r, user)

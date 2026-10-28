@@ -2,6 +2,7 @@ import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, clea
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
 import { renderStorage, canManageStorage } from "./storage.mjs";
 import { renderNavigation, canManageNavigation } from "./navigation.mjs";
+import { UPLOAD_ACCEPT, textFilePath, insideFolder, reviewFolderDeletion } from "./files.mjs";
 
 export function boot({ document: doc = globalThis.document, window: win = globalThis.window, fetcher = globalThis.fetch, loadEditor = () => import("./editor.js") } = {}) {
   const $ = id => doc.getElementById(id);
@@ -43,7 +44,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
     editorStateNodes.status.textContent = workspace.loading ? "Opening…" : workspace.busy ? "Saving…" : workspace.dirty ? "Unsaved changes" : workspace.document?.draft ? "Draft saved" : "Published source";
     editorStateNodes.status.className = "badge" + (workspace.dirty ? " warning" : "");
     editorStateNodes.revision.textContent = workspace.document ? "Revision " + workspace.document.revision.slice(0, 16) : "";
-    editorStateNodes.foot.textContent = workspace.content.length.toLocaleString() + " characters · " + (workspace.document?.kind || "") + " · Changes stay in this browser until saved.";
+    editorStateNodes.foot.textContent = workspace.content.length.toLocaleString() + " characters · " + (workspace.document?.resource === "file" ? "literal text" : workspace.document?.kind || "") + " · Changes stay in this browser until saved.";
     editor?.setEditable(!!writable() && !workspace.loading);
     if (editorText) editorText.readOnly = !writable() || workspace.loading;
     if (workspace.conflict && renderedConflict !== workspace.conflict) renderConflict();
@@ -112,6 +113,13 @@ export function boot({ document: doc = globalThis.document, window: win = global
     if (!await allowViewChange()) return;
     if (await workspace.open(id)) { currentView = "documents"; await navigate("documents"); renderTree(); }
   }
+  async function openSource(path, draft = null) {
+    if (!await allowViewChange()) return;
+    const registered = documents.find(item => item.path === path && can(user, "read", path));
+    const selectedDraft = { draftId: draft?.id || "", draftRevision: draft?.revision || "" };
+    const opened = registered ? await workspace.open(registered.id, selectedDraft) : await workspace.openFile(path, { ...selectedDraft, canWrite: can(user, "write", path) });
+    if (opened) { currentView = "documents"; await navigate("documents"); renderTree(); }
+  }
   function renderDocuments() {
     $("view-title").textContent = "Documents";
     if (!documents.length) { $("view").replaceChildren(h("section", { class: "card empty" }, h("h2", {}, "A home for your documentation"), h("p", {}, "Create a guide, reference page or API document to get started."), user.role !== "viewer" ? button("Create document", createDocument, { class: "primary" }) : null)); return; }
@@ -119,13 +127,13 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, "All documents"), user.role !== "viewer" ? button("Create document", createDocument, { class: "primary" }) : null), table(["Document", "Source", "Format", "State"], rows)));
   }
   async function renderEditor(sequence) {
-    const item = workspace.document; if (!item) return renderDocuments(); $("view-title").textContent = item.title || item.path;
+    const item = workspace.document; if (!item) return renderDocuments(); const sourceFile = item.resource === "file"; $("view-title").textContent = item.title || item.path;
     const state = h("span", { class: "badge" }); const revision = h("span"); const foot = h("div", { class: "editor-foot" });
     const message = h("input", { type: "text", maxlength: 256, placeholder: "Change note (optional)", "aria-label": "Change note" });
-    const save = button(settings?.publishing?.autoPublish ? "Save and publish" : "Save draft", async () => { const result = await workspace.save(false, message.value); await refreshDocuments(); note(publicationMessage(result)); if (settings?.editor?.previewOnSave) await preview(); }, { class: "primary" });
+    const save = button(settings?.publishing?.autoPublish ? "Save and publish" : "Save draft", async () => { const result = await workspace.save(false, message.value); await refreshDocuments(); note(publicationMessage(result)); if (!sourceFile && settings?.editor?.previewOnSave) await preview(); }, { class: "primary" });
     const publish = button("Publish", async () => { const result = await workspace.save(true, message.value); await refreshDocuments(); message.value = ""; note(publicationMessage(result)); }, { class: "secondary" });
     const previewButton = button("Preview", preview); const history = button("History", () => renderHistory(item.id)); const move = button("Move", () => moveDocument(item)); const remove = button("Delete", () => deleteDocument(item), { class: "danger" });
-    const actions = h("div", { class: "actions" }, writable() ? [save, publish] : h("span", { class: "badge" }, "Read only"), previewButton, history, button("Download source", downloadDraft), writable() ? [move, remove] : null);
+    const actions = h("div", { class: "actions" }, writable() ? [save, publish] : h("span", { class: "badge" }, "Read only"), sourceFile ? null : [previewButton, history], button("Download source", downloadDraft), writable() && !sourceFile ? [move, remove] : null);
     const host = h("div", { class: "editor-host" });
     const fallback = h("textarea", { class: "source-editor", spellcheck: "false", "aria-label": "Document source", maxlength: MAX_SOURCE_BYTES, value: workspace.content, readOnly: !writable() });
     fallback.addEventListener("input", () => { try { workspace.edit(fallback.value); } catch (error) { fallback.value = workspace.content; showError(error); } });
@@ -164,7 +172,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
       if (!comparedRevision || !win.confirm("Save your current text as a draft based on the version you just reviewed? Make sure your text includes the changes you want to keep from the latest published source.")) return;
       await workspace.rebase(comparedRevision); await refreshDocuments(); note("Your merged draft is saved. Preview and publish it when ready.");
     }, { hidden: true });
-    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, "Your draft is still here. Compare the latest source, then edit your draft above to keep the changes you need from both versions."), h("div", { class: "actions" }, button("Compare latest", async () => { const value = await workspace.latest(); latest.value = value.content; latest.hidden = false; comparedRevision = value.revision; rebase.hidden = !writable(); }), rebase, button("Download my draft", downloadDraft), button("Reload document", async () => { if (await workspace.open(workspace.document.id)) await navigate("documents"); })), latest));
+    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, workspace.document?.resource === "file" ? "Your source is still here. Compare the published version or download your text. File drafts keep their original base; reopening current source requires an explicit discard confirmation." : "Your draft is still here. Compare the latest source, then edit your draft above to keep the changes you need from both versions."), h("div", { class: "actions" }, button("Compare latest", async () => { const value = await workspace.latest(); latest.value = value.content; latest.hidden = false; comparedRevision = value.revision; rebase.hidden = !writable() || workspace.document?.resource === "file"; }), rebase, button("Download my draft", downloadDraft), button(workspace.document?.resource === "file" ? "Reload saved source" : "Reload document", async () => { if (workspace.document?.resource === "file") await openSource(workspace.document.path, workspace.document.draftId ? { id: workspace.document.draftId } : null); else if (await workspace.open(workspace.document.id)) await navigate("documents"); }), workspace.document?.resource === "file" ? button("Open current published source", () => openSource(workspace.document.path)) : null), latest));
   }
   function downloadDraft() {
     if (!workspace.document) return; const blob = new Blob([source()], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob);
@@ -218,22 +226,36 @@ export function boot({ document: doc = globalThis.document, window: win = global
   async function renderFiles(path = ".", active = () => true) {
     filesLoad?.abort(); const controller = new AbortController(); filesLoad = controller; const run = ++filesSequence; const parentSignal = viewLoad?.signal; const abort = () => controller.abort();
     if (parentSignal?.aborted) abort(); else parentSignal?.addEventListener("abort", abort, { once: true });
-    let result; try { result = await api.request("files?path=" + key(path), { signal: controller.signal }); } finally { parentSignal?.removeEventListener("abort", abort); }
+    let result, draftResult; try { [result, draftResult] = await Promise.all([api.request("files?path=" + key(path), { signal: controller.signal }), api.request("drafts", { signal: controller.signal })]); } finally { parentSignal?.removeEventListener("abort", abort); }
     if (!active() || run !== filesSequence || controller.signal.aborted) return; projectRevision = result.revision || projectRevision;
-    const upload = h("input", { type: "file", multiple: true, accept: ".png,.jpg,.jpeg,.gif,.webp,.avif,.ico,.pdf,.md,.markdown,.proto,.json,.yaml,.yml,.html,.htm,.txt", "aria-label": "Upload attachments" });
+    const drafts = draftResult.drafts || [], reviewHost = h("section", { "aria-label": "Folder deletion" }); let reviewSequence = 0;
+    const showDeleteReview = async item => {
+      const current = ++reviewSequence, valid = () => active() && run === filesSequence && current === reviewSequence && !controller.signal.aborted;
+      await reviewFolderDeletion({ host: reviewHost, folder: item.path, revision: item.revision, user, api, h, button, workspace, mutate: mutation, confirm: message => win.confirm(message), active: valid, signal: controller.signal, refresh: () => renderFiles(path, active), returnToEditor: () => navigate("documents"), downloadSource: downloadDraft, onStaged: async () => { if (!valid()) return; note("Folder deletion saved as a draft. Published files are unchanged. Review and publish it from Publishing."); await navigate("publishing"); } });
+    };
+    const upload = h("input", { type: "file", multiple: true, accept: UPLOAD_ACCEPT, "aria-label": "Upload attachments" });
     let uploading = false;
     upload.addEventListener("change", safe(async () => {
       if (uploading) return;
       const files = Array.from(upload.files || []); if (files.length > 32) throw new APIError("Upload up to 32 files at a time.");
-      uploading = true; upload.disabled = true; let staged = 0, published = 0;
+      const destinations = new Set();
+      for (const file of files) {
+        const destination = cleanPath(path === "." ? file.name : path + "/" + file.name), limit = textFilePath(file.name) ? MAX_SOURCE_BYTES : MAX_UPLOAD_BYTES;
+        if (!UPLOAD_ACCEPT.split(",").includes("." + file.name.split(".").at(-1).toLowerCase())) throw new APIError("This file extension is not supported.", 415);
+        if (file.size > limit) throw new APIError("“" + file.name + "” exceeds the " + (limit === MAX_SOURCE_BYTES ? "4 MiB text" : "16 MiB file") + " limit.");
+        if (!can(user, "write", destination)) throw new APIError("You cannot upload to this folder.", 403);
+        if (destinations.has(destination)) throw new APIError("Select only one version of each filename."); destinations.add(destination);
+        if (drafts.some(draft => draft.path === destination || draft.to === destination)) throw new APIError("A saved change already targets “" + destination + "”. Open or discard it from Publishing before replacing it.", 409, "conflict");
+      }
+      uploading = true; upload.disabled = true; let staged = 0, published = 0, uploadRevision = result.revision;
       try {
         for (const file of files) {
           if (file.size > MAX_UPLOAD_BYTES) throw new APIError("“" + file.name + "” exceeds the 16 MiB file limit.");
           const destination = cleanPath(path === "." ? file.name : path + "/" + file.name);
           if (!can(user, "write", destination)) throw new APIError("You cannot upload to this folder.", 403);
           if (result.files?.some(item => item.path === destination) && !win.confirm("Replace “" + destination + "” with the selected file?")) continue;
-          const saved = await mutation(() => api.request("files/content?path=" + key(destination), { method: "PUT", raw: true, body: file, headers: { "Content-Type": "application/octet-stream", "If-Match": match(projectRevision) } }));
-          if (saved?.published) published++; else staged++; projectRevision = saved?.revision || projectRevision;
+          const saved = await mutation(() => api.request("files/content?path=" + key(destination), { method: "PUT", raw: true, body: file, headers: { "Content-Type": "application/octet-stream", "If-Match": match(uploadRevision) } }));
+          if (saved?.published) published++; else staged++; uploadRevision = saved?.revision || uploadRevision; projectRevision = uploadRevision;
         }
         note(staged + " file(s) saved as drafts; " + published + " file(s) published." + (staged ? " Open Publishing to publish the saved drafts." : ""));
         if (run === filesSequence && active()) await renderFiles(path, active);
@@ -241,13 +263,28 @@ export function boot({ document: doc = globalThis.document, window: win = global
       finally { uploading = false; upload.disabled = false; }
     }));
     const controls = h("div", { class: "actions" }, path !== "." ? button("Parent folder", () => renderFiles(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".", active)) : null, user.role !== "viewer" ? button("New folder", () => dialog("Create folder", [{ name: "path", label: "Folder path", required: true, value: path === "." ? "" : path + "/" }], settings?.publishing?.autoPublish ? "Create and publish" : "Create draft", async data => { cleanPath(data.path); await mutation(() => api.request("files", { method: "POST", body: { path: data.path, revision: projectRevision } }), result => result?.published ? "Folder published." : "Folder saved as a draft. Publish it from Publishing."); if (run === filesSequence && active()) await renderFiles(path, active); })) : null);
-    const rows = (result.files || []).map(item => {
-      const write = can(user, "write", item.path) && item.canWrite !== false; const actions = [];
-      if (!item.directory) actions.push(h("a", { class: "button", href: new URL("files/content?path=" + key(item.path), api.base).href, download: "" }, "Download"));
-      if (write) actions.push(button("Move", () => dialog("Move file", [{ name: "to", label: "New path", required: true, value: item.path }], settings?.publishing?.autoPublish ? "Move and publish" : "Save move as draft", async data => { cleanPath(data.to); await mutation(() => api.request("files/move", { method: "POST", body: { path: item.path, to: data.to, revision: item.revision } }), result => result?.published ? "Move published." : "Move saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); })), button("Delete", async () => { if (!win.confirm(settings?.publishing?.autoPublish ? "Delete “" + item.path + "” and publish its removal now?" : "Stage deletion of “" + item.path + "”?")) return; await mutation(() => api.request("files/content?path=" + key(item.path), { method: "DELETE", headers: { "If-Match": match(item.revision) } }), result => result?.published ? "Deletion published." : "Deletion saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); }, { class: "danger" }));
-      return h("tr", {}, h("td", { class: "path" }, item.directory ? button((item.name || item.path) + "/", () => renderFiles(item.path, active), { class: "quiet" }) : item.name || item.path), h("td", {}, item.directory ? "Folder" : (item.size || 0).toLocaleString() + " bytes"), h("td", {}, h("div", { class: "actions" }, actions)));
+    const items = new Map((result.files || []).map(item => [item.path, { ...item, drafts: [] }]));
+    for (const draft of drafts) {
+      if (draft.operation !== "write" || !textFilePath(draft.path) || !can(user, "read", draft.path)) continue;
+      const parent = draft.path.includes("/") ? draft.path.slice(0, draft.path.lastIndexOf("/")) : "."; if (parent !== path) continue;
+      if (!items.has(draft.path)) items.set(draft.path, { path: draft.path, name: draft.path.split("/").at(-1), directory: false, revision: result.revision, draftOnly: true, drafts: [] });
+      items.get(draft.path).drafts.push(draft);
+    }
+    const rows = [...items.values()].map(item => {
+      const write = can(user, "write", item.path) && item.canWrite !== false, actions = [];
+      if (!item.directory && !item.draftOnly) actions.push(h("a", { class: "button", href: new URL("files/content?path=" + key(item.path), api.base).href, download: "" }, "Download"));
+      if (!item.directory && textFilePath(item.path)) {
+        if (!item.draftOnly) actions.push(button("Open source", () => openSource(item.path)));
+        for (const draft of item.drafts) actions.push(button(item.drafts.length > 1 ? "Open draft “" + draft.id.slice(0, 12) + "”" : "Open saved draft", () => openSource(item.path, draft)), item.draftOnly ? h("a", { class: "button", href: new URL("files/content?path=" + key(item.path) + "&draftId=" + key(draft.id), api.base).href, download: "" }, "Download draft") : null);
+      }
+      if (write && !item.draftOnly) {
+        actions.push(button("Move", () => dialog("Move file", [{ name: "to", label: "New path", required: true, value: item.path }], settings?.publishing?.autoPublish ? "Move and publish" : "Save move as draft", async data => { cleanPath(data.to); await mutation(() => api.request("files/move", { method: "POST", body: { path: item.path, to: data.to, revision: item.revision } }), result => result?.published ? "Move published." : "Move saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); })));
+        if (item.directory) { if (can(user, "read", item.path)) actions.push(button("Review folder deletion", () => showDeleteReview(item), { class: "danger" })); }
+        else actions.push(button("Delete", async () => { if (!win.confirm(settings?.publishing?.autoPublish ? "Delete “" + item.path + "” and publish its removal now?" : "Stage deletion of “" + item.path + "”?")) return; await mutation(() => api.request("files/content?path=" + key(item.path), { method: "DELETE", headers: { "If-Match": match(item.revision) } }), result => result?.published ? "Deletion published." : "Deletion saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); }, { class: "danger" }));
+      }
+      return h("tr", {}, h("td", { class: "path" }, item.directory ? button((item.name || item.path) + "/", () => renderFiles(item.path, active), { class: "quiet" }) : item.name || item.path), h("td", {}, item.directory ? "Folder" : item.draftOnly ? "Saved source draft" : (item.size || 0).toLocaleString() + " bytes"), h("td", {}, h("div", { class: "actions" }, actions)));
     });
-    $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, path === "." ? "Content files" : path), controls), h("p", { class: "muted small" }, settings?.publishing?.autoPublish ? "Automatic publishing is enabled. File changes update the published site after validation. Remove files before deleting their folder." : "File changes are drafts until you publish them. Images and PDFs can be up to 16 MiB; documentation source and text files can be up to 4 MiB. Remove files before deleting their folder."), user.role !== "viewer" ? h("label", {}, "Upload files", upload) : null, rows.length ? table(["Name", "Size", "Actions"], rows) : h("p", { class: "muted" }, "This folder is empty.")));
+    $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, path === "." ? "Content files" : path), controls), h("p", { class: "muted small" }, settings?.publishing?.autoPublish ? "Automatic publishing is enabled. File changes update the published site after validation. Folder deletion is always a separate draft after a reviewed plan." : "File changes are drafts until you publish them. Images and PDFs can be up to 16 MiB; documentation source and text files can be up to 4 MiB. Folder deletion is always a separate draft after a reviewed plan."), user.role !== "viewer" ? h("label", {}, "Upload files", upload) : null, rows.length ? table(["Name", "Size", "Actions"], rows) : h("p", { class: "muted" }, "This folder is empty.")), reviewHost);
   }
   function appearanceMessage(message) { return result => result?.sync && (result.sync.retryable || result.sync.pendingPush || result.sync.state === "pending" || result.sync.error) ? message.replace(/\.$/, "") + " locally. " + (result.sync.error || "Git synchronization remains pending. Retry the push from Publishing.") : message; }
   function publicationMessage(result) { return result?.published ? (result.sync?.pendingPush ? "Published locally. The repository still needs to be pushed." : "Documentation published.") : "Draft saved. The published site has not changed."; }
@@ -260,7 +297,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
   async function renderPublishing(active) {
     const [draftResult, status] = await Promise.all([api.request("drafts", { signal: viewLoad.signal }), api.request("sync/status", { signal: viewLoad.signal })]); if (!active()) return; projectRevision = status.revision || projectRevision;
     const summary = h("dl", { class: "status-grid" }, [["Storage", status.backend === "git" ? "Git repository" : "Local files"], ["Branch", status.branch || "—"], ["Ahead", status.ahead ?? "—"], ["Behind", status.behind ?? "—"], ["Push", status.pendingPush ? "Pending" : "Up to date"]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
-    const rows = (draftResult.drafts || []).map(draft => h("tr", {}, h("td", { class: "path" }, draft.path), h("td", {}, draft.operation), h("td", {}, draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : ""), h("td", {}, h("div", { class: "actions" }, can(user, "write", draft.path) ? [button("Publish", async () => { const result = await mutation(() => api.request("drafts/" + key(draft.id) + "/publish", { method: "POST", body: { revision: draft.revision, message: "", push: false } }), publicationMessage); await refreshDocuments(); await renderPublishing(active); if (workspace.document?.draftId === draft.id && !workspace.dirty) workspace.clear(); return result; }, { class: "primary" }), button("Discard", async () => { if (workspace.document?.draftId === draft.id && !await workspace.discardAllowed()) return; if (!win.confirm("Discard this saved draft? Published content will not change.")) return; await mutation(() => api.request("drafts/" + key(draft.id), { method: "DELETE", headers: { "If-Match": match(draft.revision) } }), "Draft discarded."); if (workspace.document?.draftId === draft.id) workspace.clear(); await refreshDocuments(); await renderPublishing(active); }, { class: "danger" })] : h("span", { class: "muted" }, "Read only")))));
+    const rows = (draftResult.drafts || []).map(draft => h("tr", {}, h("td", { class: "path" }, draft.path), h("td", {}, draft.operation === "delete-tree" ? "Delete entire folder" : draft.operation), h("td", {}, draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : ""), h("td", {}, h("div", { class: "actions" }, can(user, "write", draft.path) ? [draft.operation === "write" && textFilePath(draft.path) ? button("Open source draft", () => openSource(draft.path, draft)) : null, button("Publish", async () => { if (draft.operation === "delete-tree" && !win.confirm("Publish deletion of the entire folder “" + draft.path + "” now?" + (insideFolder(workspace.document?.path, draft.path) ? " Your open source is inside this folder; its text will be retained in the editor." : ""))) return; const result = await mutation(() => api.request("drafts/" + key(draft.id) + "/publish", { method: "POST", body: { revision: draft.revision, message: "", push: false } }), publicationMessage); await refreshDocuments(); await renderPublishing(active); if (workspace.document?.draftId === draft.id && !workspace.dirty) workspace.clear(); return result; }, { class: "primary" }), button("Discard", async () => { if (workspace.document?.draftId === draft.id && !await workspace.discardAllowed()) return; if (!win.confirm("Discard this saved draft? Published content will not change.")) return; const openDocument = workspace.document, openContent = workspace.content, openSequence = workspace.sequence; await mutation(() => api.request("drafts/" + key(draft.id), { method: "DELETE", headers: { "If-Match": match(draft.revision) } }), "Draft discarded."); if (workspace.document?.draftId === draft.id && workspace.document === openDocument && workspace.content === openContent && workspace.sequence === openSequence) workspace.clear(); await refreshDocuments(); await renderPublishing(active); }, { class: "danger" })] : h("span", { class: "muted" }, "Read only")))));
     const storage = h("section", { class: "card" }, h("h2", {}, "Storage and synchronization"), summary, status.lastError ? h("p", { class: "notice" }, status.lastError) : null);
     if (canManageStorage(user)) storage.append(button("Manage storage connections", () => navigate("storage")));
     if (status.backend === "git" && can(user, "admin")) {
@@ -353,7 +390,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
   const ready = api.request("session").then(enterSession).catch(showError).finally(() => { if (!user) $("login-progress").textContent = $("setup-notice").hidden ? "Sign in with your workspace account." : ""; });
   function dispose() { api.abortAll(); filesLoad?.abort(); viewLoad?.abort(); previewLoad?.abort(); workspace.dispose(); destroyEditor(); colorQuery.removeEventListener("change", colorChange); compactQuery.removeEventListener("change", navigationChange); win.removeEventListener("beforeunload", beforeUnload); for (const [timer, url] of downloadTimers) { clearTimeout(timer); URL.revokeObjectURL(url); } downloadTimers.clear(); }
   win.addEventListener("pagehide", dispose, { once: true });
-  return { api, workspace, ready, navigate, openDocument, dispose, get user() { return user; }, get documents() { return documents; }, get settings() { return settings; } };
+  return { api, workspace, ready, navigate, openDocument, openSource, dispose, get user() { return user; }, get documents() { return documents; }, get settings() { return settings; } };
 }
 
 if (typeof document !== "undefined" && typeof window !== "undefined") boot();

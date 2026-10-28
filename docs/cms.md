@@ -180,6 +180,22 @@ Open <http://localhost:8090/_docs/admin/>. Stop with Ctrl+C or SIGTERM. On Unix,
 
 `--listen` controls the bind address; `--public-url` controls the address and origin used by the application. Without `--data-dir`, the CMS uses `pb-docs` in the operating system's user configuration directory. `--init=false` requires an existing managed content directory instead of creating the initial page. Run `serve --help` or `admin-user --help` for startup flags.
 
+## Files, source editing and folder deletion
+
+Use **Documents** for pages registered in the project and **Files** for their source tree and attachments. Open text source from Files to edit an unregistered snippet or include; a registered page opens in the document editor. Files supports literal code examples with `.go`, `.js`, `.ts`, `.sh`, `.sql`, `.css` and `.xml` extensions. These are UTF-8 source files up to 4 MiB, without NUL bytes. They can be included as escaped code in documentation; uploading them does not create an executable page or public script asset. Downloads use attachment headers and a sandbox policy.
+
+A source save records both its project base and its own draft revision. Reopening a saved file draft reads the author's bytes, including when the file has not been published yet. A stale save cannot replace a newer draft. Changing the active Git branch also prevents saving that branch's draft onto another branch. Publication checks the original project base again and retains the draft on conflict. Raw-file drafts do not yet have the document editor's manual rebase operation.
+
+For a folder with content, choose deletion in Files and review the server's plan. The plan includes documents, source files and attachments. It requires read and write access to the folder and every descendant; a denied subtree returns no inventory. The preview displays up to 100 entries and reports totals for the complete authorized folder. A single operation supports at most 127 regular files, 1024 total entries and 64 MiB of source bytes. Larger folders require separately reviewed smaller operations.
+
+Staging the reviewed plan creates one owned deletion draft and leaves the source and current editor text intact. Publish that draft explicitly in **Publishing**. Recursive deletion remains a draft even when automatic publication is enabled. Both staging and publication recheck permissions, branch, project revision and the complete plan. A new overlapping draft makes the operation fail; existing drafts are preserved and never discarded automatically. Finish or explicitly discard the overlapping draft before reviewing another deletion plan.
+
+The content root, homepage, final page and unmanaged or unsafe entries are protected. Publication removes affected page and asset references and prunes navigation in the same transaction. Broken remaining references prevent publication. Deleted bytes remain subject to the bounded revision-history retention policy; keep a full data backup when longer recovery is needed.
+
+If startup cannot verify an interrupted deletion's files or Git HEAD, it retains the private transaction and copies and stops. Keep that data for recovery; do not delete the journal or backups to bypass the check. A crash after a successful Git commit but before its receipt is recorded can also require manual inspection.
+
+The CMS API contract in `internal/studio/api/openapi.yaml` documents file downloads, owned source draft revisions and deletion planning. The server provides it at `/_docs/api/v1/openapi.yaml` after sign-in.
+
 ## Storage and synchronization
 
 The default source is local storage. Administrators with read and write access to the content root can manage it in **Storage**. The server keeps connection settings privately under `state/content/`; they are separate from `docs.json`, document Git history and theme settings. Full data backups include them.
