@@ -42,7 +42,7 @@ task docker:up
 task docker:down
 ```
 
-`cms:up` and `cms:down` are aliases. `docker compose down` stops and removes containers while retaining the named data volume. `task docker:down` also handles the optional static and maintenance profiles. A later `up` reuses the accounts, settings, sources, drafts, history, Git repositories and publication. Removing a data volume, including through `down -v`, deletes that stored data.
+`task docker:up` rebuilds the image from the current local source, waits for the CMS health check and prints the documentation and administration links using the running container's published port. Use this single command whenever you want to view the latest local build. `cms:up` and `cms:down` are aliases. `docker compose down` stops and removes containers while retaining the named data volume. `task docker:down` also handles the optional static and maintenance profiles. A later `up` reuses the accounts, settings, sources, drafts, history, Git repositories and publication. Removing a data volume, including through `down -v`, deletes that stored data.
 
 Useful operations:
 

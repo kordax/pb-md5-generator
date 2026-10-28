@@ -13,10 +13,14 @@ vars:
 tasks:
   docker:up:
     aliases: [cms:up]
-    desc: "Build and start the documentation CMS"
+    desc: "Rebuild and start the documentation CMS, then print its URLs"
     dir: '{{.ROOT_DIR}}'
     cmds:
-      - docker compose up --build -d --wait
+      - docker compose up --build -d --wait cms
+      - |
+        cms_address="$(docker compose port cms 8090)"
+        cms_port="${cms_address##*:}"
+        printf '\nDocumentation: http://localhost:%s/\nAdmin: http://localhost:%s/_docs/admin/\n' "$cms_port" "$cms_port"
 
   docker:down:
     aliases: [cms:down]
