@@ -1,0 +1,247 @@
+{
+  "captures": [
+    "studio-documents-desktop.png",
+    "studio-files-desktop.png",
+    "studio-publishing-desktop.png",
+    "studio-storage-desktop.png",
+    "studio-navigation-desktop.png",
+    "studio-appearance-desktop.png",
+    "studio-settings-desktop.png",
+    "studio-people-desktop.png",
+    "studio-editor-desktop.png",
+    "studio-theme-dialog-desktop.png",
+    "desktop.png",
+    "api-desktop.png",
+    "api-operation-desktop.png",
+    "api-dark-desktop.png",
+    "docs-dark-desktop.png",
+    "studio-dark-desktop.png",
+    "mobile.png",
+    "docs-mobile-navigation.png",
+    "api-mobile.png",
+    "studio-documents-mobile.png",
+    "studio-settings-mobile.png",
+    "studio-editor-mobile.png",
+    "studio-login-desktop.png"
+  ],
+  "views": [
+    {
+      "name": "studio-documents",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-files",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-publishing",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-storage",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-navigation",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-appearance",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-settings",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-people",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-documents",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-appearance",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "docs-desktop",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "/_docs/admin/",
+      "apiColumns": null
+    },
+    {
+      "name": "api-desktop",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "/_docs/admin/",
+      "apiColumns": "778.234px 437.766px"
+    },
+    {
+      "name": "studio-appearance",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-documents",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-appearance",
+      "width": 1440,
+      "documentWidth": 1440,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "docs-mobile",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "/_docs/admin/",
+      "apiColumns": null
+    },
+    {
+      "name": "api-mobile",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "/_docs/admin/",
+      "apiColumns": "390px"
+    },
+    {
+      "name": "studio-documents",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-files",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-publishing",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-storage",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-navigation",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-appearance",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-settings",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-people",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-documents",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    },
+    {
+      "name": "studio-editor-mobile",
+      "width": 390,
+      "documentWidth": 390,
+      "fonts": true,
+      "studioLink": "./",
+      "apiColumns": null
+    }
+  ],
+  "externalRequests": [],
+  "consoleErrors": 0
+}

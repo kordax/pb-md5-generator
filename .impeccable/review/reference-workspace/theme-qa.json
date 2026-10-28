@@ -1,0 +1,731 @@
+{
+  "themes": [
+    {
+      "id": "default",
+      "studio": {
+        "background": "rgb(255, 255, 255)",
+        "text": "rgb(24, 24, 27)",
+        "panel": "rgb(250, 250, 250)",
+        "muted": "rgb(113, 113, 122)",
+        "accent": "rgb(101, 87, 210)",
+        "primary": {
+          "background": "rgb(101, 87, 210)",
+          "text": "rgb(255, 255, 255)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 17.71676507806213,
+        "muted": 4.832895561154151,
+        "link": 5.4584486531675225,
+        "bodyOnPanel": 16.973898642198108,
+        "mutedOnPanel": 4.630251574816984,
+        "primary": 5.4584486531675225
+      },
+      "reader": {
+        "background": "rgb(255, 255, 255)",
+        "text": "rgb(24, 24, 27)",
+        "panel": "rgb(250, 250, 250)",
+        "muted": "rgb(113, 113, 122)",
+        "accent": "rgb(101, 87, 210)",
+        "primary": {
+          "background": "rgb(169, 155, 236)",
+          "text": "rgb(25, 26, 31)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 17.71676507806213,
+        "muted": 4.832895561154151,
+        "link": 5.4584486531675225,
+        "bodyOnPanel": 16.973898642198108,
+        "mutedOnPanel": 4.630251574816984,
+        "primary": 7.103086844671955
+      },
+      "api": {
+        "background": "rgb(25, 26, 31)",
+        "text": "rgb(228, 228, 231)",
+        "panel": "rgb(34, 35, 41)",
+        "muted": "rgb(161, 161, 170)",
+        "accent": "rgb(169, 155, 236)",
+        "primary": {
+          "background": "rgb(169, 155, 236)",
+          "text": "rgb(25, 26, 31)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.69042908089645,
+        "muted": 6.778033472330371,
+        "link": 7.103086844671955,
+        "bodyOnPanel": 12.346663984095937,
+        "mutedOnPanel": 6.11274498858427,
+        "primary": 7.103086844671955
+      }
+    },
+    {
+      "id": "paper",
+      "studio": {
+        "background": "rgb(255, 251, 245)",
+        "text": "rgb(41, 37, 36)",
+        "panel": "rgb(250, 242, 230)",
+        "muted": "rgb(107, 96, 88)",
+        "accent": "rgb(154, 52, 18)",
+        "primary": {
+          "background": "rgb(154, 52, 18)",
+          "text": "rgb(255, 251, 245)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 14.713666607224994,
+        "muted": 5.922668483749827,
+        "link": 7.087626962983928,
+        "bodyOnPanel": 13.658251513311484,
+        "mutedOnPanel": 5.497833948561569,
+        "primary": 7.087626962983928
+      },
+      "reader": {
+        "background": "rgb(255, 251, 245)",
+        "text": "rgb(41, 37, 36)",
+        "panel": "rgb(250, 242, 230)",
+        "muted": "rgb(107, 96, 88)",
+        "accent": "rgb(154, 52, 18)",
+        "primary": {
+          "background": "rgb(253, 186, 116)",
+          "text": "rgb(25, 26, 31)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 14.713666607224994,
+        "muted": 5.922668483749827,
+        "link": 7.087626962983928,
+        "bodyOnPanel": 13.658251513311484,
+        "mutedOnPanel": 5.497833948561569,
+        "primary": 10.30069224303828
+      },
+      "api": {
+        "background": "rgb(25, 26, 31)",
+        "text": "rgb(228, 228, 231)",
+        "panel": "rgb(34, 35, 41)",
+        "muted": "rgb(161, 161, 170)",
+        "accent": "rgb(253, 186, 116)",
+        "primary": {
+          "background": "rgb(253, 186, 116)",
+          "text": "rgb(25, 26, 31)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.69042908089645,
+        "muted": 6.778033472330371,
+        "link": 10.30069224303828,
+        "bodyOnPanel": 12.346663984095937,
+        "mutedOnPanel": 6.11274498858427,
+        "primary": 10.30069224303828
+      }
+    },
+    {
+      "id": "midnight",
+      "studio": {
+        "background": "rgb(17, 18, 27)",
+        "text": "rgb(233, 233, 244)",
+        "panel": "rgb(25, 27, 41)",
+        "muted": "rgb(170, 171, 197)",
+        "accent": "rgb(165, 180, 252)",
+        "primary": {
+          "background": "rgb(165, 180, 252)",
+          "text": "rgb(17, 18, 27)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 15.474060253512462,
+        "muted": 8.294048980583803,
+        "link": 9.353741569929484,
+        "bodyOnPanel": 14.166525312537427,
+        "mutedOnPanel": 7.593214250293151,
+        "primary": 9.353741569929484
+      },
+      "reader": {
+        "background": "rgb(17, 18, 27)",
+        "text": "rgb(233, 233, 244)",
+        "panel": "rgb(25, 27, 41)",
+        "muted": "rgb(170, 171, 197)",
+        "accent": "rgb(165, 180, 252)",
+        "primary": {
+          "background": "rgb(165, 180, 252)",
+          "text": "rgb(17, 18, 27)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 15.474060253512462,
+        "muted": 8.294048980583803,
+        "link": 9.353741569929484,
+        "bodyOnPanel": 14.166525312537427,
+        "mutedOnPanel": 7.593214250293151,
+        "primary": 9.353741569929484
+      },
+      "api": {
+        "background": "rgb(17, 18, 27)",
+        "text": "rgb(233, 233, 244)",
+        "panel": "rgb(25, 27, 41)",
+        "muted": "rgb(170, 171, 197)",
+        "accent": "rgb(165, 180, 252)",
+        "primary": {
+          "background": "rgb(165, 180, 252)",
+          "text": "rgb(17, 18, 27)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 15.474060253512462,
+        "muted": 8.294048980583803,
+        "link": 9.353741569929484,
+        "bodyOnPanel": 14.166525312537427,
+        "mutedOnPanel": 7.593214250293151,
+        "primary": 9.353741569929484
+      }
+    },
+    {
+      "id": "ocean",
+      "studio": {
+        "background": "rgb(247, 251, 255)",
+        "text": "rgb(20, 43, 67)",
+        "panel": "rgb(240, 246, 252)",
+        "muted": "rgb(82, 101, 122)",
+        "accent": "rgb(29, 94, 168)",
+        "primary": {
+          "background": "rgb(29, 94, 168)",
+          "text": "rgb(247, 251, 255)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 13.868764789349656,
+        "muted": 5.768682569683558,
+        "link": 6.2750063735668755,
+        "bodyOnPanel": 13.24755983953477,
+        "mutedOnPanel": 5.5102937210277485,
+        "primary": 6.2750063735668755
+      },
+      "reader": {
+        "background": "rgb(247, 251, 255)",
+        "text": "rgb(20, 43, 67)",
+        "panel": "rgb(240, 246, 252)",
+        "muted": "rgb(82, 101, 122)",
+        "accent": "rgb(29, 94, 168)",
+        "primary": {
+          "background": "rgb(128, 187, 244)",
+          "text": "rgb(17, 29, 42)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 13.868764789349656,
+        "muted": 5.768682569683558,
+        "link": 6.2750063735668755,
+        "bodyOnPanel": 13.24755983953477,
+        "mutedOnPanel": 5.5102937210277485,
+        "primary": 8.379712804903974
+      },
+      "api": {
+        "background": "rgb(17, 29, 42)",
+        "text": "rgb(224, 236, 246)",
+        "panel": "rgb(25, 42, 59)",
+        "muted": "rgb(158, 179, 199)",
+        "accent": "rgb(128, 187, 244)",
+        "primary": {
+          "background": "rgb(128, 187, 244)",
+          "text": "rgb(17, 29, 42)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 14.191575148815303,
+        "muted": 7.888448994806824,
+        "link": 8.379712804903974,
+        "bodyOnPanel": 12.188287197194803,
+        "mutedOnPanel": 6.774912642248486,
+        "primary": 8.379712804903974
+      }
+    },
+    {
+      "id": "forest",
+      "studio": {
+        "background": "rgb(247, 251, 248)",
+        "text": "rgb(32, 57, 43)",
+        "panel": "rgb(240, 246, 241)",
+        "muted": "rgb(82, 107, 91)",
+        "accent": "rgb(36, 104, 68)",
+        "primary": {
+          "background": "rgb(36, 104, 68)",
+          "text": "rgb(247, 251, 248)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 11.958709401924203,
+        "muted": 5.565916454687788,
+        "link": 6.407028190356026,
+        "bodyOnPanel": 11.39278442265971,
+        "mutedOnPanel": 5.302519206009745,
+        "primary": 6.407028190356026
+      },
+      "reader": {
+        "background": "rgb(247, 251, 248)",
+        "text": "rgb(32, 57, 43)",
+        "panel": "rgb(240, 246, 241)",
+        "muted": "rgb(82, 107, 91)",
+        "accent": "rgb(36, 104, 68)",
+        "primary": {
+          "background": "rgb(131, 201, 158)",
+          "text": "rgb(20, 34, 27)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 11.958709401924203,
+        "muted": 5.565916454687788,
+        "link": 6.407028190356026,
+        "bodyOnPanel": 11.39278442265971,
+        "mutedOnPanel": 5.302519206009745,
+        "primary": 8.485244117944069
+      },
+      "api": {
+        "background": "rgb(20, 34, 27)",
+        "text": "rgb(224, 239, 229)",
+        "panel": "rgb(28, 46, 36)",
+        "muted": "rgb(160, 185, 168)",
+        "accent": "rgb(131, 201, 158)",
+        "primary": {
+          "background": "rgb(131, 201, 158)",
+          "text": "rgb(20, 34, 27)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.84788098434882,
+        "muted": 7.846731409981752,
+        "link": 8.485244117944069,
+        "bodyOnPanel": 12.040738735471678,
+        "mutedOnPanel": 6.8227364852278445,
+        "primary": 8.485244117944069
+      }
+    },
+    {
+      "id": "sand",
+      "studio": {
+        "background": "rgb(255, 251, 244)",
+        "text": "rgb(66, 51, 35)",
+        "panel": "rgb(248, 240, 225)",
+        "muted": "rgb(117, 99, 76)",
+        "accent": "rgb(138, 87, 28)",
+        "primary": {
+          "background": "rgb(138, 87, 28)",
+          "text": "rgb(255, 251, 244)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 11.770907601263806,
+        "muted": 5.584233904428901,
+        "link": 5.882393209365328,
+        "bodyOnPanel": 10.7216568687893,
+        "mutedOnPanel": 5.086459075757074,
+        "primary": 5.882393209365328
+      },
+      "reader": {
+        "background": "rgb(255, 251, 244)",
+        "text": "rgb(66, 51, 35)",
+        "panel": "rgb(248, 240, 225)",
+        "muted": "rgb(117, 99, 76)",
+        "accent": "rgb(138, 87, 28)",
+        "primary": {
+          "background": "rgb(224, 179, 114)",
+          "text": "rgb(39, 32, 23)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 11.770907601263806,
+        "muted": 5.584233904428901,
+        "link": 5.882393209365328,
+        "bodyOnPanel": 10.7216568687893,
+        "mutedOnPanel": 5.086459075757074,
+        "primary": 8.320650288913379
+      },
+      "api": {
+        "background": "rgb(39, 32, 23)",
+        "text": "rgb(243, 231, 211)",
+        "panel": "rgb(52, 42, 30)",
+        "muted": "rgb(196, 175, 143)",
+        "accent": "rgb(224, 179, 114)",
+        "primary": {
+          "background": "rgb(224, 179, 114)",
+          "text": "rgb(39, 32, 23)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.163769771826304,
+        "muted": 7.566228811355763,
+        "link": 8.320650288913379,
+        "bodyOnPanel": 11.485662828628303,
+        "mutedOnPanel": 6.601691955862026,
+        "primary": 8.320650288913379
+      }
+    },
+    {
+      "id": "rose",
+      "studio": {
+        "background": "rgb(255, 248, 250)",
+        "text": "rgb(68, 39, 53)",
+        "panel": "rgb(251, 238, 243)",
+        "muted": "rgb(125, 91, 107)",
+        "accent": "rgb(164, 55, 98)",
+        "primary": {
+          "background": "rgb(164, 55, 98)",
+          "text": "rgb(255, 248, 250)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 12.636593254246417,
+        "muted": 5.602028250684898,
+        "link": 6.076122933415826,
+        "bodyOnPanel": 11.733538640059919,
+        "mutedOnPanel": 5.201687956524991,
+        "primary": 6.076122933415826
+      },
+      "reader": {
+        "background": "rgb(255, 248, 250)",
+        "text": "rgb(68, 39, 53)",
+        "panel": "rgb(251, 238, 243)",
+        "muted": "rgb(125, 91, 107)",
+        "accent": "rgb(164, 55, 98)",
+        "primary": {
+          "background": "rgb(233, 156, 189)",
+          "text": "rgb(41, 27, 36)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 12.636593254246417,
+        "muted": 5.602028250684898,
+        "link": 6.076122933415826,
+        "bodyOnPanel": 11.733538640059919,
+        "mutedOnPanel": 5.201687956524991,
+        "primary": 7.798427874751813
+      },
+      "api": {
+        "background": "rgb(41, 27, 36)",
+        "text": "rgb(245, 227, 237)",
+        "panel": "rgb(56, 37, 49)",
+        "muted": "rgb(199, 164, 184)",
+        "accent": "rgb(233, 156, 189)",
+        "primary": {
+          "background": "rgb(233, 156, 189)",
+          "text": "rgb(41, 27, 36)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.390201564139794,
+        "muted": 7.387788484196149,
+        "link": 7.798427874751813,
+        "bodyOnPanel": 11.571789958511797,
+        "mutedOnPanel": 6.384514541288169,
+        "primary": 7.798427874751813
+      }
+    },
+    {
+      "id": "glacier",
+      "studio": {
+        "background": "rgb(244, 251, 252)",
+        "text": "rgb(25, 55, 61)",
+        "panel": "rgb(232, 244, 246)",
+        "muted": "rgb(82, 108, 115)",
+        "accent": "rgb(23, 103, 122)",
+        "primary": {
+          "background": "rgb(23, 103, 122)",
+          "text": "rgb(244, 251, 252)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 12.114073867270696,
+        "muted": 5.345043263289159,
+        "link": 6.1552673704978345,
+        "bodyOnPanel": 11.299095385245035,
+        "mutedOnPanel": 4.9854536411021915,
+        "primary": 6.1552673704978345
+      },
+      "reader": {
+        "background": "rgb(244, 251, 252)",
+        "text": "rgb(25, 55, 61)",
+        "panel": "rgb(232, 244, 246)",
+        "muted": "rgb(82, 108, 115)",
+        "accent": "rgb(23, 103, 122)",
+        "primary": {
+          "background": "rgb(125, 201, 219)",
+          "text": "rgb(18, 35, 40)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 12.114073867270696,
+        "muted": 5.345043263289159,
+        "link": 6.1552673704978345,
+        "bodyOnPanel": 11.299095385245035,
+        "mutedOnPanel": 4.9854536411021915,
+        "primary": 8.675034600704503
+      },
+      "api": {
+        "background": "rgb(18, 35, 40)",
+        "text": "rgb(222, 240, 244)",
+        "panel": "rgb(26, 48, 55)",
+        "muted": "rgb(157, 186, 194)",
+        "accent": "rgb(125, 201, 219)",
+        "primary": {
+          "background": "rgb(125, 201, 219)",
+          "text": "rgb(18, 35, 40)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.785211986449879,
+        "muted": 7.893589342142693,
+        "link": 8.675034600704503,
+        "bodyOnPanel": 11.74625916709509,
+        "mutedOnPanel": 6.726058784048198,
+        "primary": 8.675034600704503
+      }
+    },
+    {
+      "id": "graphite",
+      "studio": {
+        "background": "rgb(27, 29, 32)",
+        "text": "rgb(232, 234, 237)",
+        "panel": "rgb(39, 42, 47)",
+        "muted": "rgb(175, 181, 189)",
+        "accent": "rgb(183, 194, 207)",
+        "primary": {
+          "background": "rgb(183, 194, 207)",
+          "text": "rgb(27, 29, 32)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 14.014720938131303,
+        "muted": 8.17818840736495,
+        "link": 9.355792365226522,
+        "bodyOnPanel": 11.945954282377599,
+        "mutedOnPanel": 6.97097468143228,
+        "primary": 9.355792365226522
+      },
+      "reader": {
+        "background": "rgb(27, 29, 32)",
+        "text": "rgb(232, 234, 237)",
+        "panel": "rgb(39, 42, 47)",
+        "muted": "rgb(175, 181, 189)",
+        "accent": "rgb(183, 194, 207)",
+        "primary": {
+          "background": "rgb(183, 194, 207)",
+          "text": "rgb(27, 29, 32)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 14.014720938131303,
+        "muted": 8.17818840736495,
+        "link": 9.355792365226522,
+        "bodyOnPanel": 11.945954282377599,
+        "mutedOnPanel": 6.97097468143228,
+        "primary": 9.355792365226522
+      },
+      "api": {
+        "background": "rgb(27, 29, 32)",
+        "text": "rgb(232, 234, 237)",
+        "panel": "rgb(39, 42, 47)",
+        "muted": "rgb(175, 181, 189)",
+        "accent": "rgb(183, 194, 207)",
+        "primary": {
+          "background": "rgb(183, 194, 207)",
+          "text": "rgb(27, 29, 32)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 14.014720938131303,
+        "muted": 8.17818840736495,
+        "link": 9.355792365226522,
+        "bodyOnPanel": 11.945954282377599,
+        "mutedOnPanel": 6.97097468143228,
+        "primary": 9.355792365226522
+      }
+    },
+    {
+      "id": "aubergine",
+      "studio": {
+        "background": "rgb(37, 28, 44)",
+        "text": "rgb(240, 229, 246)",
+        "panel": "rgb(51, 38, 61)",
+        "muted": "rgb(187, 165, 199)",
+        "accent": "rgb(207, 156, 230)",
+        "primary": {
+          "background": "rgb(207, 156, 230)",
+          "text": "rgb(37, 28, 44)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 13.459589319694533,
+        "muted": 7.274582092720343,
+        "link": 7.455190658254442,
+        "bodyOnPanel": 11.608754932703178,
+        "mutedOnPanel": 6.274250925966443,
+        "primary": 7.455190658254442
+      },
+      "reader": {
+        "background": "rgb(37, 28, 44)",
+        "text": "rgb(240, 229, 246)",
+        "panel": "rgb(51, 38, 61)",
+        "muted": "rgb(187, 165, 199)",
+        "accent": "rgb(207, 156, 230)",
+        "primary": {
+          "background": "rgb(207, 156, 230)",
+          "text": "rgb(37, 28, 44)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 13.459589319694533,
+        "muted": 7.274582092720343,
+        "link": 7.455190658254442,
+        "bodyOnPanel": 11.608754932703178,
+        "mutedOnPanel": 6.274250925966443,
+        "primary": 7.455190658254442
+      },
+      "api": {
+        "background": "rgb(37, 28, 44)",
+        "text": "rgb(240, 229, 246)",
+        "panel": "rgb(51, 38, 61)",
+        "muted": "rgb(187, 165, 199)",
+        "accent": "rgb(207, 156, 230)",
+        "primary": {
+          "background": "rgb(207, 156, 230)",
+          "text": "rgb(37, 28, 44)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.459589319694533,
+        "muted": 7.274582092720343,
+        "link": 7.455190658254442,
+        "bodyOnPanel": 11.608754932703178,
+        "mutedOnPanel": 6.274250925966443,
+        "primary": 7.455190658254442
+      }
+    },
+    {
+      "id": "teal-night",
+      "studio": {
+        "background": "rgb(18, 39, 36)",
+        "text": "rgb(224, 242, 237)",
+        "panel": "rgb(27, 54, 49)",
+        "muted": "rgb(160, 190, 182)",
+        "accent": "rgb(126, 208, 185)",
+        "primary": {
+          "background": "rgb(126, 208, 185)",
+          "text": "rgb(18, 39, 36)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "studioContrast": {
+        "body": 13.48827038549004,
+        "muted": 7.854153283767454,
+        "link": 8.655144844952337,
+        "bodyOnPanel": 11.178166907255772,
+        "mutedOnPanel": 6.508991428253752,
+        "primary": 8.655144844952337
+      },
+      "reader": {
+        "background": "rgb(18, 39, 36)",
+        "text": "rgb(224, 242, 237)",
+        "panel": "rgb(27, 54, 49)",
+        "muted": "rgb(160, 190, 182)",
+        "accent": "rgb(126, 208, 185)",
+        "primary": {
+          "background": "rgb(126, 208, 185)",
+          "text": "rgb(18, 39, 36)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "readerContrast": {
+        "body": 13.48827038549004,
+        "muted": 7.854153283767454,
+        "link": 8.655144844952337,
+        "bodyOnPanel": 11.178166907255772,
+        "mutedOnPanel": 6.508991428253752,
+        "primary": 8.655144844952337
+      },
+      "api": {
+        "background": "rgb(18, 39, 36)",
+        "text": "rgb(224, 242, 237)",
+        "panel": "rgb(27, 54, 49)",
+        "muted": "rgb(160, 190, 182)",
+        "accent": "rgb(126, 208, 185)",
+        "primary": {
+          "background": "rgb(126, 208, 185)",
+          "text": "rgb(18, 39, 36)"
+        },
+        "viewport": 1440,
+        "documentWidth": 1440
+      },
+      "apiContrast": {
+        "body": 13.48827038549004,
+        "muted": 7.854153283767454,
+        "link": 8.655144844952337,
+        "bodyOnPanel": 11.178166907255772,
+        "mutedOnPanel": 6.508991428253752,
+        "primary": 8.655144844952337
+      }
+    }
+  ],
+  "failures": []
+}

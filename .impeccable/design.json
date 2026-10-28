@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T00:00:00Z",
+  "title": "Design System: Reference Workspace",
+  "extensions": {
+    "colorMeta": {
+      "reader-accent": {"role": "primary", "displayName": "Workspace Violet", "canonical": "#6557d2", "tonalRamp": ["oklch(15% 0.025 285)", "oklch(26% 0.07 285)", "oklch(37% 0.13 285)", "oklch(48% 0.17 285)", "oklch(60% 0.16 285)", "oklch(72% 0.12 285)", "oklch(84% 0.07 285)", "oklch(95% 0.02 285)"]},
+      "reader-background": {"role": "neutral", "displayName": "Workspace White", "canonical": "#ffffff", "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#fafafa"]},
+      "reader-panel": {"role": "neutral", "displayName": "Quiet Zinc", "canonical": "#fafafa", "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#fafafa"]},
+      "reader-dark-background": {"role": "neutral", "displayName": "Workbench Charcoal", "canonical": "#191a1f", "tonalRamp": ["oklch(15% 0.008 275)", "oklch(26% 0.009 275)", "oklch(37% 0.01 275)", "oklch(48% 0.01 275)", "oklch(60% 0.009 275)", "oklch(72% 0.008 275)", "oklch(84% 0.005 275)", "oklch(95% 0.002 275)"]}
+    },
+    "typographyMeta": {
+      "reader-headline": {"displayName": "Reader headline", "purpose": "Document title; 30px on mobile."},
+      "reader-title": {"displayName": "Reader section", "purpose": "Second-level document sections."},
+      "reader-body": {"displayName": "Reader prose", "purpose": "Measured documentation reading."},
+      "reader-code": {"displayName": "Code block", "purpose": "Local IBM Plex Mono for code; inline code uses the relative source size."},
+      "studio-headline": {"displayName": "Studio title", "purpose": "Workspace title."},
+      "studio-label": {"displayName": "Studio control label", "purpose": "Compact labels and actions."}
+    },
+    "shadows": [{"name": "reader-search-layer", "value": "0 8px 24px #18181b12", "purpose": "Temporary reader search results; ordinary document rows remain flat."}],
+    "motion": [],
+    "breakpoints": [{"name": "reader-inline-contents", "value": "1150px"}, {"name": "reader-mobile", "value": "760px"}],
+    "previewRampPolicy": "Ramps are preview aids synthesized for the panel; they do not add theme tokens. The canonical full palettes remain in internal/site/appearance.go.",
+    "fontDelivery": "Local DM Sans and IBM Plex Mono WOFF2 with OFL licenses. DM Sans Cyrillic uses system fallback; Plex Mono Cyrillic subsets are local. No CDN.",
+    "builtinSchemes": ["default", "paper", "midnight", "ocean", "forest", "sand", "rose", "glacier", "graphite", "aubergine", "teal-night"],
+    "builtinPolicy": "All schemes provide complete light/dark background, surface, text, muted, border and accent values. All share font=system, density=comfortable, width=normal, radius=5. Custom typography remains supported.",
+    "sourceFiles": ["docs/design.md", "internal/site/appearance.go", "internal/site/ui.go", "internal/site/api_style.go", "internal/studio/web/assets/studio.css"]
+  },
+  "components": [
+    {"name": "Primary action", "kind": "button", "refersTo": "studio-button-primary", "description": "Compact Studio primary action.", "html": "<button class=\"ds-primary\">New document</button>", "css": ".ds-primary{font:500 13px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;min-height:36px;padding:7px 12px;border:1px solid var(--accent,#6557d2);border-radius:5px;background:var(--accent,#6557d2);color:var(--bg,#fff);cursor:pointer}.ds-primary:hover,.ds-primary:active{filter:brightness(.92)}.ds-primary:focus-visible{outline:2px solid var(--accent,#6557d2);outline-offset:3px}.ds-primary:disabled{opacity:.5;cursor:not-allowed}"},
+    {"name": "Secondary action", "kind": "button", "refersTo": "studio-button-secondary", "description": "Quiet bordered workspace action.", "html": "<button class=\"ds-secondary\">Preview</button>", "css": ".ds-secondary{font:500 13px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;min-height:36px;padding:7px 12px;border:1px solid var(--line,#e4e4e7);border-radius:5px;background:var(--bg,#fff);color:var(--text,#18181b);cursor:pointer}.ds-secondary:hover{border-color:var(--muted,#71717a);background:var(--subtle,#f4f4f5)}.ds-secondary:active{background:var(--line,#e4e4e7)}.ds-secondary:focus-visible{outline:2px solid var(--accent,#6557d2);outline-offset:3px}"},
+    {"name": "Labeled field", "kind": "input", "refersTo": "studio-input", "description": "Compact field with an explicit label.", "html": "<label class=\"ds-field\">Document title<input class=\"ds-input\" value=\"Getting started\"></label>", "css": ".ds-field{display:grid;gap:8px;font:500 13px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;color:var(--text,#18181b)}.ds-input{min-width:0;min-height:36px;padding:7px 10px;background:var(--bg,#fff);color:var(--text,#18181b);caret-color:var(--accent,#6557d2);border:1px solid var(--line,#e4e4e7);border-radius:5px;font:400 13px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif}.ds-input:hover{border-color:var(--muted,#71717a)}.ds-input:focus-visible{outline:2px solid var(--accent,#6557d2);outline-offset:3px}"},
+    {"name": "Current document navigation", "kind": "nav", "refersTo": "reader-navigation-current", "description": "Selected document uses accent text and a quiet tint.", "html": "<nav aria-label=\"Documentation\"><a class=\"ds-nav-current\" href=\"#getting-started\" aria-current=\"page\">Getting started</a></nav>", "css": ".ds-nav-current{display:block;padding:7px 10px;border-radius:5px;color:var(--accent,#6557d2);background:color-mix(in srgb,var(--accent,#6557d2) 10%,transparent);font:550 13px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;text-decoration:none;overflow-wrap:anywhere}.ds-nav-current:hover{background:var(--code,#fafafa)}.ds-nav-current:focus-visible{outline:3px solid var(--accent,#6557d2);outline-offset:3px}"},
+    {"name": "Document status badge", "kind": "chip", "refersTo": "studio-badge", "description": "Small status label with a fine border.", "html": "<span class=\"ds-badge\">Published</span>", "css": ".ds-badge{display:inline-block;border:1px solid var(--line,#e4e4e7);border-radius:4px;padding:3px 7px;background:var(--panel,#fafafa);color:var(--text,#18181b);font:500 11px/1.25 'DM Sans',ui-sans-serif,system-ui,sans-serif}"},
+    {"name": "Code preview", "kind": "custom", "description": "Bounded mono preview for examples and raw detail.", "html": "<pre class=\"ds-code\"><code>curl https://api.example.test/pets</code></pre>", "css": ".ds-code{padding:20px;border:1px solid var(--line,#e4e4e7);border-radius:5px;background:var(--panel,#fafafa);color:var(--text,#18181b);overflow:auto;max-height:24rem;font:13px/1.65 'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace}.ds-code code{font:inherit}"}
+  ],
+  "narrative": {
+    "northStar": "Reference Workspace",
+    "overview": "A quiet documentation workspace connects Studio, reading and API exploration through one recognizable shell. White and zinc surfaces, a restrained violet accent, fine rules and measured typography keep the document or operation in focus. The API workbench supplies a composed dark companion to the article.\n\nThe approved direction is recorded in .impeccable/mocks/decision/reference-workspace.html and .impeccable/surfaces/internal-site-ui-go.md. These are developer references, not published content assets.",
+    "keyCharacteristics": ["Shared workspace navigation and a narrow project rail.", "Flat document rows and fine boundaries rather than raised document cards.", "Local DM Sans and IBM Plex Mono with explicit fallback stacks.", "Eleven color schemes with complete light and dark palettes."],
+    "rules": [
+      {"name": "The Color-Only Scheme Rule", "body": "Built-in schemes change palette and initial mode; they share the system font setting, comfortable density, normal width and five-pixel radius. Personal custom typography remains available.", "section": "colors"},
+      {"name": "The Reading Measure Rule", "body": "Keep prose, breadcrumbs, adjacent-page links and footer aligned to the same reading measure. Code keeps its own monospace rhythm.", "section": "typography"},
+      {"name": "The Flat Workspace Rule", "body": "Reserve floating depth for temporary overlays; separate ordinary workspace content through alignment, tone and borders.", "section": "elevation"}
+    ],
+    "dos": ["Do preserve the Reference Workspace shell across Studio, reader and API surfaces.", "Do keep all eleven built-in schemes color-only and complete in both modes.", "Do retain local fonts, visible focus and native disclosure behavior.", "Do preserve custom appearance controls and their generated token overrides.", "Do register images as project assets before using them in published Markdown."],
+    "donts": ["Don't turn flat document inventories into raised card grids.", "Don't replace labeled actions with decorative text glyphs.", "Don't ship QA screenshots or developer evidence paths as document images.", "Don't treat preview tonal ramps as additional implemented palette values.", "Don't treat this visual inventory as evidence that roadmap acceptance gates passed."]
+  }
+}

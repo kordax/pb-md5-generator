@@ -4,7 +4,9 @@ Read [SPARC.md](SPARC.md) before continuing. It records the full objective, the 
 
 ## Authorized scope and stopping point
 
-The user requested completion of execution stage 1, file-operation reliability and publication recovery, followed by this handoff and a pause. Stages 2–9 are future work. Do not start them without a new request to continue. The overall CMS objective is not complete merely because stage 1 is complete.
+Stage 1, file-operation reliability and publication recovery, remains accepted. The user subsequently authorized a separate frontend and development slice: Reference Workspace across reader/API/Studio, at least ten color schemes, and Docker-only live development. This slice now has eleven schemes. The user then explicitly requested stopping, saving the handoff and pushing everything to main. Stop after this checkpoint; stages 2–9 remain future work and need a new request to continue. The overall CMS objective is not complete.
+
+The user selected concept 2, Reference Workspace, and asked to preserve all three proposals. The immutable sketches and selection record are in `.impeccable/mocks/decision/` and `.impeccable/choices/selection.md`. Keep this flat workspace and its shared typography. Builtin schemes change colors while retaining the same layout; explicit custom typography and layout settings remain supported.
 
 Check the acceptance status in SPARC.md and the current Git tree. A draft or a local commit does not prove that its checks passed or that it was pushed or deployed.
 
@@ -24,16 +26,22 @@ Check the acceptance status in SPARC.md and the current Git tree. A draft or a l
 
 The repository currently requires Go `1.26.10`; use that version rather than the general new-project default. The application uses Uber Fx modules. Go tests use Testify, with `require` for prerequisites and `assert` for independent checks.
 
-Canonical local checks from the repository root:
+Keep heavy build, watch and application processes inside Docker. Run final checks from a clean detached checkout. On this Linux workstation the canonical verification command is:
 
 ```sh
-env GOTOOLCHAIN=go1.26.10 task --force verify integration-test
-env GOTOOLCHAIN=go1.26.10 task docker:test
+docker compose -p pb-docs-check -f compose.dev.yaml run --build --rm --no-deps -T \
+  -e CGO_ENABLED=1 -e GOTOOLCHAIN=go1.26.10 \
+  -v /usr/bin/task:/usr/local/bin/task:ro --entrypoint task dev \
+  --force verify integration-test
+task docker:test
+task dev:test
 ```
+
+The inner verification and integration tasks completed with exit 0 for code commit `37d8f9d`; total coverage was 90.1% (13780/15286). Docker acceptance also completed with exit 0. The outer CI tool session reported 143 after the user's stop request, but its recorded child exit was 0 and its log contains completed results for every integration package. Do not confuse that wrapper status with an unrun integration suite. Final handoff prose was written after these checks; no application code changed afterward.
 
 These cover the repository's lint/security commands, unit and race tests, coverage, documentation/site checks, Node tests and integration scenarios. Docker acceptance is a separate command. Do not describe a command as passing until its process exits successfully.
 
-Useful focused checks:
+Useful focused commands to run inside the Docker verification environment:
 
 ```sh
 env GOTOOLCHAIN=go1.26.10 go test -race ./internal/studio/content
@@ -47,6 +55,14 @@ gitleaks git --pre-commit --staged --redact=100 --no-banner
 Scan the actual outgoing commit range with Gitleaks as well. A final push requires the applicable checks for that change, not only the focused examples above.
 
 This workstation has a pre-existing ignored `tmp/main.go` scratch file. Repository-wide Go commands can include ignored Go source. Preserve it and perform final verification in a clean detached worktree containing the exact committed candidate. Do not add exclusions or security suppressions for the scratch file. Do not assume an old `/tmp` checkout still exists or matches `HEAD`.
+
+## Live development
+
+Run `task dev` from the root. It builds and runs the watcher, Go service and frontend build tools inside Docker, prints the reader/admin links, and prompts privately for the first development owner's password when needed. The default URLs are `http://localhost:8091/` and `http://localhost:8091/_docs/admin/`. Sign in before opening the authenticated reader.
+
+Ctrl+C stops the foreground development environment. `task dev:down` removes its container while keeping data; `task dev:clean` deletes only its development volumes. Development data is separate from production. There is no extra database daemon or host watcher, and Compose services use restart policy `no`.
+
+Admin CSS updates in place. Module changes offer a reload so unsaved editor content is preserved; reader/Go changes rebuild before announcing an update. The watcher includes `internal/site` and embedded fonts, while excluding generated root `site`, `build` and `tmp` directories.
 
 ## Run the CMS
 

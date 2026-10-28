@@ -1,3 +1,123 @@
+---
+name: Reference Workspace
+description: Implemented documentation, API and Studio visual system alongside the architecture roadmap.
+colors:
+  reader-background: "#ffffff"
+  reader-panel: "#fafafa"
+  reader-text: "#18181b"
+  reader-muted: "#71717a"
+  reader-line: "#e4e4e7"
+  reader-accent: "#6557d2"
+  reader-code: "#fafafa"
+  reader-dark-background: "#191a1f"
+  reader-dark-panel: "#222329"
+  reader-dark-text: "#e4e4e7"
+  reader-dark-muted: "#a1a1aa"
+  reader-dark-line: "#37383f"
+  reader-dark-accent: "#a99bec"
+  reader-dark-code: "#222329"
+  studio-background: "#ffffff"
+  studio-panel: "#fafafa"
+  studio-subtle: "#f4f4f5"
+  studio-text: "#18181b"
+  studio-muted: "#71717a"
+  studio-line: "#e4e4e7"
+  studio-accent: "#6557d2"
+  studio-danger: "#b42335"
+typography:
+  reader-headline:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "34px"
+    fontWeight: 650
+    lineHeight: 1.2
+    letterSpacing: "-0.035em"
+  reader-title:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "25px"
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: "-0.025em"
+  reader-body:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "15px"
+    fontWeight: 400
+    lineHeight: 1.75
+  reader-code:
+    fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace'
+    fontSize: "13px"
+    lineHeight: 1.65
+  studio-headline:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "1.75rem"
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: "-0.025em"
+  studio-body:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "16px"
+    fontWeight: 400
+    lineHeight: 1.5
+  studio-label:
+    fontFamily: '"DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "0.8125rem"
+    fontWeight: 500
+    lineHeight: 1.5
+rounded:
+  code: "4px"
+  reader: "5px"
+  studio: "5px"
+  badge: "4px"
+spacing:
+  space-1: "4px"
+  space-2: "8px"
+  space-3: "12px"
+  space-4: "16px"
+  space-6: "24px"
+  space-8: "32px"
+  space-12: "48px"
+components:
+  reader-button:
+    backgroundColor: "{colors.reader-panel}"
+    textColor: "{colors.reader-text}"
+    rounded: "{rounded.reader}"
+    padding: "8px 12px"
+    height: "40px"
+  reader-search:
+    backgroundColor: "{colors.reader-panel}"
+    textColor: "{colors.reader-text}"
+    rounded: "{rounded.reader}"
+    padding: "8px 12px"
+    height: "36px"
+  reader-navigation-current:
+    backgroundColor: "color-mix(in srgb, #6557d2 10%, transparent)"
+    textColor: "{colors.reader-accent}"
+    rounded: "{rounded.reader}"
+    padding: "7px 10px"
+  studio-button-primary:
+    backgroundColor: "{colors.studio-accent}"
+    textColor: "{colors.studio-background}"
+    rounded: "{rounded.studio}"
+    padding: "7px 12px"
+    height: "36px"
+  studio-button-secondary:
+    backgroundColor: "{colors.studio-background}"
+    textColor: "{colors.studio-text}"
+    rounded: "{rounded.studio}"
+    padding: "7px 12px"
+    height: "36px"
+  studio-input:
+    backgroundColor: "{colors.studio-background}"
+    textColor: "{colors.studio-text}"
+    rounded: "{rounded.studio}"
+    padding: "7px 10px"
+    height: "36px"
+  studio-badge:
+    backgroundColor: "{colors.studio-panel}"
+    textColor: "{colors.studio-text}"
+    rounded: "{rounded.badge}"
+    padding: "3px 7px"
+---
+
 # Documentation system design
 
 Status: draft standard and implementation roadmap. The project is growing from a
@@ -445,3 +565,181 @@ a memory plateau, host portability or complete Scalar/MkDocs feature coverage.
 The goal is complete only when those behaviors are implemented, documented and
 verified against their own acceptance criteria. This roadmap does not narrow that
 goal to the first static renderer.
+
+# Implemented visual system
+
+The sections below record the shipped Reference Workspace. The architecture and
+roadmap above retain their own acceptance criteria. The frontmatter owns default
+primitives; `.impeccable/design.json` extends them with previews and metadata.
+Source authority is `internal/site/appearance.go`, `internal/site/ui.go`,
+`internal/site/api_style.go` and `internal/studio/web/assets/studio.css`.
+
+## Overview
+
+**Creative North Star: "Reference Workspace"**
+
+A quiet documentation workspace connects Studio, reading and API exploration
+through one recognizable shell. White and zinc surfaces, a restrained violet
+accent, fine rules and measured typography keep the document or operation in
+focus. The API workbench supplies a composed dark companion to the article.
+
+The approved direction is recorded in
+`.impeccable/mocks/decision/reference-workspace.html` and
+`.impeccable/surfaces/internal-site-ui-go.md`. These are developer references,
+not published content assets.
+
+**Key Characteristics:**
+
+- Shared workspace navigation and a narrow project rail.
+- Flat document rows and fine boundaries rather than raised document cards.
+- Local DM Sans and IBM Plex Mono with explicit fallback stacks.
+- Eleven color schemes with complete light and dark palettes.
+
+## Colors
+
+### Primary
+
+Workspace violet is the Default scheme's action, link, selection and focus color.
+Its lighter dark-mode counterpart keeps the same role. The API workbench always
+uses the chosen scheme's dark palette, including beside a light article.
+
+**The Color-Only Scheme Rule.** Built-in schemes change palette and initial mode;
+they share the system font setting, comfortable density, normal width and
+five-pixel radius. Personal custom typography remains available.
+
+| Scheme | ID | Initial mode | Light accent | Dark accent |
+| --- | --- | --- | --- | --- |
+| Default | default | light | #6557d2 | #a99bec |
+| Paper | paper | light | #9a3412 | #fdba74 |
+| Midnight | midnight | dark | #4338ca | #a5b4fc |
+| Ocean | ocean | light | #1d5ea8 | #80bbf4 |
+| Forest | forest | light | #246844 | #83c99e |
+| Sand | sand | light | #8a571c | #e0b372 |
+| Rose | rose | light | #a43762 | #e99cbd |
+| Glacier | glacier | light | #17677a | #7dc9db |
+| Graphite | graphite | dark | #4f5964 | #b7c2cf |
+| Aubergine | aubergine | dark | #7b3e91 | #cf9ce6 |
+| Teal Night | teal-night | dark | #166b5c | #7ed0b9 |
+
+Every built-in supplies background, surface, text, muted, border and accent for
+both modes. `BuiltinThemes` is the canonical registry of those complete values;
+the sidecar's color ramps are preview aids rather than additional theme tokens.
+
+### Neutral
+
+White and quiet zinc distinguish the page, support panel, body text, supporting
+text and border. These roles map to `--bg`, `--panel`, `--text`, `--muted` and
+`--line`; `--accent` carries the selected scheme's accent. Generated appearance
+CSS maps the selected surface to code backgrounds. Studio also has a subtle
+surface and a danger color. Status badges retain semantic success and warning
+colors independently of the selected scheme.
+
+## Typography
+
+**Display and Body Font:** DM Sans, followed by UI sans and operating-system
+fallbacks. **Code Font:** IBM Plex Mono, followed by UI monospace, SFMono-Regular
+and Consolas. Local WOFF2 files and OFL license texts ship with both delivery
+paths; no font CDN is needed. DM Sans Cyrillic text uses the system fallback;
+IBM Plex Mono has local Cyrillic subsets.
+
+The reader's headline, section title and body roles are normative in the
+frontmatter. Its next heading is (20px), weight (600). Mobile headlines become
+(30px). Studio uses a (28px) main title at weight (600), (16px) section titles,
+(15px) subheadings, (13px) labels and controls, and (11px) badges. The reader lead
+paragraph is (17px) with a (1.75) line height; navigation uses (13px) text.
+
+**The Reading Measure Rule.** Keep prose, breadcrumbs, adjacent-page links and
+footer aligned to the same reading measure. Code keeps its own monospace rhythm.
+
+Serif and mono custom font settings, compact density and wide width are supported
+appearance options, rather than alternate built-in visual identities.
+
+## Layout
+
+The shared desktop shell uses a (68px) header and (224px) project rail. Reader
+layout adds a flexible article and (200px) contents rail inside an (1800px)
+maximum shell. Normal prose measure is (42rem), with wide mode at (48rem);
+article width caps are (900px) and (1200px) respectively. Reader content padding
+is (34px 40px 48px).
+
+The API surface pairs operation prose and its dark request/example workbench in
+an approximately (64:36) content split when space permits. Schema and source
+details use progressive disclosure and stable anchors. Long code and tables
+scroll inside their own containers.
+
+Studio uses the same shell dimensions, a (1360px) workspace maximum and (36px)
+workspace gutter. Its document list is a flat row inventory with aligned actions.
+The shared spacing rhythm is (4, 8, 12, 16, 24, 32, 48px).
+
+At (1150px) the reader contents rail becomes an inline disclosure. At (760px)
+the reader stacks, its header wraps workspace links and search into rows, and
+main padding becomes (26px 20px 40px). At mobile widths, including the verified
+(390px) viewport, Studio and API content use one column and document rows stay
+flat. Native navigation disclosures retain a usable no-JavaScript path.
+
+## Elevation & Depth
+
+The workspace is flat at rest: tone, spacing and fine borders separate content.
+Reader search results use the limited floating shadow
+(`0 8px 24px #18181b12`) to distinguish a temporary result layer. Ordinary
+document rows and API operations do not inherit that shadow.
+
+**The Flat Workspace Rule.** Reserve floating depth for temporary overlays;
+separate ordinary workspace content through alignment, tone and borders.
+
+## Shapes
+
+Built-ins share gently curved (5px) controls and panels, with (4px) badges and
+inline code. Borders are fine (1px). Tabs join their content through an underline
+and shared edge. Custom appearance can override the reader radius through
+`--docs-radius` and the Studio radius through `--radius`.
+
+## Components
+
+### Buttons and fields
+
+Studio controls are compact, with a (36px) minimum height, (7px 12px) button
+padding and (13px) text. Primary buttons use accent with background-colored text;
+secondary buttons use the page background and a fine border. Hover changes the
+border and surface; primary hover uses brightness (.92), and disabled controls
+use opacity (.5). Studio focus has a (2px) outline and (3px) offset.
+
+Reader search and theme controls use (36px) height. General reader buttons and
+API controls retain their (40px) minimum. Reader focus uses a (3px) outline and
+(3px) offset. Copy targets are (40px), increasing to (44px) for mobile or coarse
+pointers; code reserves space for them. Inputs retain labels, visible placeholders
+and a separate readonly surface.
+
+### Navigation and disclosure
+
+Current workspace tabs have accent underlines; current reader navigation uses
+accent text with a ten-percent accent tint. Nested navigation indents under a
+fine guide. Secondary API provenance and raw data use native disclosures, while
+operation descriptions lead. Schema trees expand without losing stable anchors.
+Icons are inline SVG with adjacent text or accessible names.
+
+### Document rows, badges and code
+
+Studio documents use shared row boundaries and aligned metadata/actions, including
+on mobile. Badges use a fine border, restrained surface and compact type. Reader
+callouts use a semantic leading rule. API method chips, endpoint paths and code
+previews use the mono vocabulary; the request panel inherits the chosen dark
+palette rather than a fixed accent. Raw payloads remain bounded and scrollable.
+
+## Do's and Don'ts
+
+### Do:
+
+- **Do** preserve the Reference Workspace shell across Studio, reader and API surfaces.
+- **Do** keep all eleven built-in schemes color-only and complete in both modes.
+- **Do** retain local fonts, visible focus and native disclosure behavior.
+- **Do** preserve custom appearance controls and their generated token overrides.
+- **Do** register images as project assets before using them in published Markdown.
+
+### Don't:
+
+- **Don't** turn flat document inventories into raised card grids.
+- **Don't** replace labeled actions with decorative text glyphs.
+- **Don't** ship QA screenshots or developer evidence paths as document images.
+- **Don't** treat preview tonal ramps as additional implemented palette values.
+- **Don't** treat this visual inventory as evidence that roadmap acceptance gates passed.
