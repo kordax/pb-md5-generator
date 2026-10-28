@@ -8,9 +8,46 @@ vars:
   GOVULNCHECK_VERSION: v1.9.0
   GOSEC_VERSION: v2.30.0
   ACTIONLINT_VERSION: v1.7.12
+  DEV_PROJECT: 'pb-docs-dev-{{.ROOT_DIR | sha256sum | trunc 12}}'
+  DEV_UID:
+    sh: id -u
+  DEV_GID:
+    sh: id -g
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 
 tasks:
+  dev:
+    desc: "Run development in Docker with live UI updates; Ctrl+C stops it"
+    dir: '{{.ROOT_DIR}}'
+    interactive: true
+    env:
+      DEV_UID: '{{.DEV_UID}}'
+      DEV_GID: '{{.DEV_GID}}'
+    cmds:
+      - docker compose -p '{{.DEV_PROJECT}}' -f compose.dev.yaml run --build --rm --no-deps dev --bootstrap-only --port "${DEV_PORT:-8091}" --state-dir /dev-data
+      - docker compose -p '{{.DEV_PROJECT}}' -f compose.dev.yaml up --build dev
+
+  dev:test:
+    desc: "Verify the development watcher and proxy inside Docker"
+    dir: '{{.ROOT_DIR}}'
+    env:
+      DEV_UID: '{{.DEV_UID}}'
+      DEV_GID: '{{.DEV_GID}}'
+    cmds:
+      - docker compose -p '{{.DEV_PROJECT}}' -f compose.dev.yaml run --build --rm --no-deps -T --entrypoint python3 dev -m unittest discover -s deploy/dev -p '*_test.py'
+
+  dev:down:
+    desc: "Remove the development container and keep its data and caches"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose -p '{{.DEV_PROJECT}}' -f compose.dev.yaml down
+
+  dev:clean:
+    desc: "Delete the development container, accounts, content and cache volumes"
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose -p '{{.DEV_PROJECT}}' -f compose.dev.yaml down --volumes
+
   docker:up:
     aliases: [cms:up]
     desc: "Rebuild and start the documentation CMS, then print its URLs"

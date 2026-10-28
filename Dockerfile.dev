@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       ca-certificates git nodejs npm openssh-client python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid "$DEV_GID" dev \
+    && useradd --uid "$DEV_UID" --gid "$DEV_GID" --create-home --shell /bin/sh dev \
+    && install -d -o "$DEV_UID" -g "$DEV_GID" -m 0700 /dev-data /home/dev/.cache /go/pkg/mod \
+    && install -d -o "$DEV_UID" -g "$DEV_GID" /workspace/internal/studio/web/node_modules
+ENV GOTOOLCHAIN=local \
+    CGO_ENABLED=0 \
+    GOCACHE=/home/dev/.cache/go-build \
+    npm_config_cache=/home/dev/.cache/npm \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PB_DOCS_DEV_CONTAINER=1
+WORKDIR /workspace
+USER dev
+STOPSIGNAL SIGTERM
+CMD ["python3", "deploy/dev/run.py", "--bind", "0.0.0.0", "--state-dir", "/dev-data"]

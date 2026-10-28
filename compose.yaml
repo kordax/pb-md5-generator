@@ -30,7 +30,7 @@ services:
       - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:-8080}:8090"
     volumes:
       - cms-data:/data
-    restart: unless-stopped
+    restart: "no"
 
   docs:
     profiles: [static]
@@ -51,7 +51,7 @@ services:
       - no-new-privileges:true
     pids_limit: 32
     mem_limit: 128m
-    restart: unless-stopped
+    restart: "no"
 
   backup:
     <<: *cms

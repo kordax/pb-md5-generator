@@ -1,0 +1,30 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        DEV_UID: ${DEV_UID:-1000}
+        DEV_GID: ${DEV_GID:-1000}
+    init: true
+    restart: "no"
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    entrypoint: ["python3", "deploy/dev/run.py"]
+    command: ["--bind", "0.0.0.0", "--port", "${DEV_PORT:-8091}", "--state-dir", "/dev-data"]
+    ports:
+      - "127.0.0.1:${DEV_PORT:-8091}:${DEV_PORT:-8091}"
+    volumes:
+      - .:/workspace
+      - dev-data:/dev-data
+      - dev-node-modules:/workspace/internal/studio/web/node_modules
+      - dev-go-modules:/go/pkg/mod
+      - dev-cache:/home/dev/.cache
+    stop_grace_period: 20s
+
+volumes:
+  dev-data:
+  dev-node-modules:
+  dev-go-modules:
+  dev-cache:

@@ -147,6 +147,32 @@ docker compose --profile maintenance run --rm --no-deps -T --entrypoint sh backu
 
 Then select a new `CMS_DATA_VOLUME` and run `task cms:restore`. Imported files keep the container user's ownership and private permissions. Restore rejects malformed checksums, unsafe paths, symbolic links and hard links before extracting the archive.
 
+## Local development
+
+Run the development CMS with Docker Compose and Task:
+
+```sh
+task dev
+```
+
+Go, Node.js, Python, the source watcher and the CMS all run inside the development container. The first start builds the image, installs the editor dependencies and asks for a hidden password of at least 10 characters for the development administrator `owner`. Open the printed addresses, normally `http://localhost:8091/` for documentation and `http://localhost:8091/_docs/admin/` for administration. Docker publishes the port only on the host loopback interface. Port 8080 remains available for the regular Docker CMS.
+
+The runner watches the mounted checkout. A successful Go build restarts the CMS; a failed build leaves the last working application running. Administration CSS updates without reloading the page. Administration module and backend changes show a reload button so an unsaved editor stays open; save before reloading. The documentation reader reloads automatically after code changes. Editor source changes rebuild the bundled editor.
+
+Development accounts, documents and drafts persist in a dedicated Docker volume. Editor dependencies and build caches use separate Docker volumes. The Compose project name is derived from the checkout path, keeping development projects separate. Production `CMS_*` settings and production data are not passed to this container. Generated editor files use your host UID and GID.
+
+`task dev` stays in the foreground. Press Ctrl+C to stop the container and keep development data. The service has `restart: "no"`, so Docker and computer restarts do not start it. Start it again explicitly with `task dev`.
+
+```sh
+# Remove the stopped development container and keep its data.
+task dev:down
+
+# Delete the development container and all its accounts, content and caches.
+task dev:clean
+```
+
+Use `DEV_PORT=8092 task dev` to choose another loopback port. The regular Docker deployment uses its own Compose file and data volumes.
+
 ## Native binary
 
 Build from the project root:
