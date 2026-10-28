@@ -17,7 +17,7 @@ Check the acceptance status in SPARC.md and the current Git tree. A draft or a l
 - A daemon restart can reset the MCP session. Reorient with `workspace.info` and retry a read-only call. Do not restart the daemon, remove its store or re-track the repository to expose a checkout.
 - Never print, log or commit passwords, tokens, session cookies, CSRF values, SSH identities or decrypted credentials.
 - Do not wait for GitHub Actions. Run the repository's checks locally before pushing. Keep the 90% total coverage gate and all security/lint settings intact. Report failures accurately.
-- Browser launches and browser sessions remain prohibited until the user explicitly allows them. Node DOM tests, HTTP tests and Docker tests are available. When browser checks are allowed, respect the user's incognito preference.
+- On 28 October 2026 the user explicitly authorized Playwright whenever useful, revoking the earlier browser ban. Use fresh isolated browser contexts and respect the incognito preference; never reuse the user's regular browser profile or credentials. An initial Impeccable reader critique is recorded in `.impeccable/critique/`; it is not full CMS browser acceptance.
 - Use short commits such as `content: recover interrupted publications`, normally without a body. Keep one coherent change per commit.
 
 ## Toolchain and verification
