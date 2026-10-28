@@ -98,7 +98,7 @@ class Client:
         self.response_headers = {}
         for line in headers.decode("iso-8859-1").splitlines():
             name, _, value = line.partition(":")
-            if name.lower() in {"etag", "x-base-revision", "content-type", "content-disposition",
+            if name.lower() in {"etag", "x-base-revision", "x-source-revision", "content-type", "content-disposition",
                                 "content-security-policy", "x-content-type-options"}:
                 self.response_headers[name.lower()] = value.strip()
             if line.lower().startswith("location:"):
@@ -208,6 +208,52 @@ def exercise_source_and_folder_deletion(client):
     settings["publishing"]["autoPublish"] = False
     client.request("/_docs/api/v1/settings", "PUT", settings)
     print("Literal drafts, reviewed rebase, exact-path history, file restore and explicit folder deletion passed", flush=True)
+    exercise_source_registration(client)
+
+
+def exercise_source_registration(client):
+    path = "/_docs/api/v1/files/content?path=registration/imported.md"
+    source = b"\xef\xbb\xbf# Registered source\r\n\r\nExact existing bytes.\r\n"
+    revision = client.request("/_docs/api/v1/documents")["revision"]
+    uploaded = client.request(path, "PUT", source, headers={"If-Match": f'"{revision}"'})["draft"]
+    client.request(f"/_docs/api/v1/drafts/{uploaded['id']}/publish", "POST",
+                   {"revision": uploaded["revision"], "push": True, "message": "docs: add source for registration"})
+    settings = client.request("/_docs/api/v1/settings")
+    settings.pop("sync", None)
+    settings["publishing"]["autoPublish"] = True
+    client.request("/_docs/api/v1/settings", "PUT", settings)
+    require(client.request(path, parse=False) == source, "Registration review changed source bytes")
+    revision = client.response_headers["etag"].strip('"')
+    source_revision = client.response_headers.get("x-source-revision")
+    require(source_revision == hashlib.sha256(source).hexdigest(), "Live source review digest does not match exact bytes")
+    metadata = {"path": "registration/imported.md", "revision": revision, "sourceRevision": source_revision,
+                "title": "Registered source", "kind": "markdown", "id": "registered-source",
+                "outputPath": "registration/imported.html"}
+    client.request("/_docs/api/v1/documents/register", "POST", {**metadata, "sourceRevision": "0" * 64}, expected=409)
+    registered = client.request("/_docs/api/v1/documents/register", "POST", metadata, expected=201)
+    require(registered.get("published") is False and registered.get("document", {}).get("id") == metadata["id"],
+            "Registration bypassed explicit publication or lost page identity")
+    draft = registered["draft"]
+    published = client.request("/_docs/api/v1/documents?published=true")
+    require(not any(item["id"] == metadata["id"] for item in published["documents"]),
+            "Staging registration changed the live document catalog")
+    client.request("/registration/imported.html", expected=404, parse=False)
+    preview = client.request("/_docs/api/v1/preview", "POST", {"documentId": metadata["id"], "content": source.decode("utf-8")})
+    require("Exact existing bytes." in preview.get("html", ""), "Registration draft could not be previewed")
+    require(client.request(path, parse=False) == source, "Staging registration replaced the original source")
+    result = client.request(f"/_docs/api/v1/drafts/{draft['id']}/publish", "POST",
+                            {"revision": draft["revision"], "push": True, "message": "docs: register existing source"})
+    require(result.get("published") is True, "Explicit registration publication failed")
+    require(b"Exact existing bytes." in client.request("/registration/imported.html", parse=False),
+            "Registered page is missing from the rendered site")
+    require(client.request(path, parse=False) == source, "Registration publication changed BOM or line endings")
+    metadata["revision"] = client.response_headers["etag"].strip('"')
+    client.request("/_docs/api/v1/documents/register", "POST", metadata, expected=409)
+    settings = client.request("/_docs/api/v1/settings")
+    settings.pop("sync", None)
+    settings["publishing"]["autoPublish"] = False
+    client.request("/_docs/api/v1/settings", "PUT", settings)
+    print("Reviewed source registration, preview and explicit Git publication passed", flush=True)
 
 
 def main():

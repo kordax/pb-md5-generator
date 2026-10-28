@@ -1,6 +1,8 @@
 package apiweb
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"path"
 	"strings"
@@ -150,5 +152,7 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request, name string) 
 	if _, ok := h.filePrincipal(w, r, name, false); !ok {
 		return
 	}
+	digest := sha256.Sum256(data)
+	w.Header().Set("X-Source-Revision", hex.EncodeToString(digest[:]))
 	writeFileDownload(w, r, name, data, file.Revision)
 }

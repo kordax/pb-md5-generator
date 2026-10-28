@@ -12,13 +12,41 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestCMSRegistrationContractBindsReviewedLiveBytesAndExplicitPublication(t *testing.T) {
+	var root map[string]any
+	require.NoError(t, yaml.Unmarshal(APIContract(), &root))
+	paths := contractObject(t, root["paths"])
+	operation := contractObject(t, contractObject(t, paths["/documents/register"])["post"])
+	body := contractObject(t, operation["requestBody"])
+	media := contractObject(t, contractObject(t, body["content"])["application/json"])
+	schema := contractObject(t, media["schema"])
+	assert.Equal(t, false, schema["additionalProperties"])
+	assert.ElementsMatch(t, []any{"path", "revision", "sourceRevision", "title", "kind"}, schema["required"])
+	properties := contractObject(t, schema["properties"])
+	assert.NotContains(t, properties, "content", "registration copies reviewed server-side bytes")
+	assert.NotContains(t, properties, "publish", "registration requires explicit later publication")
+	assert.Equal(t, "#/components/schemas/Revision", contractObject(t, properties["sourceRevision"])["$ref"])
+	response := contractObject(t, contractObject(t, operation["responses"])["201"])
+	media = contractObject(t, contractObject(t, response["content"])["application/json"])
+	variants, ok := contractObject(t, media["schema"])["allOf"].([]any)
+	require.True(t, ok)
+	require.Len(t, variants, 2)
+	result := contractObject(t, variants[1])
+	assert.ElementsMatch(t, []any{"document", "draft", "revision", "published"}, result["required"])
+	assert.Equal(t, false, contractObject(t, contractObject(t, result["properties"])["published"])["const"])
+	get := contractObject(t, contractObject(t, paths["/files/content"])["get"])
+	response = contractObject(t, contractObject(t, get["responses"])["200"])
+	header := contractObject(t, contractObject(t, response["headers"])["X-Source-Revision"])
+	assert.Equal(t, "#/components/schemas/Revision", contractObject(t, header["schema"])["$ref"])
+}
+
 func TestCMSContractValidatesWithoutExternalResolution(t *testing.T) {
 	api, err := importer.OpenAPI(context.Background(), "api/openapi.yaml", APIContract(), func(string) ([]byte, error) {
 		return nil, errors.New("the CMS contract must be self-contained")
 	})
 	require.NoError(t, err)
 	require.NotNil(t, api)
-	assert.Equal(t, 46, len(api.Operations))
+	assert.Equal(t, 47, len(api.Operations))
 	first := APIContract()
 	first[0] = '!'
 	assert.True(t, strings.HasPrefix(string(APIContract()), "openapi:"))
@@ -58,6 +86,7 @@ func TestCMSContractMutationsDeclareCSRFAndRevisionProtection(t *testing.T) {
 	}
 	revisionOperations := []struct{ path, method string }{
 		{"/documents", "post"},
+		{"/documents/register", "post"},
 		{"/documents/{id}", "put"},
 		{"/documents/{id}", "delete"},
 		{"/documents/{id}/move", "post"},
@@ -154,6 +183,7 @@ func TestCMSContractHTTPRoutesAndDefaultErrors(t *testing.T) {
 		"/themes":                 {"get", "post"},
 		"/themes/{id}":            {"delete"},
 	}
+	routes["/documents/register"] = []string{"post"}
 	routes["/files/history"] = []string{"get"}
 	routes["/files/rebase"] = []string{"post"}
 	routes["/files/restore"] = []string{"post"}

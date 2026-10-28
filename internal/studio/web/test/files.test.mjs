@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { API, APIError, Workspace, MAX_SOURCE_BYTES, formatLanguage } from "../assets/core.mjs";
-import { deleteTreePlan, insideFolder, literalCodePath, textFilePath, newTextFilePath, sourceHistorySnapshot, UPLOAD_ACCEPT, reviewFolderDeletion } from "../assets/files.mjs";
+import { deleteTreePlan, insideFolder, literalCodePath, textFilePath, newTextFilePath, registrationKind, sourceDraftOverlap, registrationReview, registrationRequest, sourceHistorySnapshot, UPLOAD_ACCEPT, reviewFolderDeletion } from "../assets/files.mjs";
 
 const metadata = (id = "file-draft", revision = "d1", baseRevision = "p0") => ({ id, revision, baseRevision, path: "examples/main.go", operation: "write" });
 const saved = (draft = metadata()) => ({ revision: "current-project", published: false, draft });
@@ -149,6 +149,44 @@ test("new text filenames reject published aliases and overlapping saved operatio
   assert.throws(() => newTextFilePath("existing.txt", ".", [{ path: "EXISTING.TXT" }]), error => error.status === 409);
   for (const draft of [{ path: "snippets", operation: "delete-tree" }, { path: "old.txt", to: "snippets/new.txt", operation: "move" }, { path: "snippets/new.txt", operation: "write" }]) assert.throws(() => newTextFilePath("new.txt", "snippets", [], [draft]), error => error.status === 409);
   for (const name of ["../escape.txt", "folder/file.txt", "folder\\file.txt", "run.exe"]) assert.throws(() => newTextFilePath(name, "."), { name: "APIError" });
+});
+
+test("source GET exposes a strong content digest while preserving BOM and CRLF and allowing ordinary draft reads", async () => {
+  const content = "\uFEFF// точные байты\r\n", digest = "a".repeat(64), project = "1".repeat(64);
+  const api = new API("https://docs.test/api/", async () => new Response(content, { headers: { ETag: '"' + project + '"', "X-Source-Revision": digest } }));
+  const live = await api.source("source.txt"); assert.equal(live.content, content); assert.equal(live.sourceRevision, digest); assert.equal(live.revision, project); assert.equal(api.pending.size, 0);
+  const draft = new API("https://docs.test/api/", async () => attachment(content, "d1", project)); const saved = await draft.source("source.txt", { draftId: "owner" }); assert.equal(saved.content, content); assert.equal(saved.sourceRevision, ""); assert.equal(saved.baseRevision, project);
+  for (const digest of ["not-a-digest", "A".repeat(64), "z".repeat(64)]) { const malformed = new API("https://docs.test/api/", async () => new Response(content, { headers: { ETag: '"' + project + '"', "X-Source-Revision": digest } })); await assert.rejects(malformed.source("source.txt"), /valid content revision/); assert.equal(malformed.pending.size, 0); }
+});
+
+test("registration review requires both exact live source and project tokens and excludes registered or binary sources", () => {
+  const revision = "1".repeat(64), sourceRevision = "a".repeat(64), live = { content: "\uFEFFsaved\r\n", revision, sourceRevision, baseRevision: "" }, catalog = { revision, documents: [] };
+  const reviewed = registrationReview("source.md", live, catalog); assert.equal(reviewed.content, live.content); assert.equal(Object.isFrozen(reviewed), true); assert.equal(reviewed.sourceRevision, sourceRevision);
+  for (const source of [{ ...live, sourceRevision: "" }, { ...live, sourceRevision: "a".repeat(63) }, { ...live, baseRevision: revision }, { ...live, content: "binary\u0000data" }]) assert.throws(() => registrationReview("source.md", source, catalog), { name: "APIError" });
+  assert.throws(() => registrationReview("source.md", live, { ...catalog, revision: "2".repeat(64) }), error => error.status === 409); assert.throws(() => registrationReview("source.md", live, { ...catalog, documents: [{ path: "SOURCE.MD" }] }), error => error.status === 409); assert.throws(() => registrationReview("image.png", live, catalog), error => error.status === 415);
+  assert.equal(registrationReview("empty.txt", { ...live, content: "" }, catalog).content, "");
+});
+
+test("explicit registration accepts all text suffixes and preserves live digest without sending source bytes", () => {
+  const revision = "1".repeat(64), sourceRevision = "a".repeat(64);
+  for (const extension of ["md", "markdown", "html", "htm", "proto", "json", "yaml", "yml", "txt", "go", "js", "ts", "sh", "sql", "css", "xml"]) {
+    const path = "sources/example." + extension, reviewed = registrationReview(path, { content: "\uFEFFliteral source\r\n", revision, sourceRevision }, { revision, documents: [] });
+    for (const kind of ["markdown", "html", "protobuf", "openapi"]) { const request = registrationRequest(reviewed, { title: "Explicit format", kind, id: "stable.docs_1" }); assert.equal(request.kind, kind); assert.equal(request.path, path); assert.equal(request.revision, revision); assert.equal(request.sourceRevision, sourceRevision); assert.equal("content" in request, false); assert.equal("draftId" in request, false); }
+  }
+  assert.equal(registrationKind("a.HTML"), "html"); assert.equal(registrationKind("a.proto"), "protobuf"); assert.equal(registrationKind("a.yaml"), "openapi"); assert.equal(registrationKind("a.go"), "markdown");
+});
+
+test("registration metadata bounds IDs, Unicode titles and portable page URLs independently of the source path cap", () => {
+  const reviewed = { path: "source.md", revision: "1".repeat(64), sourceRevision: "a".repeat(64) }, fields = { title: "Пример", kind: "markdown", id: "a".repeat(128) };
+  const longURL = "guide/".repeat(350) + "example.html"; assert.ok(longURL.length > 2048); assert.equal(registrationRequest(reviewed, { ...fields, outputPath: longURL }).outputPath, longURL);
+  for (const changes of [{ title: "\nTitle" }, { title: "Ж".repeat(129) }, { title: " " }, { id: "Uppercase" }, { id: "a".repeat(129) }, { kind: "javascript" }, ...["_docs/index.html", "assets/x.html", ".hidden/x.html", "guide/../x.html", "con.html", "https://docs.test/x.html", "Guide/x.html", "x.html?query", "x".repeat(4097) + ".html"].map(outputPath => ({ outputPath }))]) assert.throws(() => registrationRequest(reviewed, { ...fields, ...changes }), { name: "APIError" });
+  const unicode = { ...reviewed, path: "пример.md" }; assert.throws(() => registrationRequest(unicode, fields), /lowercase ASCII/); assert.equal(registrationRequest(unicode, { ...fields, outputPath: "manual/example.html" }).outputPath, "manual/example.html"); assert.equal("id" in registrationRequest(reviewed, { title: "Generated ID", kind: "markdown", id: "" }), false);
+});
+
+test("visible overlapping drafts are advisory when their active branch cannot be identified", () => {
+  const path = "docs/source.md", revision = "1".repeat(64), drafts = [{ path, branch: "other", operation: "write" }];
+  assert.equal(sourceDraftOverlap(path, drafts), true); assert.equal(sourceDraftOverlap(path, [{ path: "docs2/source.md" }]), false); assert.equal(sourceDraftOverlap(path, [{ changes: [{ path: "old", to: "docs" }] }]), true);
+  const review = registrationReview(path, { content: "published", revision, sourceRevision: "a".repeat(64) }, { revision, documents: [] }, drafts); assert.equal(review.pendingChanges, true); assert.equal(registrationRequest(review, { title: "Explicit active branch check", kind: "markdown" }).path, path);
 });
 
 test("history snapshots permit zero-byte versions while rejecting other paths and unsafe restore metadata", () => {

@@ -10,8 +10,8 @@ info:
     header on every unsafe request, including login. The request Host must match
     the configured public URL. Responses containing user or document data are
     not publicly cacheable. Automatic publication settings apply to document
-    saves and file changes; manual rebase, history restore and recursive folder
-    deletion remain drafts until explicitly published.
+    saves and file changes; document registration, manual rebase, history restore
+    and recursive folder deletion remain drafts until explicitly published.
     String limits also enforce the documented UTF-8 byte limits. This contract
     and HTTP tests do not establish browser usability.
 servers:
@@ -210,6 +210,64 @@ paths:
         '400': {$ref: '#/components/responses/Invalid'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /documents/register:
+    post:
+      operationId: registerExistingSource
+      tags: [Documents]
+      summary: Register reviewed live source as a new document draft
+      description: |
+        The JSON body is at most 32 KiB and contains metadata only. First read
+        the live file through GET /files/content without draftId. Send its quoted
+        ETag value without quotes as revision, and X-Source-Revision as
+        sourceRevision. The latter binds the exact downloaded bytes to this
+        request. Fresh read and write access, current project and source hashes,
+        branch, page identity, URL and competing drafts are checked under one
+        content gate. The source must be valid UTF-8 without NUL, at most 4 MiB.
+        Its bytes, BOM and line endings are preserved. An explicit format is
+        required; source extensions do not select or restrict the renderer.
+        Publish or discard pending file or restoration drafts first. Existing
+        page IDs and registrations are never rebound or inferred from history.
+        Collisions return a generic conflict without disclosing private names.
+        A new registration always stays in a draft, including with autoPublish.
+        Explicit publication validates rendering and preserves unchanged source
+        files. Custom navigation must be updated separately when it omits pages.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path, revision, sourceRevision, title, kind]
+              properties:
+                path: {type: string, minLength: 1, maxLength: 2048}
+                revision: {$ref: '#/components/schemas/Revision'}
+                sourceRevision: {$ref: '#/components/schemas/Revision'}
+                title: {type: string, minLength: 1, maxLength: 256, description: At most 256 UTF-8 bytes without control characters}
+                kind: {type: string, enum: [markdown, html, protobuf, openapi]}
+                id: {type: string, maxLength: 128, pattern: '^$|^[a-z0-9][a-z0-9._-]{0,127}$', description: Optional new permanent page ID; an empty value generates one}
+                outputPath: {type: string, maxLength: 4096, description: Optional safe lowercase ASCII relative .html path; defaults to the lowercased source stem plus .html}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '201':
+          description: New document and registration draft; publication remains explicit
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/SaveResult'}
+                  - type: object
+                    required: [document, draft, revision, published]
+                    properties:
+                      published: {const: false}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '503': {$ref: '#/components/responses/Failure'}
   /documents/{id}:
     parameters: [{$ref: '#/components/parameters/ID'}]
     get:
@@ -712,6 +770,7 @@ paths:
           headers:
             ETag: {schema: {type: string}, description: Quoted project revision for published content or quoted draft revision when draftId is supplied}
             X-Base-Revision: {schema: {type: string}, description: Stored project base revision; present only for an owned draft response}
+            X-Source-Revision: {schema: {$ref: '#/components/schemas/Revision'}, description: SHA256 of the exact downloaded bytes; present for a live file and required when registering its reviewed contents}
           content:
             application/octet-stream:
               schema: {type: string, format: binary}

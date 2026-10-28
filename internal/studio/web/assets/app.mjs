@@ -2,7 +2,7 @@ import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, clea
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
 import { renderStorage, canManageStorage } from "./storage.mjs";
 import { renderNavigation, canManageNavigation } from "./navigation.mjs";
-import { UPLOAD_ACCEPT, textFilePath, newTextFilePath, sourceHistorySnapshot, insideFolder, reviewFolderDeletion } from "./files.mjs";
+import { UPLOAD_ACCEPT, textFilePath, newTextFilePath, registrationKind, sourceDraftOverlap, registrationReview, registrationRequest, sourceHistorySnapshot, insideFolder, reviewFolderDeletion } from "./files.mjs";
 
 export function boot({ document: doc = globalThis.document, window: win = globalThis.window, fetcher = globalThis.fetch, loadEditor = () => import("./editor.js") } = {}) {
   const $ = id => doc.getElementById(id);
@@ -109,9 +109,9 @@ export function boot({ document: doc = globalThis.document, window: win = global
     if (view === "appearance") await renderAppearance(active);
     if (view === "people") await renderPeople(active);
   }
-  async function openDocument(id) {
+  async function openDocument(id, draft = null) {
     if (!await allowViewChange()) return;
-    if (await workspace.open(id)) { currentView = "documents"; await navigate("documents"); renderTree(); }
+    if (await workspace.open(id, draft ? { draftId: draft.id, draftRevision: draft.revision } : {})) { currentView = "documents"; await navigate("documents"); renderTree(); }
   }
   async function openSource(path, draft = null) {
     if (!await allowViewChange()) return;
@@ -232,6 +232,59 @@ export function boot({ document: doc = globalThis.document, window: win = global
     }) : null)));
     $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, workspace.document?.title || "History"), button("Back to editor", () => navigate("documents"))), rows.length ? table(["Saved", "Change", "Author", ""], rows) : h("p", { class: "muted" }, "No published revisions yet.")));
   }
+  async function renderRegistration(path) {
+    cleanPath(path);
+    if (!textFilePath(path)) throw new APIError("Choose a supported UTF-8 text source.", 415);
+    if (!can(user, "read", path) || !can(user, "write", path)) throw new APIError("Read and write access to this source is required.", 403);
+    if (!await allowViewChange()) return;
+    viewLoad?.abort(); filesLoad?.abort(); filesSequence++; viewLoad = new AbortController(); const controller = viewLoad, sequence = ++viewSequence;
+    currentView = "files"; destroyEditor(); $("error").hidden = true; $("view-title").textContent = "Register document";
+    const active = () => sequence === viewSequence && !controller.signal.aborted;
+    const fields = [field({ name: "title", label: "Title", required: true, maxlength: 256, value: path.split("/").at(-1).replace(/\.[^.]+$/, "") }), field({ name: "kind", label: "Format", required: true, value: registrationKind(path), options: [["markdown", "Markdown"], ["html", "HTML"], ["protobuf", "Protocol Buffers"], ["openapi", "OpenAPI JSON or YAML"]], help: "Choose how this source will be rendered. Registration does not run source code." }), field({ name: "id", label: "Stable document ID", maxlength: 128, help: "Optional. Leave blank to generate a permanent ID." }), field({ name: "outputPath", label: "Page URL", maxlength: 4096, placeholder: "guides/getting-started.html", help: "Optional lowercase ASCII relative .html path. The default is the lowercased source path with .html extension; choose an explicit URL for a source path containing spaces or non-ASCII characters." })];
+    const form = h("form", { class: "settings-form registration-form" }, ...fields.map(item => item.wrapper));
+    const reviewed = h("textarea", { class: "source-editor", rows: 14, readOnly: true, spellcheck: "false", "aria-label": "Reviewed live source" });
+    const status = h("p", { role: "status" }), error = h("p", { class: "notice", role: "alert" }), outcome = h("div", { class: "actions" });
+    const save = h("button", { type: "submit", class: "primary", disabled: true }, "Save registration draft");
+    let review = null, loading = false, saving = false, completed = false, reviewRun = 0, version = 0;
+    const rereview = button("Re-review live source", loadReview);
+    const updateButtons = () => { save.disabled = !review || loading || saving || completed; rereview.disabled = loading || saving || completed; };
+    const changed = () => { if (active()) { version++; formDirty = true; } };
+    form.addEventListener("input", changed); form.addEventListener("change", changed);
+    form.addEventListener("submit", safe(async event => {
+      event.preventDefault(); if (!active() || loading || saving || completed) return;
+      let body; try { body = registrationRequest(review, values(fields)); } catch (failure) { error.textContent = failure.message; return; }
+      const submittedVersion = version; saving = true; error.textContent = ""; updateButtons();
+      try {
+        const saved = await mutation(() => api.request("documents/register", { method: "POST", body }));
+        const item = saved?.document, draft = saved?.draft;
+        if (saved?.published !== false || saved.revision !== body.revision || !draft?.id || !draft.revision || draft.baseRevision !== body.revision || draft.path !== path || !item?.id || item.path !== path || item.title !== body.title || item.kind !== body.kind || body.id && item.id !== body.id) throw new APIError("The registration response is incomplete. Check Publishing before retrying; your editor is unchanged.");
+        if (!active()) return;
+        completed = true; if (version === submittedVersion) formDirty = false;
+        const { content: _content, ...summary } = item; documents = documents.filter(item => item.id !== summary.id).concat(summary); projectRevision = saved.revision; renderTree();
+        status.textContent = version === submittedVersion ? "Registration saved as a draft. The published site and your open editor are unchanged." : "Registration saved with the submitted metadata. Your newer form values remain here, and your open editor is unchanged.";
+        outcome.replaceChildren(button("Open document draft", () => openDocument(item.id, draft)), button("Open Publishing", () => navigate("publishing"))); note("Document registration saved as a draft.");
+      } catch (failure) {
+        if (!active()) return;
+        review = null; status.textContent = "Registration was not confirmed. Check Publishing, then explicitly re-review the live source before another attempt."; error.textContent = failure.message;
+        outcome.replaceChildren(button("Open Publishing", () => navigate("publishing")));
+      } finally { saving = false; if (active()) updateButtons(); }
+    }));
+    form.append(h("div", { class: "actions" }, save, rereview));
+    $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", { class: "path" }, path), h("div", { class: "actions" }, button("Cancel registration", () => navigate("files")), workspace.document ? button("Back to editor", () => navigate("documents")) : null)), h("p", {}, "Review the published source below, then choose its document metadata. Unsaved text in your editor is kept separately. Registration always creates a draft; publication remains a separate step."), form, status, error, outcome), h("section", { class: "card" }, h("h2", {}, "Published source review"), h("p", { class: "muted" }, "This read-only text is the source bound to the registration request. Re-review after any project or source conflict."), reviewed));
+    await loadReview();
+    async function loadReview() {
+      if (!active() || saving || completed) return;
+      const run = ++reviewRun; review = null; loading = true; status.textContent = "Loading the current published source…"; error.textContent = ""; updateButtons();
+      try {
+        const [source, catalog, drafts] = await Promise.all([api.source(path, { signal: controller.signal }), api.request("documents?published=true", { signal: controller.signal }), api.request("drafts", { signal: controller.signal })]);
+        if (!active() || run !== reviewRun) return;
+        if (!Array.isArray(drafts?.drafts)) throw new APIError("The saved changes response is incomplete. Re-review this source.");
+        review = registrationReview(path, source, catalog, drafts.drafts); reviewed.value = review.content;
+        status.textContent = review.pendingChanges ? "Published source reviewed. Saved changes are visible at this path and may belong to another branch. Overlapping changes on the active branch must be published or discarded before registration." : "Published source reviewed. Saving registers these exact bytes as a draft and does not publish them.";
+      } catch (failure) { if (active() && run === reviewRun && failure?.name !== "AbortError") { review = null; status.textContent = "The live source has not been reviewed successfully."; error.textContent = failure.message; } }
+      finally { if (run === reviewRun) loading = false; if (active()) updateButtons(); }
+    }
+  }
   function createTextFile(folder, files, drafts, revision, active) {
     dialog("Create text file", [{ name: "name", label: "File name", required: true, maxlength: 255, help: "A supported text extension is required. The new file stays in the editor until you save it." }], "Open editor", async data => {
       if (!active()) throw new APIError("Refresh the folder before creating a file.", 409, "conflict");
@@ -330,6 +383,10 @@ export function boot({ document: doc = globalThis.document, window: win = global
         for (const draft of item.drafts) actions.push(button(item.drafts.length > 1 ? "Open draft “" + draft.id.slice(0, 12) + "”" : "Open saved draft", () => openSource(item.path, draft)), item.draftOnly ? h("a", { class: "button", href: new URL("files/content?path=" + key(item.path) + "&draftId=" + key(draft.id), api.base).href, download: "" }, "Download draft") : null);
       }
       if (!item.directory) actions.push(button("History", () => renderSourceHistory(item.path)));
+      if (!item.directory && textFilePath(item.path) && write && can(user, "read", item.path) && !documents.some(document => document.path === item.path)) {
+        const pending = item.draftOnly, overlaps = sourceDraftOverlap(item.path, drafts);
+        actions.push(button("Register document", () => renderRegistration(item.path), { disabled: !!pending }), pending ? h("small", { class: "muted" }, "Publish or discard the saved source draft before registering a live file.") : overlaps ? h("small", { class: "muted" }, "Saved changes are visible at this path. Registration checks overlapping changes on the active branch.") : null);
+      }
       if (write && !item.draftOnly) {
         actions.push(button("Move", () => dialog("Move file", [{ name: "to", label: "New path", required: true, value: item.path }], settings?.publishing?.autoPublish ? "Move and publish" : "Save move as draft", async data => { cleanPath(data.to); await mutation(() => api.request("files/move", { method: "POST", body: { path: item.path, to: data.to, revision: item.revision } }), result => result?.published ? "Move published." : "Move saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); })));
         if (item.directory) { if (can(user, "read", item.path)) actions.push(button("Review folder deletion", () => showDeleteReview(item), { class: "danger" })); }

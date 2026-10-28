@@ -1,4 +1,4 @@
-import { APIError, can, cleanPath } from "./core.mjs";
+import { APIError, can, cleanPath, textWithinLimit } from "./core.mjs";
 
 export const LITERAL_CODE_EXTENSIONS = ["go", "js", "ts", "sh", "sql", "css", "xml"];
 export const TEXT_EXTENSIONS = ["md", "markdown", "proto", "json", "yaml", "yml", "html", "htm", "txt", ...LITERAL_CODE_EXTENSIONS];
@@ -15,6 +15,33 @@ export function newTextFilePath(name, folder, files = [], drafts = []) {
   if (files.some(item => overlaps(item.path))) throw new APIError("A published file or folder already uses this name. Open it from Files instead.", 409, "conflict");
   if (drafts.some(item => overlaps(item.path) || overlaps(item.to))) throw new APIError("A saved change already targets this path. Open or discard it from Publishing first.", 409, "conflict");
   return path;
+}
+
+export function registrationKind(path) {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  return ["html", "htm"].includes(extension) ? "html" : extension === "proto" ? "protobuf" : ["json", "yaml", "yml"].includes(extension) ? "openapi" : "markdown";
+}
+export function sourceDraftOverlap(path, drafts) {
+  const folded = path.toLowerCase(), overlaps = value => typeof value === "string" && (value.toLowerCase() === folded || folded.startsWith(value.toLowerCase() + "/") || value.toLowerCase().startsWith(folded + "/"));
+  return drafts.some(draft => [draft, ...(Array.isArray(draft.changes) ? draft.changes : [])].some(change => overlaps(change.path) || overlaps(change.to)));
+}
+export function registrationReview(path, source, catalog, drafts = []) {
+  cleanPath(path);
+  if (!textFilePath(path)) throw new APIError("Choose a supported UTF-8 text source.", 415);
+  if (!/^[a-f0-9]{64}$/.test(source?.revision || "") || !/^[a-f0-9]{64}$/.test(source?.sourceRevision || "") || source.baseRevision || typeof source?.content !== "string" || source.content.includes("\u0000")) throw new APIError("The live source response is missing a verified content revision. Re-review the published source before registering it.");
+  if (!Array.isArray(catalog?.documents) || catalog.revision !== source.revision) throw new APIError("The project changed while loading this source. Re-review the published source before registering it.", 409, "conflict");
+  if (catalog.documents.some(item => typeof item.path === "string" && item.path.toLowerCase() === path.toLowerCase())) throw new APIError("This source already has a document registration. Open it from Documents.", 409, "conflict");
+  return Object.freeze({ path, content: textWithinLimit(source.content), revision: source.revision, sourceRevision: source.sourceRevision, pendingChanges: sourceDraftOverlap(path, drafts) });
+}
+export function registrationRequest(review, fields) {
+  if (!review || !/^[a-f0-9]{64}$/.test(review.revision || "") || !/^[a-f0-9]{64}$/.test(review.sourceRevision || "")) throw new APIError("Re-review the live source before saving a registration draft.", 409, "conflict");
+  cleanPath(review.path);
+  if (typeof fields.title !== "string" || !fields.title.trim() || new TextEncoder().encode(fields.title).length > 256 || /\p{Cc}/u.test(fields.title)) throw new APIError("Enter a title of up to 256 UTF-8 bytes without control characters.");
+  if (!["markdown", "html", "protobuf", "openapi"].includes(fields.kind)) throw new APIError("Choose a supported document format.");
+  if (fields.id && !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(fields.id)) throw new APIError("Use up to 128 lowercase letters, digits, dots, underscores or hyphens for the document ID.");
+  const outputPath = fields.outputPath || review.path.toLowerCase().replace(/\.[^/.]+$/, "") + ".html";
+  if (new TextEncoder().encode(outputPath).length > 4096 || !/^[a-z0-9/._-]+\.html$/.test(outputPath) || outputPath.startsWith("assets/") || outputPath.split("/").some(part => !part || part.startsWith(".") || part.endsWith(".") || part === "_docs" || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/.test(part))) throw new APIError("Choose a lowercase ASCII relative .html page URL without reserved folders or filenames.");
+  return { path: review.path, revision: review.revision, sourceRevision: review.sourceRevision, title: fields.title, kind: fields.kind, ...(fields.id ? { id: fields.id } : {}), ...(fields.outputPath ? { outputPath: fields.outputPath } : {}) };
 }
 
 export function sourceHistorySnapshot(value, path) {

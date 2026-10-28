@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { parseHTML } from "linkedom";
 import { boot } from "../assets/app.mjs";
 
@@ -25,7 +26,7 @@ function environment(options = {}) {
   window.confirm = message => { confirmations.push(message); return options.confirm !== false; };
   const dialog = document.getElementById("action-dialog"); dialog.showModal = () => { dialog.open = true; }; dialog.close = () => { dialog.open = false; };
   // Linkedom omits the HTMLSelectElement.value setter implemented by browsers.
-  Object.defineProperty(window.HTMLSelectElement.prototype, "value", { configurable: true, get() { return [...this.options].find(item => item.selected)?.value || this.options[0]?.value || ""; }, set(value) { for (const item of this.options) item.selected = item.value === String(value); } });
+  Object.defineProperty(window.HTMLSelectElement.prototype, "value", { configurable: true, get() { return [...this.options].find(item => item.selected)?.value || this.options[0]?.value || ""; }, set(value) { const chosen = [...this.options].find(item => item.value === String(value)); for (const item of this.options) item.selected = false; if (chosen) chosen.selected = true; } });
   const requests = [];
   let session = options.anonymous ? { user: null } : { user: { ...admin, ...(options.user || {}) }, csrfToken: "csrf-memory" };
   let draft = null, conflict = false, storage = options.storage || storageSnapshot(), storageSaves = 1;
@@ -74,6 +75,32 @@ function environment(options = {}) {
   const app = boot({ document, window, fetcher, loadEditor: options.loadEditor || (async () => { throw new Error("Use the source fallback in DOM unit tests"); }) });
   return { app, document, window, requests, confirmations, setConflict: value => { conflict = value; }, event: (target, name) => { target.dispatchEvent(new window.Event(name, { bubbles: true, cancelable: true })); } };
 }
+
+const sourceDigest = text => createHash("sha256").update(text, "utf8").digest("hex");
+function registrationSaved(state, body) {
+  const id = body.id || "page-" + "b".repeat(32), draft = { id: "registration-draft", revision: "registered-d1", baseRevision: state.revision, path: state.path, operation: "write" };
+  const document = { id, path: state.path, title: body.title, kind: body.kind, outputPath: body.outputPath || state.path.toLowerCase().replace(/\.[^/.]+$/, "") + ".html", revision: state.revision, canWrite: true, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision };
+  return { revision: state.revision, published: false, draft, document };
+}
+function registrationEnvironment(options = {}) {
+  const state = { path: options.path || "candidate.md", content: options.content ?? "\uFEFF# published\r\n<script id=source-injection>neverRun()</script>\r\n", revision: "1".repeat(64), drafts: options.drafts || [], saved: null, loadedDraftRevision: "" };
+  const env = environment({ ...options, files: options.files || [{ path: state.path, name: state.path.split("/").at(-1), directory: false, revision: state.revision, canWrite: true }], respond: async context => {
+    if (options.respond) { const result = await options.respond(context, state); if (result !== undefined) return result; }
+    const { route, request, search, body } = context;
+    if (route === "documents" && request.method === "GET") return json({ documents: [{ ...source, content: undefined }, ...(state.saved && new URLSearchParams(search).get("published") !== "true" ? [state.saved.document] : [])], revision: state.revision });
+    if (route === "drafts") return json({ drafts: state.drafts });
+    if (route === "files/content" && request.method === "GET") { const candidate = new URLSearchParams(search).get("path") === state.path, text = candidate ? state.content : "active source\r\n"; return new Response(text, { headers: { ETag: '"' + state.revision + '"', "X-Source-Revision": sourceDigest(text) } }); }
+    if (route === "documents/register") {
+      if (body.revision !== state.revision || body.sourceRevision !== sourceDigest(state.content)) return json({ error: { code: "conflict", message: "The reviewed source changed" } }, 409);
+      if (state.drafts.some(draft => draft.path === state.path && draft.branch === "main")) return json({ error: { code: "conflict", message: "Publish or discard saved changes on the active branch before registration" } }, 409);
+      state.saved = registrationSaved(state, body); return json(state.saved, 201);
+    }
+    if (state.saved && route === "documents/" + state.saved.document.id) return json({ ...state.saved.document, content: state.content, draftRevision: state.loadedDraftRevision || state.saved.draft.revision });
+  } });
+  return { ...env, state };
+}
+async function openRegistration(env) { await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Register document")[0], "click"); await settle(); }
+function registrationField(env, name, value) { const input = env.document.querySelector('.registration-form [name="' + name + '"]'); input.value = value; env.event(input, input.tagName === "SELECT" ? "change" : "input"); return input; }
 
 test("settings preserve local success and show pending Git synchronization without echoing response metadata", async () => {
   let saves = 0;
@@ -695,6 +722,62 @@ test("source CAS conflicts keep text and original base until an explicitly confi
   assert.equal(env.app.workspace.content, "my retained source"); assert.equal(env.app.workspace.document.baseRevision, "p0"); assert.equal(env.app.workspace.document.draftRevision, "d1"); assert.equal(env.app.workspace.dirty, true);
   env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').value, "current published source"); assert.equal(controls(env.document, "Save merged draft")[0].hidden, false); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').readOnly, true);
   assert.equal(env.requests.some(item => item.route === "files/rebase"), false); assert.equal(env.app.workspace.document.baseRevision, "p0"); env.window.confirm = () => false; env.event(controls(env.document, "Save merged draft")[0], "click"); await settle(); assert.equal(env.requests.some(item => item.route === "files/rebase"), false); assert.equal(env.app.workspace.document.draftRevision, "d1"); env.event(controls(env.document, "Open current published source")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "my retained source"); env.app.dispose();
+});
+
+test("registration reviews exact live text and stages metadata only while retaining the dirty editor", async () => {
+  const env = registrationEnvironment({ settings: { publishing: { autoPublish: true, gitPushOnPublish: true } } });
+  await env.app.ready; await env.app.openSource("active.sql"); env.app.workspace.edit("\uFEFFkeep my unsaved text\r\n"); const previous = env.app.workspace.document;
+  await openRegistration(env); const reviewed = env.document.querySelector('[aria-label="Reviewed live source"]'); assert.equal(reviewed.readOnly, true); assert.equal(reviewed.value, env.state.content); assert.equal(env.document.querySelector("#source-injection"), null); assert.equal(env.document.querySelector("iframe"), null);
+  registrationField(env, "title", "Registered <img id=title-injection src=x>"); registrationField(env, "kind", "html"); registrationField(env, "id", "stable.docs_1"); registrationField(env, "outputPath", "manual/guide.html"); env.event(env.document.querySelector(".registration-form"), "submit"); await settle();
+  const requests = env.requests.filter(item => item.route === "documents/register"); assert.equal(requests.length, 1); assert.deepEqual(requests[0].body, { path: env.state.path, revision: env.state.revision, sourceRevision: sourceDigest(env.state.content), title: "Registered <img id=title-injection src=x>", kind: "html", id: "stable.docs_1", outputPath: "manual/guide.html" });
+  assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "\uFEFFkeep my unsaved text\r\n"); assert.equal(env.app.workspace.dirty, true); assert.equal(env.requests.some(item => /drafts\/.*\/publish/.test(item.route) || item.route === "sync" || item.route === "files/content" && item.method === "PUT"), false); assert.equal(env.document.querySelector("#title-injection"), null);
+  env.window.confirm = () => false; env.event(controls(env.document, "Open document draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.requests.some(item => item.route === "documents/stable.docs_1"), false);
+  env.window.confirm = () => true; env.event(controls(env.document, "Open document draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.id, "stable.docs_1"); assert.equal(env.app.workspace.document.draftId, "registration-draft"); assert.equal(env.app.workspace.document.draftRevision, "registered-d1"); assert.equal(env.app.workspace.content, env.state.content); assert.equal(controls(env.document, "Preview").length, 1); env.app.dispose();
+});
+
+test("registration conflicts preserve metadata and require explicit fresh source review without retry", async () => {
+  const env = registrationEnvironment(); await openRegistration(env); registrationField(env, "title", "Keep this title"); registrationField(env, "id", "keep-id"); registrationField(env, "outputPath", "manual/keep.html");
+  const oldDigest = sourceDigest(env.state.content); env.state.content = "\uFEFFnew published source\r\n"; env.state.revision = "2".repeat(64); env.event(env.document.querySelector(".registration-form"), "submit"); await settle();
+  assert.equal(env.requests.filter(item => item.route === "documents/register").length, 1); assert.equal(env.document.querySelector('.registration-form [name="title"]').value, "Keep this title"); assert.equal(env.document.querySelector('.registration-form [name="id"]').value, "keep-id"); assert.equal(controls(env.document, "Save registration draft")[0].disabled, true);
+  env.event(env.document.querySelector(".registration-form"), "submit"); await settle(); assert.equal(env.requests.filter(item => item.route === "documents/register").length, 1);
+  env.event(controls(env.document, "Re-review live source")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Reviewed live source"]').value, env.state.content); assert.equal(env.document.querySelector('.registration-form [name="outputPath"]').value, "manual/keep.html"); env.event(env.document.querySelector(".registration-form"), "submit"); await settle();
+  const attempts = env.requests.filter(item => item.route === "documents/register"); assert.equal(attempts.length, 2); assert.equal(attempts[0].body.sourceRevision, oldDigest); assert.equal(attempts[1].body.sourceRevision, sourceDigest(env.state.content)); assert.equal(attempts[1].body.revision, env.state.revision); assert.equal(env.requests.filter(item => item.route === "files/content").length, 2); env.app.dispose();
+});
+
+test("registration does not overblock another branch but active-branch saved changes remain a server conflict", async () => {
+  const env = registrationEnvironment({ path: "example.go", drafts: [{ id: "other-branch", revision: "d0", baseRevision: "0".repeat(64), branch: "other", path: "example.go", operation: "write" }] });
+  await openRegistration(env); assert.equal(controls(env.document, "Save registration draft")[0].disabled, false); assert.match(env.document.getElementById("view").textContent, /may belong to another branch/i); registrationField(env, "kind", "html"); env.event(env.document.querySelector(".registration-form"), "submit"); await settle(); assert.equal(env.state.saved.document.kind, "html"); assert.equal(env.state.saved.document.path, "example.go"); env.app.dispose();
+  const active = registrationEnvironment({ drafts: [{ id: "active-branch", revision: "d0", baseRevision: "0".repeat(64), branch: "main", path: "candidate.md", operation: "write" }] });
+  await openRegistration(active); active.event(active.document.querySelector(".registration-form"), "submit"); await settle(); assert.equal(active.state.saved, null); assert.match(active.document.getElementById("view").textContent, /Publish or discard saved changes on the active branch/i); assert.equal(controls(active.document, "Save registration draft")[0].disabled, true); active.app.dispose();
+  const staged = registrationEnvironment({ files: [], drafts: [{ id: "restored-only", revision: "d1", baseRevision: "0".repeat(64), branch: "main", path: "candidate.md", operation: "write" }] });
+  await staged.app.ready; await staged.app.navigate("files"); assert.equal(controls(staged.document, "Register document")[0].disabled, true); assert.match(staged.document.getElementById("view").textContent, /Publish or discard the saved source draft/i); assert.equal(staged.requests.some(item => item.route === "files/content"), false); staged.app.dispose();
+});
+
+test("registration capabilities hide mutation for viewers, readonly paths, registered documents and binary files", async () => {
+  for (const options of [{ user: { role: "viewer" } }, { user: { role: "editor", grants: { read: ["."], write: [] } } }, { path: "docs/guide.md" }, { path: "image.png" }]) {
+    const env = registrationEnvironment(options); await env.app.ready; await env.app.navigate("files"); assert.equal(controls(env.document, "Register document").length, 0); assert.equal(env.requests.some(item => item.route === "documents/register"), false); env.app.dispose();
+  }
+});
+
+test("missing registration content revision disables save while a fresh review keeps entered metadata", async () => {
+  let includeDigest = false;
+  const env = registrationEnvironment({ respond({ route }, state) { if (route === "files/content") return new Response(state.content, { headers: { ETag: '"' + state.revision + '"', ...(includeDigest ? { "X-Source-Revision": sourceDigest(state.content) } : {}) } }); } });
+  await openRegistration(env); assert.equal(controls(env.document, "Save registration draft")[0].disabled, true); assert.match(env.document.getElementById("view").textContent, /missing a verified content revision/i); registrationField(env, "title", "Retained title"); includeDigest = true; env.event(controls(env.document, "Re-review live source")[0], "click"); await settle(); assert.equal(env.document.querySelector('.registration-form [name="title"]').value, "Retained title"); assert.equal(controls(env.document, "Save registration draft")[0].disabled, false); assert.equal(env.requests.some(item => item.route === "documents/register"), false); env.app.dispose();
+});
+
+test("late registration review and save cannot replace a newer editor or clear its text", async () => {
+  let finishRead, finishSave; const reading = new Promise(resolve => { finishRead = resolve; }), saving = new Promise(resolve => { finishSave = resolve; }); let delayRead = true, submitted;
+  const env = registrationEnvironment({ respond({ route, body }) { if (route === "files/content" && delayRead) return reading; if (route === "documents/register") { submitted = body; return saving; } } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("original unsaved"); await openRegistration(env); await env.app.navigate("documents"); const editor = env.document.querySelector(".source-editor"); editor.value = "newer while source review waited"; env.event(editor, "input"); finishRead(new Response(env.state.content, { headers: { ETag: '"' + env.state.revision + '"', "X-Source-Revision": sourceDigest(env.state.content) } })); await settle(); assert.equal(env.document.querySelector(".source-editor"), editor); assert.equal(env.app.workspace.content, "newer while source review waited");
+  delayRead = false; await openRegistration(env); env.event(env.document.querySelector(".registration-form"), "submit"); await settle(); await env.app.navigate("documents"); const next = env.document.querySelector(".source-editor"); next.value = "newer while registration saved"; env.event(next, "input"); finishSave(json(registrationSaved(env.state, submitted), 201)); await settle(); assert.equal(env.document.querySelector(".source-editor"), next); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.content, "newer while registration saved"); assert.equal(env.app.workspace.dirty, true); assert.equal(controls(env.document, "Open document draft").length, 0); env.app.dispose();
+});
+
+test("metadata edited during registration stays in the form and a changed created-draft CAS cannot replace the editor", async () => {
+  let finish, submitted; const pending = new Promise(resolve => { finish = resolve; });
+  const env = registrationEnvironment({ respond({ route, body }) { if (route === "documents/register") { submitted = body; return pending; } } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep editor until exact draft opens"); const previous = env.app.workspace.document; await openRegistration(env); registrationField(env, "title", "Submitted title"); env.event(env.document.querySelector(".registration-form"), "submit"); await settle(); registrationField(env, "title", "Newer form value"); env.state.saved = registrationSaved(env.state, submitted); finish(json(env.state.saved, 201)); await settle();
+  assert.equal(env.document.querySelector('.registration-form [name="title"]').value, "Newer form value"); assert.match(env.document.getElementById("view").textContent, /newer form values remain here/i); env.window.confirm = () => false; env.event(controls(env.document, "Cancel registration")[0], "click"); await settle(); assert.ok(env.document.querySelector(".registration-form")); assert.equal(env.app.workspace.document, previous);
+  env.window.confirm = () => true; env.state.loadedDraftRevision = "newer-draft-cas"; env.event(controls(env.document, "Open document draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "keep editor until exact draft opens"); assert.match(env.document.getElementById("error").textContent, /saved document draft changed/i); env.app.dispose();
 });
 
 test("Create text file opens an empty unsaved literal buffer without a request until Save", async () => {

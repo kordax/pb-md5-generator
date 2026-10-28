@@ -63,6 +63,8 @@ func (h *handler) serveContent(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/documents":
 		h.documents(w, r, user)
+	case "/documents/register":
+		h.registerDocument(w, r)
 	case "/drafts":
 		h.drafts(w, r, user)
 	case "/preview":

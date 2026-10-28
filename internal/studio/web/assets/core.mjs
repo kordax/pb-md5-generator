@@ -75,7 +75,9 @@ export class API {
       if (sourceResponse) {
         const revision = /^\"([^\"\r\n\u0000-\u001f]{1,256})\"$/.exec(response.headers.get("etag") || "");
         if (!revision || text.includes("\u0000")) throw new APIError(!revision ? "The source response did not include a valid revision. Your open source is retained." : "This file contains binary data. Download it instead.", 415, "not_text");
-        return { content: textWithinLimit(text), revision: revision[1], baseRevision: response.headers.get("x-base-revision") || "" };
+        const sourceRevision = response.headers.get("x-source-revision") || "";
+        if (sourceRevision && !/^[a-f0-9]{64}$/.test(sourceRevision)) throw new APIError("The source response did not include a valid content revision. Your open source is retained.");
+        return { content: textWithinLimit(text), revision: revision[1], baseRevision: response.headers.get("x-base-revision") || "", sourceRevision };
       }
       let result;
       try { result = text ? JSON.parse(text) : null; } catch (_) { throw new APIError("The workspace returned an unreadable response. Please try again.", response.status); }
