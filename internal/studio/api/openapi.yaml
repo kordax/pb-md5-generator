@@ -292,10 +292,17 @@ paths:
     put:
       operationId: saveDocument
       tags: [Documents]
-      summary: Save a draft and optionally validate and publish it
+      summary: Save source and optional document properties as one draft
       description: |
-        A stale revision never overwrites newer content. A failed publication
-        preserves the last successful site and retains the draft. A failed Git
+        A stale revision never overwrites newer content. Omitted properties keep
+        the saved draft's title, format and page URL. When supplied, properties
+        is a complete triple and propertiesRevision must match the reviewed
+        current project revision, separate from an existing draft's older base.
+        The source path and permanent document ID cannot change here. Fresh
+        permissions, branch, draft ownership, page URL collisions and the home
+        page URL are checked under one content gate. A failed publication keeps
+        both source and properties in the draft and preserves the last site.
+        Changed URLs do not create redirects or rewrite links. A failed Git
         push preserves the local commit and reports pending synchronization.
       parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
       requestBody:
@@ -343,8 +350,13 @@ paths:
       summary: Save an explicitly reviewed merge against the latest project revision
       description: |
         This operation never publishes. When an owned draft exists, draftId and
-        draftRevision must identify its current version. A stale project or
-        draft revision returns 409 and preserves the previously saved draft.
+        draftRevision must identify its current version. Review both the source
+        and properties against the latest published document before sending a
+        merged result. Supplied properties are the explicitly chosen complete
+        triple; propertiesRevision must equal the reviewed current revision.
+        Omitting properties preserves the owned draft's values, or the current
+        published values when no draft exists. A stale project or draft revision
+        returns 409 and preserves the previously saved draft.
       parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
       requestBody:
         required: true
@@ -509,6 +521,7 @@ paths:
               properties:
                 documentId: {type: string, minLength: 1, maxLength: 256}
                 content: {type: string, maxLength: 4194304}
+                properties: {$ref: '#/components/schemas/DocumentProperties', description: Optional unsaved title, format and page URL; preview does not save them}
       responses:
         default: {$ref: '#/components/responses/Failure'}
         '200':
@@ -1288,10 +1301,11 @@ components:
         setupRequired: {type: boolean}
     Document:
       type: object
+      description: Source and properties include the current user's saved write draft unless published=true; publishedRevision identifies the current project separately from an older draft base
       required: [id, path, title, kind, revision]
       properties:
-        id: {type: string}
-        path: {type: string}
+        id: {type: string, readOnly: true, description: Permanent page identity}
+        path: {type: string, readOnly: true, description: Managed source path; use the move operation to change it}
         title: {type: string}
         kind: {type: string, enum: [markdown, html, protobuf, openapi]}
         outputPath: {type: string}
@@ -1314,10 +1328,21 @@ components:
         outputPath: {type: string, maxLength: 2048}
         content: {type: string, maxLength: 4194304}
         revision: {$ref: '#/components/schemas/Revision'}
+    DocumentProperties:
+      type: object
+      additionalProperties: false
+      required: [title, kind, outputPath]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 256, description: At most 256 UTF-8 bytes; nonblank and without control characters}
+        kind: {type: string, enum: [markdown, html, protobuf, openapi], description: Explicit renderer; the source extension does not select it}
+        outputPath: {type: string, minLength: 1, maxLength: 4096, description: Required safe lowercase ASCII relative .html URL, at most 4096 bytes; the home page must keep index.html}
     DocumentSave:
       type: object
       additionalProperties: false
       required: [content, revision]
+      dependentRequired:
+        properties: [propertiesRevision]
+        propertiesRevision: [properties]
       properties:
         content: {type: string, maxLength: 4194304}
         revision: {$ref: '#/components/schemas/Revision'}
@@ -1326,15 +1351,22 @@ components:
         baseRevision: {type: string, maxLength: 256}
         publish: {type: boolean, default: false}
         message: {type: string, maxLength: 256}
+        properties: {$ref: '#/components/schemas/DocumentProperties'}
+        propertiesRevision: {$ref: '#/components/schemas/Revision', description: Reviewed current project revision from publishedRevision; required with properties and distinct from draft baseRevision}
     DocumentRebase:
       type: object
       additionalProperties: false
       required: [content, revision]
+      dependentRequired:
+        properties: [propertiesRevision]
+        propertiesRevision: [properties]
       properties:
         content: {type: string, maxLength: 4194304, description: At most 4 MiB of UTF-8 source}
         revision: {$ref: '#/components/schemas/Revision'}
         draftId: {type: string, maxLength: 256}
         draftRevision: {$ref: '#/components/schemas/Revision'}
+        properties: {$ref: '#/components/schemas/DocumentProperties', description: Complete properties explicitly selected after comparing against the latest published document}
+        propertiesRevision: {$ref: '#/components/schemas/Revision', description: Reviewed current project revision; must match revision for this explicit rebase}
     Move:
       type: object
       additionalProperties: false

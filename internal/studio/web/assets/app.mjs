@@ -1,4 +1,4 @@
-import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, cleanPath, mergeSettings, formatLanguage, previewDocument } from "./core.mjs";
+import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, cleanPath, mergeSettings, formatLanguage, documentProperties, propertiesEqual, validateDocumentProperties, previewDocument } from "./core.mjs";
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
 import { renderStorage, canManageStorage } from "./storage.mjs";
 import { renderNavigation, canManageNavigation } from "./navigation.mjs";
@@ -44,11 +44,18 @@ export function boot({ document: doc = globalThis.document, window: win = global
     editorStateNodes.status.textContent = workspace.loading ? "Opening…" : workspace.busy ? "Saving…" : workspace.dirty ? "Unsaved changes" : workspace.document?.draft ? "Draft saved" : "Published source";
     editorStateNodes.status.className = "badge" + (workspace.dirty ? " warning" : "");
     editorStateNodes.revision.textContent = workspace.document ? "Revision " + workspace.document.revision.slice(0, 16) : "";
-    editorStateNodes.foot.textContent = workspace.content.length.toLocaleString() + " characters · " + (workspace.document?.resource === "file" ? "literal text" : workspace.document?.kind || "") + " · Changes stay in this browser until saved.";
+    const properties = workspace.properties;
+    const language = formatLanguage({ ...workspace.document, ...properties });
+    if (editorStateNodes.language !== language) { editor?.setLanguage?.(language); editorStateNodes.language = language; }
+    editorStateNodes.foot.textContent = workspace.content.length.toLocaleString() + " characters · " + (workspace.document?.resource === "file" ? "literal text" : properties?.kind || workspace.document?.kind || "") + " · Changes stay in this browser until saved.";
+    if (workspace.document?.resource !== "file") $("view-title").textContent = properties?.title || workspace.document?.title || workspace.document?.path;
+    for (const field of editorStateNodes.propertiesFields || []) { field.input.disabled = !writable() || workspace.loading; const value = properties?.[field.name] || ""; if (field.input.value !== value) field.input.value = value; }
+    if (editorStateNodes.formatting) editorStateNodes.formatting.hidden = (properties?.kind || workspace.document?.kind) !== "markdown" || !writable();
     editor?.setEditable(!!writable() && !workspace.loading);
     if (editorText) editorText.readOnly = !writable() || workspace.loading;
     if (workspace.conflict && renderedConflict !== workspace.conflict) renderConflict();
-    if (!workspace.conflict && renderedConflict) { $("conflict-host")?.replaceChildren(); renderedConflict = null; }
+    if (!workspace.conflict && renderedConflict) { $("conflict-host")?.replaceChildren(); renderedConflict = null; editorStateNodes.syncComparison = null; }
+    editorStateNodes.syncComparison?.();
   }
   function destroyEditor() { editor?.destroy(); editor = null; editorText = null; editorStateNodes = null; renderedConflict = null; previewLoad?.abort(); previewLoad = null; previewSequence++; }
   function showLogin(message = "") {
@@ -140,14 +147,17 @@ export function boot({ document: doc = globalThis.document, window: win = global
     host.append(fallback); editorText = fallback;
     const formatting = h("div", { class: "format-toolbar" }, button("Heading", () => insert("## ")), button("Bold", () => insert("**", "**")), button("Link", () => insert("[", "](https://example.com)")), button("Code", () => insert("`", "`")));
     formatting.hidden = item.kind !== "markdown" || !writable();
+    const propertiesFields = sourceFile ? [] : [field({ name: "title", label: "Title", required: true, maxlength: 256, value: workspace.properties?.title }), field({ name: "kind", label: "Format", required: true, value: workspace.properties?.kind, options: [["markdown", "Markdown"], ["html", "HTML"], ["protobuf", "Protocol Buffers"], ["openapi", "OpenAPI JSON or YAML"]] }), field({ name: "outputPath", label: "Page URL", required: true, maxlength: 4096, value: workspace.properties?.outputPath, help: "Explicit lowercase relative .html path in the published site. Changes apply on publication." })];
+    for (const property of propertiesFields) for (const event of ["input", "change"]) property.input.addEventListener(event, () => { if (!writable()) return; try { workspace.editProperties({ [property.name]: property.input.value }); } catch (error) { property.input.value = workspace.properties?.[property.name] || ""; showError(error); } });
+    const propertiesPanel = sourceFile ? null : h("details", { class: "card document-properties" }, h("summary", {}, "Properties"), h("div", { class: "settings-form" }, field({ name: "permanentId", label: "Permanent document ID", value: item.id, readOnly: true }).wrapper, field({ name: "sourcePath", label: "Source path", value: item.path, readOnly: true }).wrapper, ...propertiesFields.map(property => property.wrapper)), h("p", { class: "muted" }, "The ID stays permanent. Use Move for the source path. Properties and source text are saved together using the editor actions."));
     const shell = h("section", { class: "editor-shell", "aria-label": "Document editor" }, h("div", { class: "editor-toolbar" }, actions), h("div", { class: "editor-meta" }, h("span", {}, item.path), state, revision), formatting, host, foot);
     const previewHost = h("section", { id: "preview-host", "aria-label": "Preview" }); const conflict = h("section", { id: "conflict-host" });
-    $("view").replaceChildren(shell, h("label", {}, "Change note", message), conflict, previewHost);
-    editorStateNodes = { mutations: [save, publish, move, remove], preview: previewButton, status: state, revision, foot }; updateEditorState();
+    $("view").replaceChildren(...(propertiesPanel ? [propertiesPanel] : []), shell, h("label", {}, "Change note", message), conflict, previewHost);
+    editorStateNodes = { mutations: [save, publish, move, remove], preview: previewButton, status: state, revision, foot, propertiesFields, formatting, language: "" }; updateEditorState();
     try {
       const module = await loadEditor(); if (sequence !== viewSequence || currentView !== "documents" || workspace.document?.id !== item.id) return;
       const mount = h("div");
-      const enhanced = module.createEditor(mount, { content: workspace.content, language: formatLanguage(item), editable: !!writable(), nonce, dark: isDark(), onChange: content => workspace.edit(content), onError: showError });
+      const enhanced = module.createEditor(mount, { content: workspace.content, language: formatLanguage({ ...item, ...workspace.properties }), editable: !!writable(), nonce, dark: isDark(), onChange: content => workspace.edit(content), onError: showError });
       host.replaceChildren(mount); editorText = null; editor = enhanced; editor.refresh?.(); updateEditorState();
     } catch (_) { if (sequence === viewSequence) note("The enhanced editor could not load. The source editor is still available."); }
     function insert(before, after = "") {
@@ -156,10 +166,11 @@ export function boot({ document: doc = globalThis.document, window: win = global
       else { const from = fallback.selectionStart, to = fallback.selectionEnd; fallback.setRangeText(before + fallback.value.slice(from, to) + after, from, to, "select"); workspace.edit(fallback.value); fallback.focus(); }
     }
     async function preview() {
+      const propertiesSnapshot = workspace.properties, properties = workspace.propertiesDirty ? validateDocumentProperties(propertiesSnapshot) : null;
       previewLoad?.abort(); previewLoad = new AbortController(); const run = ++previewSequence; const content = workspace.content; previewButton.disabled = true;
       try {
-        const result = await api.request("preview", { method: "POST", body: { documentId: item.id, content }, signal: previewLoad.signal });
-        if (sequence !== viewSequence || run !== previewSequence || content !== workspace.content) return;
+        const result = await api.request("preview", { method: "POST", body: { documentId: item.id, content, ...(properties ? { properties } : {}) }, signal: previewLoad.signal });
+        if (sequence !== viewSequence || run !== previewSequence || content !== workspace.content || !propertiesEqual(propertiesSnapshot, workspace.properties)) return;
         const frame = h("iframe", { class: "preview", title: "Document preview", sandbox: "allow-same-origin", referrerpolicy: "no-referrer" }); frame.srcdoc = previewDocument(result.html, nonce);
         previewHost.replaceChildren(h("h2", {}, "Preview"), frame, ...(result.diagnostics || []).map(diagnostic => h("p", { class: "notice" }, diagnostic.message)));
       } finally { if (sequence === viewSequence && run === previewSequence) previewButton.disabled = false; }
@@ -167,21 +178,40 @@ export function boot({ document: doc = globalThis.document, window: win = global
   }
   function renderConflict() {
     const host = $("conflict-host"); if (!host) return; renderedConflict = workspace.conflict;
-    const sourceFile = workspace.document?.resource === "file"; let compared = null, comparisonRun = 0;
+    const sourceFile = workspace.document?.resource === "file"; let compared = null, comparisonRun = 0, cells = [];
     const latest = h("textarea", { readOnly: true, "aria-label": "Latest published source", rows: 10 }); latest.hidden = true;
+    const propertiesHost = h("section", { class: "property-comparison", "aria-label": "Properties comparison", hidden: true }), choiceMessage = h("p", { role: "status" });
     const matches = snapshot => snapshot && snapshot.document === workspace.document && snapshot.sequence === workspace.sequence && $("conflict-host") === host;
     const rebase = button(sourceFile ? "Save merged draft" : "Use my merged draft", async () => {
       if (!matches(compared)) throw new APIError("Compare the latest source again before saving a merged draft.", 409, "conflict");
-      if (!win.confirm("Save your current text as a draft based on the version you just reviewed? Make sure your text includes the changes you want to keep from the latest published source. Publication remains a separate step.")) return;
+      if (!writable()) throw new APIError("This document is read only.", 403);
+      if (!sourceFile && !compared.choice) throw new APIError("Choose the properties to keep before saving a merged draft.", 409, "conflict");
+      if (!win.confirm(sourceFile ? "Save your current text as a draft based on the version you just reviewed? Make sure your text includes the changes you want to keep from the latest published source. Publication remains a separate step." : "Save your current text and the selected title, format and page URL as a draft based on the published version you reviewed? Publication remains a separate step.")) return;
       const revision = compared.revision; compared = null; rebase.hidden = true;
-      await workspace.rebase(revision); await refreshDocuments(); note(sourceFile ? "Merged source saved as a draft. Publish it from Publishing when ready." : "Your merged draft is saved. Preview and publish it when ready.");
+      await workspace.rebase(revision, sourceFile ? {} : { propertiesRevision: revision }); await refreshDocuments(); note(sourceFile ? "Merged source saved as a draft. Publish it from Publishing when ready." : "Your merged source and properties are saved as a draft. Preview and publish them when ready.");
     }, { hidden: true });
+    const syncProperties = () => {
+      if (sourceFile || !compared) return;
+      for (const cell of cells) cell.node.textContent = workspace.properties?.[cell.name] || "";
+      if (compared.choice === "published" && !propertiesEqual(workspace.properties, compared.properties)) compared.choice = null;
+      if (!compared.choice && (compared.unpublished || propertiesEqual(workspace.properties, compared.properties))) compared.choice = "local";
+      rebase.hidden = !writable() || !compared.choice;
+      choiceMessage.textContent = compared.choice ? "The current Properties values above will be saved with your merged text." : "Choose local or published properties, then review your merged text before saving.";
+    };
+    if (editorStateNodes) editorStateNodes.syncComparison = syncProperties;
     const compare = button("Compare latest", async () => {
-      const run = ++comparisonRun, snapshot = { document: workspace.document, sequence: workspace.sequence }; compared = null; rebase.hidden = true;
+      const run = ++comparisonRun, snapshot = { document: workspace.document, sequence: workspace.sequence }; compared = null; rebase.hidden = true; propertiesHost.hidden = true;
       const value = await workspace.latest(); if (run !== comparisonRun || !matches(snapshot)) return;
-      latest.value = value.content; latest.hidden = false; compared = { ...snapshot, revision: value.revision }; rebase.hidden = !writable();
+      latest.value = value.content; latest.hidden = false;
+      compared = { ...snapshot, revision: sourceFile ? value.revision : value.publishedRevision || value.revision, properties: value.unpublished ? null : documentProperties(value), unpublished: !!value.unpublished, choice: null };
+      if (sourceFile) { rebase.hidden = !writable(); return; }
+      const names = [["title", "Title"], ["kind", "Format"], ["outputPath", "Page URL"]]; cells = names.map(([name]) => ({ name, node: h("span") }));
+      const rows = names.map(([name, label], index) => h("tr", {}, h("th", { scope: "row" }, label), h("td", {}, cells[index].node), h("td", {}, compared.unpublished ? "Not published" : compared.properties[name])));
+      propertiesHost.hidden = false;
+      propertiesHost.replaceChildren(h("h3", {}, "Published and local properties"), ...(value.unpublished ? [h("p", {}, "This document is not published on this branch. The current project revision was checked; your local text and properties stay selected.")] : []), table(["Property", "Local values", "Published values"], rows), h("div", { class: "actions" }, writable() ? button("Keep my properties", () => { if (matches(compared) && writable()) { compared.choice = "local"; syncProperties(); } }) : null, !value.unpublished && writable() ? button("Use published properties", () => { if (matches(compared) && writable()) { workspace.editProperties(compared.properties); compared.choice = "published"; syncProperties(); } }) : null), choiceMessage);
+      syncProperties();
     });
-    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, sourceFile ? "Your source is still here. Compare the latest published source, then edit your text above. Save merged draft changes its base after your confirmation and keeps publication separate." : "Your draft is still here. Compare the latest source, then edit your draft above to keep the changes you need from both versions."), h("div", { class: "actions" }, compare, rebase, button("Download my draft", downloadDraft), button(sourceFile ? "Reload saved source" : "Reload document", async () => { if (workspace.document?.resource === "file") await openSource(workspace.document.path, workspace.document.draftId ? { id: workspace.document.draftId } : null); else if (await workspace.open(workspace.document.id)) await navigate("documents"); }), sourceFile ? button("Open current published source", () => openSource(workspace.document.path)) : null), latest));
+    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, sourceFile ? "Your source is still here. Compare the latest published source, then edit your text above. Save merged draft changes its base after your confirmation and keeps publication separate." : "Your text and properties are still here. Compare the published values below, choose the properties to keep and edit your merged text above. No values are merged automatically."), h("div", { class: "actions" }, compare, rebase, button("Download my draft", downloadDraft), button(sourceFile ? "Reload saved source" : "Reload document", async () => { if (workspace.document?.resource === "file") await openSource(workspace.document.path, workspace.document.draftId ? { id: workspace.document.draftId } : null); else if (await workspace.open(workspace.document.id)) await navigate("documents"); }), sourceFile ? button("Open current published source", () => openSource(workspace.document.path)) : null), propertiesHost, latest));
   }
   function downloadDraft() {
     if (!workspace.document) return; const blob = new Blob([source()], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob);

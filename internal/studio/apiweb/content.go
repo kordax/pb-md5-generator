@@ -248,6 +248,10 @@ func (h *handler) save(w http.ResponseWriter, r *http.Request, user *auth.User, 
 		h.operationError(w, r, err)
 		return
 	}
+	h.finishSave(w, r, user, draft, document, publish, push, message, status, policy)
+}
+
+func (h *handler) finishSave(w http.ResponseWriter, r *http.Request, user *auth.User, draft content.Draft, document *Document, publish, push bool, message string, status int, policy PublishingPolicy) {
 	result := saveResult{Revision: draft.BaseRevision, Document: document}
 	dto := describeDraft(draft)
 	result.Draft = &dto

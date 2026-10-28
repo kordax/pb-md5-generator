@@ -100,11 +100,47 @@ export function normalizeDocument(value) {
   return { ...doc, content: textWithinLimit(doc.content ?? "") };
 }
 
+export function documentProperties(value) {
+  return Object.freeze({ title: typeof value?.title === "string" ? value.title : "", kind: value?.kind || "markdown", outputPath: typeof value?.outputPath === "string" ? value.outputPath : "" });
+}
+export function propertiesEqual(left, right) { return (left?.title || "") === (right?.title || "") && (left?.kind || "markdown") === (right?.kind || "markdown") && (left?.outputPath || "") === (right?.outputPath || ""); }
+export function validateDocumentProperties(value) {
+  if (!value || typeof value !== "object" || Object.keys(value).some(key => !["title", "kind", "outputPath"].includes(key)) || typeof value.title !== "string" || !value.title.trim() || encoder.encode(value.title).length > 256 || /\p{Cc}/u.test(value.title) || !["markdown", "html", "protobuf", "openapi"].includes(value.kind)) throw new APIError("Enter a title of up to 256 UTF-8 bytes and choose a supported document format.");
+  const path = value.outputPath;
+  if (typeof path !== "string" || !path || encoder.encode(path).length > 4096 || !/^[a-z0-9/._-]+\.html$/.test(path) || path.startsWith("assets/") || path.split("/").some(part => !part || part.startsWith(".") || part.endsWith(".") || part === "_docs" || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/.test(part))) throw new APIError("Enter an explicit lowercase ASCII relative .html page URL without reserved folders or filenames.");
+  return documentProperties(value);
+}
+const documentRevision = value => typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\"\u0000-\u001f\u007f]/.test(value);
+
 export class Workspace {
   constructor(api, { confirmDiscard = () => true, changed = () => {} } = {}) {
-    this.api = api; this.confirmDiscard = confirmDiscard; this.changed = changed; this.document = null; this.content = ""; this.base = ""; this.conflict = null; this.busy = false; this.load = null; this.sequence = 0;
+    this.api = api; this.confirmDiscard = confirmDiscard; this.changed = changed; this.document = null; this.content = ""; this.base = ""; this.properties = null; this.baseProperties = null; this.conflict = null; this.busy = false; this.load = null; this.sequence = 0;
   }
-  get dirty() { return !!this.document && (this.document.isNew || this.content !== this.base); }
+  get dirty() { return !!this.document && (this.document.isNew || this.content !== this.base || this.propertiesDirty); }
+  get propertiesDirty() { return !!this.document && this.document.resource !== "file" && !propertiesEqual(this.properties, this.baseProperties); }
+  editProperties(values) {
+    if (!this.document || this.document.resource === "file") throw new APIError("Open a registered document to edit its properties.");
+    if (this.document.canWrite === false) throw new APIError("This document is read only.", 403);
+    if (!values || typeof values !== "object" || Object.keys(values).some(key => !["title", "kind", "outputPath"].includes(key) || typeof values[key] !== "string" || values[key].length > 4096)) throw new APIError("Only the title, format and page URL can be edited. The document ID and source path are permanent here.");
+    const previous = this.properties || documentProperties(this.document); if (!this.baseProperties) this.baseProperties = previous;
+    const next = documentProperties({ ...previous, ...values }); if (propertiesEqual(previous, next)) return;
+    this.properties = next; this.changed();
+  }
+  captureDocument() {
+    if (!this.properties) this.properties = documentProperties(this.document); if (!this.baseProperties) this.baseProperties = this.properties;
+    return { document: this.document, id: this.document.id, path: this.document.path, sequence: this.sequence, content: this.content, properties: this.properties, propertiesDirty: this.propertiesDirty };
+  }
+  adoptDocumentResult(result, captured, sentProperties = false) {
+    if (captured.sequence !== this.sequence) return;
+    if (!result?.revision) throw new APIError("The save response did not include a revision. Your draft is still here.");
+    const saved = result.document || {};
+    if (saved.id && saved.id !== captured.id || captured.path && saved.path && saved.path !== captured.path) throw new APIError("The save response changed the document identity. Your editor is retained; reload the saved draft explicitly.");
+    const publishedRevision = saved.publishedRevision || (result.published ? result.revision : captured.document.publishedRevision || (!captured.document.draft && !captured.document.draftId ? captured.document.revision : ""));
+    this.document = { ...this.document, ...(sentProperties ? captured.properties : {}), ...saved, revision: result.revision, publishedRevision, content: saved.content ?? captured.content, draft: !result.published, draftId: result.published ? "" : result.draft?.id || saved.draftId || "", draftRevision: result.published ? "" : result.draft?.revision || saved.draftRevision || "", baseRevision: result.published ? "" : result.draft?.baseRevision || saved.baseRevision || "" };
+    this.base = saved.content ?? captured.content; this.baseProperties = documentProperties(this.document);
+    if (this.properties === captured.properties && (sentProperties || !captured.propertiesDirty)) this.properties = this.baseProperties;
+    this.conflict = null;
+  }
   get loading() { return this.load !== null; }
   edit(content) { if (this.document?.resource === "file" && content.includes("\u0000")) throw new APIError("Text source cannot contain binary NUL bytes.", 415, "not_text"); this.content = textWithinLimit(content); this.changed(); }
   async discardAllowed() { return !this.dirty || await this.confirmDiscard(); }
@@ -116,7 +152,7 @@ export class Workspace {
       const doc = normalizeDocument(await this.api.request("documents/" + encodeURIComponent(id), { signal: controller.signal }));
       if (sequence !== this.sequence || controller.signal.aborted) return false;
       if (draftId && (doc.draftId !== draftId || draftRevision && doc.draftRevision !== draftRevision)) throw new APIError("This saved document draft changed. Refresh its entry before opening it.", 409, "conflict");
-      this.document = doc; this.content = doc.content; this.base = doc.content; this.conflict = null; return true;
+      this.document = doc; this.content = doc.content; this.base = doc.content; this.properties = this.baseProperties = documentProperties(doc); this.conflict = null; return true;
     } catch (error) { if (error?.name === "AbortError" || sequence !== this.sequence) return false; throw error; }
     finally { if (sequence === this.sequence) this.load = null; this.changed(); }
   }
@@ -130,7 +166,7 @@ export class Workspace {
     if (this.busy || sequence !== this.sequence || document !== this.document || content !== this.content) return false;
     this.load?.abort(); this.load = null; this.sequence++;
     this.document = { id: "file:" + path, resource: "file", path, title: path.split("/").at(-1), revision, content: "", canWrite, isNew: true, draft: false, draftId: "", draftRevision: "", baseRevision: "" };
-    this.content = ""; this.base = ""; this.conflict = null; this.changed(); return true;
+    this.content = ""; this.base = ""; this.properties = this.baseProperties = null; this.conflict = null; this.changed(); return true;
   }
   async openFile(path, { draftId = "", draftRevision = "", force = false, canWrite = true } = {}) {
     cleanPath(path);
@@ -143,7 +179,7 @@ export class Workspace {
       if (draftId && draftRevision && file.revision !== draftRevision) throw new APIError("This saved source draft changed. Refresh its entry before opening it.", 409, "conflict");
       const base = draftId ? file.baseRevision : file.revision;
       this.document = { id: "file:" + path, resource: "file", path, title: path.split("/").at(-1), revision: base, content: file.content, canWrite, draft: !!draftId, draftId, draftRevision: draftId ? file.revision : "", baseRevision: draftId ? base : "" };
-      this.content = file.content; this.base = file.content; this.conflict = null; return true;
+      this.content = file.content; this.base = file.content; this.properties = this.baseProperties = null; this.conflict = null; return true;
     } catch (error) { if (error?.name === "AbortError" || sequence !== this.sequence) return false; throw error; }
     finally { if (sequence === this.sequence) this.load = null; this.changed(); }
   }
@@ -182,24 +218,17 @@ export class Workspace {
   async save(publish = false, message = "") {
     if (!this.document) throw new APIError("Open a document first.");
     if (this.document.resource === "file") return this.saveSource(publish, message);
-    const id = this.document.id; const content = this.content; const revision = this.document.revision; const sequence = this.sequence;
+    const captured = this.captureDocument(), document = captured.document;
+    const properties = captured.propertiesDirty ? validateDocumentProperties(captured.properties) : null;
+    const propertiesRevision = document.publishedRevision || (!document.draft && !document.draftId ? document.revision : "");
+    if (properties && !documentRevision(propertiesRevision)) throw new APIError("Refresh the document or compare the latest properties before saving property changes.", 409, "conflict");
     return this.exclusive(async () => {
       try {
-        const result = await this.api.request("documents/" + encodeURIComponent(id), { method: "PUT", body: { content, revision, publish, message, ...(this.document.draftId ? { draftId: this.document.draftId } : {}), ...(this.document.draftRevision ? { draftRevision: this.document.draftRevision } : {}), ...(this.document.baseRevision ? { baseRevision: this.document.baseRevision } : {}) } });
-        if (sequence !== this.sequence) return result;
-        if (!result?.revision) throw new APIError("The save response did not include a revision. Your draft is still here.");
-        const saved = result.document || {};
-        this.document = { ...this.document, ...saved, revision: result.revision, content: saved.content ?? content,
-          draft: !result.published, draftId: result.published ? "" : result.draft?.id || saved.draftId || "", draftRevision: result.published ? "" : result.draft?.revision || saved.draftRevision || "", baseRevision: result.published ? "" : result.draft?.baseRevision || saved.baseRevision || "" };
-        this.base = saved.content ?? content; this.conflict = null;
-        return result;
+        const result = await this.api.request("documents/" + encodeURIComponent(captured.id), { method: "PUT", body: { content: captured.content, revision: document.revision, publish, message, ...(document.draftId ? { draftId: document.draftId } : {}), ...(document.draftRevision ? { draftRevision: document.draftRevision } : {}), ...(document.baseRevision ? { baseRevision: document.baseRevision } : {}), ...(properties ? { properties, propertiesRevision } : {}) } });
+        this.adoptDocumentResult(result, captured, !!properties); return result;
       } catch (error) {
-        if (sequence === this.sequence && error.details?.draft) {
-          const draft = error.details.draft, saved = error.details.document || {};
-          this.document = { ...this.document, ...saved, revision: draft.baseRevision, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision };
-          this.base = saved.content ?? content;
-        }
-        if (error.status === 409 || error.code === "conflict") this.conflict = { message: error.message, revision: error.details?.revision || error.details?.currentRevision || "" };
+        if (captured.sequence === this.sequence && error.details?.draft) this.adoptDocumentResult({ revision: error.details.draft.baseRevision, published: false, draft: error.details.draft, document: error.details.document }, captured, !!properties);
+        if (captured.sequence === this.sequence && (error.status === 409 || error.code === "conflict")) this.conflict = { message: error.message, revision: error.details?.revision || error.details?.currentRevision || "" };
         throw error;
       }
     });
@@ -221,24 +250,19 @@ export class Workspace {
       }
     });
   }
-  async rebase(revision) {
+  async rebase(revision, { propertiesRevision } = {}) {
     if (!this.document) throw new APIError("Open a document first.");
     if (this.document.resource === "file") return this.rebaseSource(revision);
-    const id = this.document.id, content = this.content, sequence = this.sequence;
+    const captured = this.captureDocument(), document = captured.document;
+    const properties = propertiesRevision === undefined ? null : validateDocumentProperties(captured.properties);
+    if (properties && (!documentRevision(propertiesRevision) || propertiesRevision !== revision)) throw new APIError("Compare the current published properties again before rebasing.", 409, "conflict");
+    if (!!document.draftId !== !!document.draftRevision) throw new APIError("Reopen the exact saved draft before rebasing.", 409, "conflict");
     return this.exclusive(async () => {
-      let draftId = this.document.draftId, draftRevision = this.document.draftRevision;
-      if (!draftId || !draftRevision) {
-        const current = normalizeDocument(await this.api.request("documents/" + encodeURIComponent(id)));
-        draftId = current.draftId; draftRevision = current.draftRevision;
-      }
       try {
-        const result = await this.api.request("documents/" + encodeURIComponent(id) + "/rebase", { method: "POST", body: { content, revision, ...(draftId ? { draftId, draftRevision } : {}) } });
-        if (sequence !== this.sequence) return result;
-        if (!result?.revision) throw new APIError("The save response did not include a revision. Your text is still here.");
-        this.document = { ...this.document, ...result.document, revision: result.revision, content, draft: true, draftId: result.draft?.id || result.document?.draftId || "", draftRevision: result.draft?.revision || result.document?.draftRevision || "", baseRevision: result.draft?.baseRevision || revision };
-        this.base = result.document?.content ?? content; this.conflict = null; return result;
+        const result = await this.api.request("documents/" + encodeURIComponent(captured.id) + "/rebase", { method: "POST", body: { content: captured.content, revision, ...(document.draftId ? { draftId: document.draftId, draftRevision: document.draftRevision } : {}), ...(properties ? { properties, propertiesRevision } : {}) } });
+        this.adoptDocumentResult({ ...result, published: false }, captured, !!properties); return result;
       } catch (error) {
-        if (error.status === 409) this.conflict = { message: error.message, revision: error.details?.currentRevision || "" };
+        if (captured.sequence === this.sequence && error.status === 409) this.conflict = { message: error.message, revision: error.details?.currentRevision || "" };
         throw error;
       }
     });
@@ -246,9 +270,16 @@ export class Workspace {
   async latest() {
     if (!this.document) return null;
     if (this.document.resource === "file") return this.api.source(this.document.path);
-    return normalizeDocument(await this.api.request("documents/" + encodeURIComponent(this.document.id) + "?published=true"));
+    const document = this.document;
+    try { return normalizeDocument(await this.api.request("documents/" + encodeURIComponent(document.id) + "?published=true")); }
+    catch (error) {
+      if (error.status !== 404) throw error;
+      const catalog = await this.api.request("documents?published=true");
+      if (!Array.isArray(catalog?.documents) || !documentRevision(catalog.revision) || catalog.documents.some(item => item.id === document.id)) throw new APIError("The publication changed while comparing. Compare the latest version again.", 409, "conflict");
+      return { ...document, revision: catalog.revision, publishedRevision: catalog.revision, content: "", unpublished: true };
+    }
   }
-  clear() { this.sequence++; this.load?.abort(); this.load = null; this.document = null; this.content = ""; this.base = ""; this.conflict = null; this.changed(); }
+  clear() { this.sequence++; this.load?.abort(); this.load = null; this.document = null; this.content = ""; this.base = ""; this.properties = this.baseProperties = null; this.conflict = null; this.changed(); }
   dispose() { this.sequence++; this.load?.abort(); this.load = null; }
 }
 
@@ -261,9 +292,12 @@ export function mergeSettings(original, changes) {
 export function formatLanguage(doc) {
   if (doc.resource === "file") return "text";
   if (doc.kind === "html") return "html";
-  if (doc.kind === "protobuf" || /\.proto$/i.test(doc.path)) return "protobuf";
+  if (doc.kind === "protobuf") return "protobuf";
+  if (doc.kind === "openapi") return /\.ya?ml$/i.test(doc.path) ? "yaml" : "json";
+  if (doc.kind === "markdown") return "markdown";
+  if (/\.proto$/i.test(doc.path)) return "protobuf";
   if (/\.ya?ml$/i.test(doc.path)) return "yaml";
-  if (doc.kind === "openapi" || /\.json$/i.test(doc.path)) return "json";
+  if (/\.json$/i.test(doc.path)) return "json";
   return "markdown";
 }
 export function previewDocument(html, nonce = "") {

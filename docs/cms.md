@@ -180,6 +180,16 @@ Open <http://localhost:8090/_docs/admin/>. Stop with Ctrl+C or SIGTERM. On Unix,
 
 `--listen` controls the bind address; `--public-url` controls the address and origin used by the application. Without `--data-dir`, the CMS uses `pb-docs` in the operating system's user configuration directory. `--init=false` requires an existing managed content directory instead of creating the initial page. Run `serve --help` or `admin-user --help` for startup flags.
 
+## Document properties
+
+Open a registered page in **Documents** and expand **Properties** to change its title, format or page URL. The permanent page ID and source path are shown for reference. Use **Move** to change the source path. Changing the format selects a renderer for the existing text; edit the source into that format before publishing.
+
+**Save** records the current source and changed properties together. It follows the configured automatic publication policy. A property change counts as an unsaved edit, and preview uses the selected format, title and URL without saving them. Reopening a draft restores its properties; a later text-only save keeps them.
+
+The page URL is an explicit lowercase relative `.html` path. It must be unique, and the home page keeps `index.html`. Navigation retains permanent page references and custom labels. A changed URL does not create a redirect or rewrite links in other pages. Correct those references before publishing; a failed build keeps the saved source and properties in the draft and preserves the last successful publication.
+
+After a conflict, **Compare latest** shows the current published source and properties alongside the local values. Review both, edit the merged result and explicitly save the reviewed draft. A manual rebase stays unpublished even with automatic publication enabled. It checks the reviewed project revision and the existing draft revision together; newer changes require another review. Edits made while a save is running remain in the editor after its response.
+
 ## Files, source editing and folder deletion
 
 Use **Documents** for pages registered in the project and **Files** for their source tree and attachments. Open text source from Files to edit an unregistered snippet or include; a registered page opens in the document editor. Files supports literal code examples with `.go`, `.js`, `.ts`, `.sh`, `.sql`, `.css` and `.xml` extensions. These are UTF-8 source files up to 4 MiB, without NUL bytes. They can be included as escaped code in documentation; uploading them does not create an executable page or public script asset. Downloads use attachment headers and a sandbox policy.

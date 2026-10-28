@@ -74,8 +74,7 @@ func (h *handler) documentState(r *http.Request, user *auth.User, id string, pub
 			if state.doc.ID == "" {
 				state.doc = draftDocument(change, draft, project.Revision, user)
 			} else {
-				state.doc.Draft, state.doc.DraftID, state.doc.DraftRevision = true, draft.ID, draft.Revision
-				state.doc.Revision, state.doc.BaseRevision = draft.BaseRevision, draft.BaseRevision
+				applyDocumentDraft(&state.doc, change, draft)
 			}
 			state.draft = &draft
 			break
@@ -132,11 +131,11 @@ func (h *handler) documents(w http.ResponseWriter, r *http.Request, user *auth.U
 		return
 	}
 	items := []Document{}
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 	for _, entry := range project.Documents {
 		if permitted(user, auth.ActionRead, entry.Path) {
+			seen[entry.ID] = len(items)
 			items = append(items, describeDocument(entry, user))
-			seen[entry.ID] = true
 		}
 	}
 	for _, draft := range drafts {
@@ -145,10 +144,17 @@ func (h *handler) documents(w http.ResponseWriter, r *http.Request, user *auth.U
 			continue
 		}
 		change := changes[0]
-		if change.Operation == "write" && change.DocumentID != "" && change.Title != "" && change.Kind != "" && !seen[change.DocumentID] && permitted(user, auth.ActionRead, change.Path) && permitted(user, auth.ActionWrite, change.Path) {
-			items = append(items, draftDocument(change, draft, project.Revision, user))
-			seen[change.DocumentID] = true
+		if change.Operation != "write" || change.DocumentID == "" || change.Title == "" || change.Kind == "" || !permitted(user, auth.ActionRead, change.Path) || !permitted(user, auth.ActionWrite, change.Path) {
+			continue
 		}
+		if index, exists := seen[change.DocumentID]; exists {
+			if !items[index].Draft && items[index].Path == change.Path {
+				applyDocumentDraft(&items[index], change, draft)
+			}
+			continue
+		}
+		seen[change.DocumentID] = len(items)
+		items = append(items, draftDocument(change, draft, project.Revision, user))
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Documents []Document `json:"documents"`
@@ -294,6 +300,10 @@ func (h *handler) document(w http.ResponseWriter, r *http.Request, user *auth.Us
 				serviceError(w, err)
 				return
 			}
+			if file.Revision != state.project.Revision {
+				h.conflict(w, r)
+				return
+			}
 			state.doc.Content, state.doc.Revision, state.doc.PublishedRevision = file.Content, file.Revision, file.Revision
 		}
 		user, err = Principal(r.Context())
@@ -336,26 +346,21 @@ func (h *handler) document(w http.ResponseWriter, r *http.Request, user *auth.Us
 }
 
 func (h *handler) saveDocument(w http.ResponseWriter, r *http.Request, user *auth.User, state documentState, rebase bool) {
-	var input struct {
-		Content       *string `json:"content"`
-		Revision      string  `json:"revision"`
-		DraftID       string  `json:"draftId"`
-		DraftRevision string  `json:"draftRevision"`
-		BaseRevision  string  `json:"baseRevision"`
-		Publish       bool    `json:"publish"`
-		Message       string  `json:"message"`
-	}
+	var input documentSaveInput
 	if rebase {
 		var request struct {
-			Content       *string `json:"content"`
-			Revision      string  `json:"revision"`
-			DraftID       string  `json:"draftId"`
-			DraftRevision string  `json:"draftRevision"`
+			Content            *string                    `json:"content"`
+			Revision           string                     `json:"revision"`
+			DraftID            string                     `json:"draftId"`
+			DraftRevision      string                     `json:"draftRevision"`
+			Properties         documentProperties         `json:"properties"`
+			PropertiesRevision documentPropertiesRevision `json:"propertiesRevision"`
 		}
 		if !decode(w, r, &request) {
 			return
 		}
 		input.Content, input.Revision, input.DraftID, input.DraftRevision = request.Content, request.Revision, request.DraftID, request.DraftRevision
+		input.Properties, input.PropertiesRevision = request.Properties, request.PropertiesRevision
 	} else if !decode(w, r, &input) {
 		return
 	}
@@ -363,7 +368,7 @@ func (h *handler) saveDocument(w http.ResponseWriter, r *http.Request, user *aut
 		serviceError(w, content.ErrLimit)
 		return
 	}
-	if input.Content == nil || !revision(input.Revision) {
+	if input.Content == nil || !revision(input.Revision) || !input.Properties.provided && input.PropertiesRevision != "" || input.Properties.provided && (!revision(string(input.PropertiesRevision)) || !validDocumentProperties(input.Properties)) {
 		serviceError(w, content.ErrInvalid)
 		return
 	}
@@ -382,6 +387,11 @@ func (h *handler) saveDocument(w http.ResponseWriter, r *http.Request, user *aut
 		}
 	} else if input.DraftID != "" || input.DraftRevision != "" || input.BaseRevision != "" && input.BaseRevision != input.Revision {
 		h.conflict(w, r)
+		return
+	}
+	if input.Properties.provided {
+		input.Revision = base
+		h.saveDocumentProperties(w, r, user, state.doc.ID, input, rebase)
 		return
 	}
 	state.doc.Content = *input.Content
@@ -413,8 +423,9 @@ func (h *handler) preview(w http.ResponseWriter, r *http.Request, user *auth.Use
 		return
 	}
 	var input struct {
-		DocumentID string  `json:"documentId"`
-		Content    *string `json:"content"`
+		DocumentID string             `json:"documentId"`
+		Content    *string            `json:"content"`
+		Properties documentProperties `json:"properties"`
 	}
 	if !decode(w, r, &input) {
 		return
@@ -431,6 +442,13 @@ func (h *handler) preview(w http.ResponseWriter, r *http.Request, user *auth.Use
 	if err != nil {
 		serviceError(w, err)
 		return
+	}
+	if input.Properties.provided {
+		if !validDocumentProperties(input.Properties) {
+			serviceError(w, content.ErrInvalid)
+			return
+		}
+		state.doc.Title, state.doc.Kind, state.doc.OutputPath = input.Properties.Title, input.Properties.Kind, input.Properties.OutputPath
 	}
 	result, err := h.opts.Preview(r.Context(), state.doc, []byte(*input.Content), user)
 	if !boundedPreview(result) {

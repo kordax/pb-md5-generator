@@ -9,7 +9,7 @@ import { boot } from "../assets/app.mjs";
 // browser, enforce CSP, or establish visual/keyboard/screen-reader acceptance.
 const html = readFileSync(new URL("../assets/index.html", import.meta.url), "utf8");
 const admin = { id: "u1", username: "admin", displayName: "Admin", role: "admin", disabled: false };
-const source = { id: "guide", path: "docs/guide.md", title: "Guide <img src=x onerror=alert(1)>", kind: "markdown", content: "# Guide\r\n", revision: "p1", canWrite: true };
+const source = { id: "guide", path: "docs/guide.md", title: "Guide <img src=x onerror=alert(1)>", kind: "markdown", outputPath: "guide.html", content: "# Guide\r\n", revision: "p1", publishedRevision: "p1", canWrite: true };
 const json = (value, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const historical = (path, changes = {}) => ({ id: "h1", path, revision: "p0", author: "Author", createdAt: "2026-10-28T00:00:00Z", size: 0, deleted: false, restorable: true, ...changes });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -29,7 +29,7 @@ function environment(options = {}) {
   Object.defineProperty(window.HTMLSelectElement.prototype, "value", { configurable: true, get() { return [...this.options].find(item => item.selected)?.value || this.options[0]?.value || ""; }, set(value) { const chosen = [...this.options].find(item => item.value === String(value)); for (const item of this.options) item.selected = false; if (chosen) chosen.selected = true; } });
   const requests = [];
   let session = options.anonymous ? { user: null } : { user: { ...admin, ...(options.user || {}) }, csrfToken: "csrf-memory" };
-  let draft = null, conflict = false, storage = options.storage || storageSnapshot(), storageSaves = 1;
+  let draft = null, pendingProperties = null, conflict = false, storage = options.storage || storageSnapshot(), storageSaves = 1;
   let settings = { revision: "s1", title: "Docs", description: "Description", logo: "", favicon: "", footer: "Footer", themeId: "paper", theme: { id: "paper", name: "Paper", mode: "auto", accent: "#315be8", font: "system", density: "comfortable", width: "normal", radius: 10 }, navigation: { showTOC: true, showPreviousNext: false, stickyHeader: true }, editor: { defaultFormat: "markdown", previewOnSave: false }, api: { enabled: true, showCurl: true, requestTimeoutMs: 18000, maxResponseBytes: 65536 }, publishing: { autoPublish: false, gitPushOnPublish: true } };
   if (options.settings) settings = { ...settings, ...options.settings };
   const fetcher = async (url, request) => {
@@ -47,12 +47,13 @@ function environment(options = {}) {
     if (route === "documents/guide") {
       if (request.method === "PUT") {
         if (conflict) return json({ error: { code: "conflict", message: "A new revision exists", currentRevision: "p2" } }, 409);
+        if (body.properties) pendingProperties = { ...body.properties };
         draft = { id: "draft-1", revision: "d1", baseRevision: "p1", path: source.path, operation: "write", content: body.content };
-        return json({ revision: "p1", published: !!body.publish, draft, document: { ...source, content: body.content, draft: !body.publish, draftId: "draft-1", draftRevision: "d1", baseRevision: "p1" } });
+        return json({ revision: "p1", published: !!body.publish, draft, document: { ...source, ...pendingProperties, content: body.content, draft: !body.publish, draftId: "draft-1", draftRevision: "d1", baseRevision: "p1" } });
       }
-      return json({ ...source, ...(conflict && url.searchParams.has("published") ? { revision: "p2", publishedRevision: "p2" } : {}), ...(draft && !url.searchParams.has("published") ? { content: draft.content, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision } : {}) });
+      return json({ ...source, ...(conflict && url.searchParams.has("published") ? { revision: "p2", publishedRevision: "p2" } : {}), ...(draft && !url.searchParams.has("published") ? { ...pendingProperties, content: draft.content, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision } : {}) });
     }
-    if (route === "documents/guide/rebase") { draft = { id: "rebased", revision: "d2", baseRevision: body.revision, path: source.path, operation: "write", content: body.content }; return json({ revision: body.revision, published: false, draft, document: { ...source, content: body.content, revision: body.revision, draft: true } }); }
+    if (route === "documents/guide/rebase") { if (body.properties) pendingProperties = { ...body.properties }; draft = { id: "rebased", revision: "d2", baseRevision: body.revision, path: source.path, operation: "write", content: body.content }; return json({ revision: body.revision, published: false, draft, document: { ...source, ...pendingProperties, content: body.content, revision: body.revision, publishedRevision: body.revision, draft: true } }); }
     if (route === "preview") return json({ html: '<h1>Preview</h1><script>top.attack()</script>', diagnostics: [] });
     if (route === "settings") { if (request.method === "PUT") settings = { ...body, revision: "s2" }; return json(settings); }
     if (route === "themes") return request.method === "POST" ? json(body) : json({ themes: [{ ...settings.theme, builtin: true }, { ...settings.theme, id: "custom", name: "Custom", builtin: false, revision: "theme-r1" }] });
@@ -101,6 +102,40 @@ function registrationEnvironment(options = {}) {
 }
 async function openRegistration(env) { await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Register document")[0], "click"); await settle(); }
 function registrationField(env, name, value) { const input = env.document.querySelector('.registration-form [name="' + name + '"]'); input.value = value; env.event(input, input.tagName === "SELECT" ? "change" : "input"); return input; }
+
+function propertyField(env, name, value) { const input = env.document.querySelector('.document-properties [name="' + name + '"]'); input.value = value; env.event(input, input.tagName === "SELECT" ? "change" : "input"); return input; }
+
+test("document properties update syntax in place, preview chosen metadata and save text and properties together", async () => {
+  let options, creations = 0; const modes = [];
+  const env = environment({ loadEditor: async () => ({ createEditor(_host, value) { creations++; options = value; return { setEditable() {}, setDark() {}, setLanguage(mode) { modes.push(mode); }, refresh() {}, destroy() {} }; } }) });
+  await env.app.ready; await env.app.openDocument("guide"); const id = env.document.querySelector('.document-properties [name="permanentId"]'), path = env.document.querySelector('.document-properties [name="sourcePath"]'); assert.equal(id.value, "guide"); assert.equal(path.value, source.path); assert.ok(id.readOnly || id.hasAttribute("readonly")); assert.ok(path.readOnly || path.hasAttribute("readonly"));
+  options.onChange("\uFEFF# unchanged bytes\r\n"); propertyField(env, "title", "Changed title"); propertyField(env, "kind", "html"); propertyField(env, "outputPath", "manual/guide.html"); assert.equal(creations, 1); assert.deepEqual(modes, ["html"]); assert.equal(env.app.workspace.content, "\uFEFF# unchanged bytes\r\n"); assert.equal(env.document.querySelector(".format-toolbar").hidden, true);
+  env.event(controls(env.document, "Preview")[0], "click"); await settle(); const preview = env.requests.find(item => item.route === "preview"); assert.deepEqual(preview.body, { documentId: "guide", content: "\uFEFF# unchanged bytes\r\n", properties: { title: "Changed title", kind: "html", outputPath: "manual/guide.html" } });
+  env.event(controls(env.document, "Save draft")[0], "click"); await settle(); const put = env.requests.find(item => item.route === "documents/guide" && item.method === "PUT"); assert.equal(put.body.propertiesRevision, "p1"); assert.deepEqual(put.body.properties, preview.body.properties); assert.equal(put.body.content, "\uFEFF# unchanged bytes\r\n"); assert.equal("id" in put.body.properties, false); assert.equal("path" in put.body.properties, false); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.document.path, source.path); assert.equal(env.app.workspace.dirty, false); assert.equal(creations, 1); env.app.dispose();
+});
+
+test("property conflicts show local and published values and require an explicit choice before rebase", async () => {
+  const remote = { title: "Published title", kind: "html", outputPath: "remote.html" };
+  for (const choice of ["Keep my properties", "Use published properties"]) {
+    const env = environment({ respond({ route, request, search }) { if (route === "documents/guide" && request.method === "PUT") return json({ error: { code: "conflict", message: "Project changed", currentRevision: "p2" } }, 409); if (route === "documents/guide" && new URLSearchParams(search).get("published") === "true") return json({ ...source, ...remote, revision: "p2", publishedRevision: "p2", content: "published source" }); } });
+    await env.app.ready; await env.app.openDocument("guide"); const text = env.document.querySelector(".source-editor"); text.value = "\uFEFFmy merged source\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle(); env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.match(env.document.querySelector(".property-comparison").textContent, /Published title/); assert.equal(controls(env.document, "Use my merged draft")[0].hidden, true);
+    const expected = choice === "Keep my properties" ? { title: source.title, kind: source.kind, outputPath: source.outputPath } : remote; env.event(controls(env.document, choice)[0], "click"); await settle(); assert.equal(env.document.querySelector(".source-editor"), text); assert.equal(env.app.workspace.content, "\uFEFFmy merged source\r\n"); assert.deepEqual(env.app.workspace.properties, expected); env.event(controls(env.document, "Use my merged draft")[0], "click"); await settle();
+    const rebase = env.requests.find(item => item.route === "documents/guide/rebase"); assert.deepEqual(rebase.body.properties, expected); assert.equal(rebase.body.propertiesRevision, "p2"); assert.equal(rebase.body.revision, "p2"); assert.equal(rebase.body.content, "\uFEFFmy merged source\r\n"); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.document.path, source.path); assert.equal(env.app.workspace.dirty, false); env.app.dispose();
+  }
+});
+
+test("property-only edits participate in discard guards and readonly users cannot change local properties", async () => {
+  const env = environment({ confirm: false }); await env.app.ready; await env.app.openDocument("guide"); propertyField(env, "title", "Only metadata changed"); assert.equal(env.app.workspace.content, source.content); assert.equal(env.app.workspace.dirty, true); await env.app.openSource("sample.txt"); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.properties.title, "Only metadata changed"); assert.equal(env.requests.some(item => item.route === "files/content"), false); env.app.dispose();
+  const viewer = environment({ user: { role: "viewer" } }); await viewer.app.ready; await viewer.app.openDocument("guide"); const title = viewer.document.querySelector('.document-properties [name="title"]'); assert.equal(title.disabled, true); title.value = "Forced event"; viewer.event(title, "input"); assert.equal(viewer.app.workspace.properties.title, source.title); assert.equal(viewer.app.workspace.dirty, false); viewer.app.dispose();
+});
+
+test("newer properties and source survive saves while stale previews are discarded after metadata changes", async () => {
+  let finishPreview, finishSave, submitted; const preview = new Promise(resolve => { finishPreview = resolve; }), saving = new Promise(resolve => { finishSave = resolve; });
+  const env = environment({ respond({ route, request, body }) { if (route === "preview") return preview; if (route === "documents/guide" && request.method === "PUT") { submitted = body; return saving; } } });
+  await env.app.ready; await env.app.openDocument("guide"); propertyField(env, "title", "Submitted title"); env.event(controls(env.document, "Preview")[0], "click"); await settle(); propertyField(env, "title", "Newer preview title"); finishPreview(json({ html: "<h1>Obsolete preview</h1>", diagnostics: [] })); await settle(); assert.equal(env.document.querySelector("iframe"), null);
+  const text = env.document.querySelector(".source-editor"); text.value = "\uFEFFsubmitted text\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle(); const title = propertyField(env, "title", "Even newer title"); assert.equal(title.disabled, false); text.value = "\uFEFFnewer text\r\n"; env.event(text, "input"); finishSave(json({ revision: "p1", published: false, draft: { id: "saved", revision: "d1", baseRevision: "p1", path: source.path, operation: "write" }, document: { ...source, ...submitted.properties, content: submitted.content, draft: true, draftId: "saved", draftRevision: "d1", baseRevision: "p1" } })); await settle();
+  assert.equal(env.app.workspace.baseProperties.title, "Newer preview title"); assert.equal(env.app.workspace.properties.title, "Even newer title"); assert.equal(env.app.workspace.base, "\uFEFFsubmitted text\r\n"); assert.equal(env.app.workspace.content, "\uFEFFnewer text\r\n"); assert.equal(env.app.workspace.dirty, true); assert.equal(title.value, "Even newer title"); assert.equal(text.value, "\uFEFFnewer text\r\n"); env.app.dispose();
+});
 
 test("settings preserve local success and show pending Git synchronization without echoing response metadata", async () => {
   let saves = 0;
@@ -201,7 +236,7 @@ test("manual merge remains visible during editing and rebases only after an expl
   env.event(controls(env.document, "Publish")[0], "click"); await settle(); const use = controls(env.document, "Use my merged draft")[0]; assert.equal(use.hidden, true);
   env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(use.hidden, false);
   const comparison = env.document.querySelector('[aria-label="Latest published source"]'); text.value = "manually merged content"; env.event(text, "input"); assert.equal(env.document.querySelector('[aria-label="Latest published source"]'), comparison);
-  env.event(use, "click"); await settle(); const request = env.requests.find(item => item.route === "documents/guide/rebase"); assert.equal(request.body.content, "manually merged content"); assert.equal(request.body.revision, "p2"); assert.equal(env.confirmations.length, 1); assert.equal(env.app.workspace.document.baseRevision, "p2"); assert.equal(env.app.workspace.content, "manually merged content"); assert.equal(env.app.workspace.conflict, null); env.app.dispose();
+  env.event(use, "click"); await settle(); const request = env.requests.find(item => item.route === "documents/guide/rebase"); assert.equal(request.body.content, "manually merged content"); assert.equal(request.body.revision, "p2"); assert.equal(request.body.propertiesRevision, "p2"); assert.deepEqual(request.body.properties, { title: source.title, kind: source.kind, outputPath: source.outputPath }); assert.equal(env.confirmations.length, 1); assert.equal(env.app.workspace.document.baseRevision, "p2"); assert.equal(env.app.workspace.content, "manually merged content"); assert.equal(env.app.workspace.conflict, null); env.app.dispose();
 });
 
 test("settings can be saved repeatedly without reusing an obsolete revision", async () => {

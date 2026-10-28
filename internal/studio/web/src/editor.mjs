@@ -17,6 +17,8 @@ const languages = { markdown, html, json, yaml, text: () => [], protobuf: () => 
 export function createEditor(parent, { content, language = "markdown", editable = true, nonce = "", dark = false, onChange = () => {}, onError = () => {} }) {
   const permission = new Compartment();
   const appearance = new Compartment();
+  const syntax = new Compartment();
+  let currentLanguage = language;
   let current = content;
   let bytes;
   const theme = value => EditorView.theme({ "&": { height: "100%" }, ".cm-focused": { outline: "none" }, ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { background: value ? "#31578b" : "#dbe7ff" } }, { dark: value });
@@ -32,7 +34,7 @@ export function createEditor(parent, { content, language = "markdown", editable 
   const state = EditorState.create({ doc: content, extensions: [
     EditorState.lineSeparator.of(lineBreak), lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(), dropCursor(), foldGutter(), indentOnInput(), bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-    (languages[language] || languages.text)(), permission.of([EditorState.readOnly.of(!editable), EditorView.editable.of(editable)]), appearance.of(theme(dark)), EditorView.cspNonce.of(nonce), EditorView.contentAttributes.of({ "aria-label": "Document source. Press Escape then Tab to leave the editor." }),
+    syntax.of((languages[language] || languages.text)()), permission.of([EditorState.readOnly.of(!editable), EditorView.editable.of(editable)]), appearance.of(theme(dark)), EditorView.cspNonce.of(nonce), EditorView.contentAttributes.of({ "aria-label": "Document source. Press Escape then Tab to leave the editor." }),
     EditorState.transactionFilter.of(transaction => {
       if (!transaction.docChanged || bytes + byteChange(transaction) <= MAX_SOURCE_BYTES) return transaction;
       onError(new Error("That edit would exceed the 4 MiB source limit. Your previous draft is unchanged."));
@@ -52,6 +54,7 @@ export function createEditor(parent, { content, language = "markdown", editable 
     focus: () => view.focus(),
     setEditable: value => view.dispatch({ effects: permission.reconfigure([EditorState.readOnly.of(!value), EditorView.editable.of(value)]) }),
     setDark: value => view.dispatch({ effects: appearance.reconfigure(theme(value)) }),
+    setLanguage(value) { if (value !== currentLanguage) { view.dispatch({ effects: syntax.reconfigure((languages[value] || languages.text)()) }); currentLanguage = value; } },
     replace(before, after = "") {
       const { from, to } = view.state.selection.main;
       const selected = view.state.sliceDoc(from, to);
