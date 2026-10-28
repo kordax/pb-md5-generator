@@ -91,6 +91,7 @@ func renderAPI(ctx context.Context, api *document.API, current int, manifest Man
 		title = page.Title
 	}
 	r.heading(1, document.APIAnchor("api", pageIdentity(page)), title)
+	r.raw(`<details class="api-overview"><summary>Overview and contract</summary>`)
 	r.markdown(api.Description, api.Source.File, "root")
 	r.raw(`<p class="api-meta">`)
 	r.text(strings.ToUpper(api.Protocol))
@@ -109,6 +110,7 @@ func renderAPI(ctx context.Context, api *document.API, current int, manifest Man
 		r.servers(api.Servers, api.Source.File, "root-servers")
 	}
 	r.securityRequirements(api.Security, "Declared authentication")
+	r.raw(`</details>`)
 	r.operations()
 	r.securitySchemes()
 	if len(api.Schemas) > 0 {
@@ -387,7 +389,7 @@ func (r *apiRenderer) operations() {
 }
 
 func (r *apiRenderer) operation(operation document.Operation) {
-	r.raw(`<section class="api-operation">`)
+	r.raw(`<section class="api-operation"><div class="api-operation-content">`)
 	label := operation.Method + " " + operation.Path
 	if r.api.Protocol == "grpc" {
 		label = operation.Service + "." + operation.RPCMethod
@@ -472,15 +474,76 @@ func (r *apiRenderer) operation(operation document.Operation) {
 	}
 	r.securityRequirements(operation.Security, "Effective authentication")
 	r.rawPreview("Original operation metadata", string(operation.Raw))
+	r.raw(`</div><aside class="api-workbench" aria-label="Request and response"><details class="api-console" open><summary>Request &amp; response</summary><p class="api-workbench-route"><span class="api-method">`)
+	if r.api.Protocol == "grpc" {
+		r.text("RPC")
+	} else {
+		r.text(operation.Method)
+	}
+	r.raw(`</span> <code>`)
+	r.text(strings.TrimSpace(operation.Path + " " + operation.RPCMethod))
+	r.raw(`</code></p>`)
 	if (r.manifest.API == nil || r.manifest.API.Enabled) && r.api.Protocol == "http" && (operation.Interaction == "" || operation.Interaction == "request") {
-		r.raw(`<button type="button" data-api-operation="`)
+		r.raw(`<button class="api-edit-request" type="button" data-api-operation="`)
 		r.text(operation.ID)
 		r.raw(`" data-api-url="`)
 		r.text(r.modelURL)
 		r.raw(`">Try request</button><div class="api-client" data-api-client hidden></div>`)
 		r.content.Interactive = true
 	}
-	r.raw(`</section>`)
+	r.raw(`<div class="api-response-samples"><p class="api-sample-title">Response examples <span>From the contract</span></p>`)
+	if len(operation.Responses) == 0 {
+		r.raw(`<p class="api-meta">No response examples are declared.</p>`)
+	}
+	for responseIndex, response := range operation.Responses {
+		if !r.step() {
+			return
+		}
+		if responseIndex == 0 {
+			r.raw(`<details class="api-response-sample" open><summary>`)
+		} else {
+			r.raw(`<details class="api-response-sample"><summary>`)
+		}
+		r.text(response.Status)
+		r.raw(`</summary>`)
+		for _, media := range response.Content {
+			if !r.step() {
+				return
+			}
+			r.raw(`<p class="api-meta">`)
+			r.text(media.Name)
+			r.raw(`</p>`)
+			sample := media.ExampleJSON
+			if sample == "" {
+				sample = string(media.Example)
+			}
+			if sample == "" && len(media.Examples) > 0 {
+				example := media.Examples[0]
+				switch {
+				case example.SerializedValue != nil:
+					sample = *example.SerializedValue
+				case example.ValueJSON != "":
+					sample = example.ValueJSON
+				case len(example.DataValue) > 0:
+					sample = string(example.DataValue)
+				default:
+					sample = string(example.Value)
+				}
+			}
+			if sample == "" {
+				r.raw(`<p class="api-meta">No example body is declared for this media type.</p>`)
+			} else {
+				r.raw(`<pre class="api-sample-code"><code>`)
+				r.text(truncateAPIText(sample, maxAPIRawPreview))
+				r.raw(`</code></pre>`)
+				if len(sample) > maxAPIRawPreview {
+					r.raw(`<p class="api-meta">Example preview truncated. Complete examples remain in the contract.</p>`)
+				}
+			}
+		}
+		r.raw(`</details>`)
+	}
+	r.raw(`</div></details></aside></section>`)
 }
 
 func (r *apiRenderer) servers(servers []document.Server, file, seed string) {
@@ -527,51 +590,128 @@ func (r *apiRenderer) servers(servers []document.Server, file, seed string) {
 }
 
 func (r *apiRenderer) parameters(parameters []document.Parameter, file, seed string) {
-	if len(parameters) == 0 {
-		return
-	}
-	r.raw(`<div class="api-table"><table><thead><tr><th>Name / location</th><th>Requirement</th><th>Schema</th><th>Serialization / description</th></tr></thead><tbody>`)
+	groups := make([]string, 0)
+	indices := make(map[string][]int)
 	for index, parameter := range parameters {
 		if !r.step() {
 			return
 		}
-		r.raw(`<tr><td><code>`)
-		r.text(parameter.Name)
-		r.raw(`</code><br>`)
-		r.text(parameter.In)
-		r.raw(`</td><td>`)
-		if parameter.Required {
-			r.text("Required")
-		} else {
-			r.text("Optional")
+		if _, exists := indices[parameter.In]; !exists {
+			groups = append(groups, parameter.In)
 		}
-		if parameter.Deprecated {
-			r.raw(`<br><strong class="api-deprecated">Deprecated</strong>`)
-		}
-		r.raw(`</td><td>`)
-		r.schemaLink(parameter.Schema)
-		r.raw(`</td><td>`)
-		style := parameter.Style
-		if style == "" {
-			style = "default"
-		}
-		r.raw(`<p class="api-meta">Style: `)
-		r.text(style)
-		if parameter.Explode != nil {
-			r.text("; explode: " + strconv.FormatBool(*parameter.Explode))
-		} else {
-			r.text("; explode: default")
-		}
-		r.text("; allowReserved: " + strconv.FormatBool(parameter.AllowReserved) + "; allowEmptyValue: " + strconv.FormatBool(parameter.AllowEmptyValue))
-		r.raw(`</p>`)
-		key := seed + ":" + strconv.Itoa(index)
-		r.markdown(parameter.Description, file, key)
-		r.media(parameter.Content, file, key+":content")
-		r.examples(parameter.ExampleJSON, parameter.Example, parameter.Examples, file, key+":example")
-		r.rawPreview("Original parameter metadata", string(parameter.Raw))
-		r.raw(`</td></tr>`)
+		indices[parameter.In] = append(indices[parameter.In], index)
 	}
-	r.raw(`</tbody></table></div>`)
+	for _, location := range groups {
+		label := "Parameters"
+		switch location {
+		case "path":
+			label = "Path parameters"
+		case "query":
+			label = "Query parameters"
+		case "header":
+			label = "Header parameters"
+		case "cookie":
+			label = "Cookie parameters"
+		case "querystring":
+			label = "Query string parameters"
+		}
+		r.raw(`<section class="api-parameters"><h4>`)
+		r.text(label)
+		r.raw(`</h4>`)
+		for _, index := range indices[location] {
+			if !r.step() {
+				return
+			}
+			parameter := parameters[index]
+			r.raw(`<div class="api-parameter"><div class="api-parameter-heading"><code class="api-parameter-name">`)
+			r.text(parameter.Name)
+			r.raw(`</code><span class="api-parameter-type">`)
+			r.text(r.parameterType(parameter.Schema))
+			r.raw(`</span><span class="api-parameter-requirement">`)
+			if parameter.Required {
+				r.text("Required")
+			} else {
+				r.text("Optional")
+			}
+			r.raw(`</span>`)
+			if parameter.Deprecated {
+				r.raw(`<strong class="api-deprecated">Deprecated</strong>`)
+			}
+			r.raw(`</div>`)
+			key := seed + ":" + strconv.Itoa(index)
+			r.markdown(parameter.Description, file, key)
+			r.raw(`<details class="api-parameter-details"><summary>Schema, examples &amp; serialization</summary><p class="api-meta">Location: `)
+			r.text(parameter.In)
+			r.raw(` · Schema: `)
+			r.schemaLink(parameter.Schema)
+			r.raw(`</p><p class="api-meta">Style: `)
+			style := parameter.Style
+			if style == "" {
+				style = "default"
+			}
+			r.text(style)
+			if parameter.Explode != nil {
+				r.text("; explode: " + strconv.FormatBool(*parameter.Explode))
+			} else {
+				r.text("; explode: default")
+			}
+			r.text("; allowReserved: " + strconv.FormatBool(parameter.AllowReserved) + "; allowEmptyValue: " + strconv.FormatBool(parameter.AllowEmptyValue))
+			r.raw(`</p>`)
+			r.media(parameter.Content, file, key+":content")
+			r.examples(parameter.ExampleJSON, parameter.Example, parameter.Examples, file, key+":example")
+			r.rawPreview("Original parameter metadata", string(parameter.Raw))
+			r.raw(`</details></div>`)
+		}
+		r.raw(`</section>`)
+	}
+}
+
+func (r *apiRenderer) parameterType(id string) string {
+	seen := make(map[string]bool)
+	for depth := 0; depth < 16 && !seen[id]; depth++ {
+		seen[id] = true
+		schema, known := r.schemas[id]
+		if !known || len(schema.Definition) > maxAPISchemaSummary {
+			break
+		}
+		var definition struct {
+			Type   json.RawMessage `json:"type"`
+			Format string          `json:"format"`
+			Ref    string          `json:"$ref"`
+		}
+		if err := json.Unmarshal(schema.Definition, &definition); err != nil {
+			break
+		}
+		var kind string
+		if json.Unmarshal(definition.Type, &kind) != nil {
+			var kinds []string
+			if json.Unmarshal(definition.Type, &kinds) == nil {
+				kind = strings.Join(kinds, " | ")
+			}
+		}
+		if kind != "" {
+			if definition.Format != "" {
+				kind += " · " + definition.Format
+			}
+			return kind
+		}
+		ref, err := url.Parse(definition.Ref)
+		if err != nil || ref.IsAbs() || ref.Host != "" || ref.RawQuery != "" || ref.Fragment == "" {
+			if schema.Name != "" {
+				return schema.Name
+			}
+			break
+		}
+		file := schema.Source.File
+		if file == "" {
+			file = r.api.Source.File
+		}
+		if ref.Path != "" {
+			file = path.Clean(path.Join(path.Dir(file), ref.Path))
+		}
+		id = file + "#" + ref.Fragment
+	}
+	return "schema"
 }
 
 func (r *apiRenderer) media(media []document.MediaType, file, seed string) {

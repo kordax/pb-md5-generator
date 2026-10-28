@@ -21,7 +21,7 @@ export function createEditor(parent, { content, language = "markdown", editable 
   let currentLanguage = language;
   let current = content;
   let bytes;
-  const theme = value => EditorView.theme({ "&": { height: "100%" }, ".cm-focused": { outline: "none" }, ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { background: value ? "#31578b" : "#dbe7ff" } }, { dark: value });
+  const theme = value => EditorView.theme({ "&": { height: "100%" }, ".cm-focused": { outline: "none" }, ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { background: value ? "#4a416d" : "#e8e3fb" } }, { dark: value });
   const byteChange = transaction => {
     let delta = 0;
     transaction.changes.iterChanges((from, to, _a, _b, inserted) => {

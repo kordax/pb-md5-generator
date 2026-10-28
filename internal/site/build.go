@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/kordax/pb-md5-generator/document"
+	"github.com/kordax/pb-md5-generator/internal/uiassets"
 )
 
 const inventoryPath = "_docs/build.json"
@@ -199,6 +200,15 @@ func BuildContext(ctx context.Context, configPath, output string, options Option
 	}
 	for name, content := range map[string]string{"_docs/site.css": siteCSS, "_docs/site.js": siteJS} {
 		if err := write(name, []byte(content)); err != nil {
+			return err
+		}
+	}
+	for _, name := range uiassets.Names() {
+		data, _, ok := uiassets.Resource(name)
+		if !ok {
+			return fmt.Errorf("compiled interface asset %s is unavailable", name)
+		}
+		if err := write("_docs/"+name, data); err != nil {
 			return err
 		}
 	}

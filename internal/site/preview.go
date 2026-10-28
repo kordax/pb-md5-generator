@@ -21,6 +21,9 @@ var ErrPreviewAccess = errors.New("preview source is unavailable")
 type PreviewOptions struct {
 	Compiler Options
 	CanRead  func(string) bool
+
+	// ReaderStudioURL is a runtime-only link supplied by the live CMS reader.
+	ReaderStudioURL string
 }
 
 // PageDataPath returns the portable model URL for a validated page identity.
@@ -147,6 +150,7 @@ func compilePreviewLoaded(ctx context.Context, manifest Manifest, page Page, sou
 	if err := ctx.Err(); err != nil {
 		return PreviewResult{}, err
 	}
+	manifest.ReaderStudioURL = options.ReaderStudioURL
 	rendered, err := renderPage(manifest, current, content)
 	if err != nil {
 		return PreviewResult{}, err

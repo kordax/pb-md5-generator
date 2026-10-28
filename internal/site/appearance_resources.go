@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kordax/pb-md5-generator/document"
+	"github.com/kordax/pb-md5-generator/internal/uiassets"
 )
 
 // ProjectModel indexes an already validated manifest without reading any source
@@ -87,6 +88,11 @@ func ReaderResource(name string, manifest Manifest) ([]byte, string, bool) {
 		}
 		data, media = appearanceCSS(manifest), "text/css; charset=utf-8"
 	default:
+		if strings.HasPrefix(name, "_docs/") {
+			if data, media, ok := uiassets.Resource(strings.TrimPrefix(name, "_docs/")); ok {
+				return data, media, true
+			}
+		}
 		for _, kind := range document.SchemaNames() {
 			if name != "_docs/schema/"+kind+"-v1.json" {
 				continue

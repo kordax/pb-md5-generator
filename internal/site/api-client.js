@@ -548,12 +548,15 @@
       const secretInputs = [];
       const form = element("form", undefined, "api-client-form");
       form.noValidate = true;
+      const requestSettings = element("details", undefined, "api-client-settings");
+      requestSettings.append(element("summary", "Request settings"));
+      form.append(requestSettings);
       const status = element("p", "Review the target and request, then choose Send.", "api-client-status");
       status.setAttribute("role", "status");
       const preview = element("pre", "", "api-client-preview");
       const curl = settings.showCurl ? element("pre", "", "api-client-curl") : null;
       if (curl) curl.setAttribute("aria-label", "cURL preview with credentials and body redacted");
-      const response = element("pre", "", "api-client-response");
+      const response = element("pre", "No request sent. Send a request to see the live response.", "api-client-response");
       response.setAttribute("aria-label", "Response preview");
       let requestJob = null;
       let previewTimer = null;
@@ -561,7 +564,7 @@
       const fields = [];
       function field(label, control, secret = false) {
         const wrapper = element("label", undefined, "api-client-field");
-        wrapper.append(element("span", label), control); form.append(wrapper); fields.push(control);
+        wrapper.append(element("span", label), control); requestSettings.append(wrapper); fields.push(control);
         if (secret) secretInputs.push(control);
         return control;
       }
@@ -581,7 +584,7 @@
       const serverChoice = select("Server", servers.length ? servers.map((server, index) => [index, server.description || server.url]) : [[0, "Enter a server URL"]]);
       const serverURL = input("Target server URL", servers[0] ? servers[0].url : "");
       const baseURL = input("Contract/base URL for relative servers (enter explicitly)");
-      const variableContainer = element("div"); form.append(variableContainer);
+      const variableContainer = element("div"); requestSettings.append(variableContainer);
       let variableInputs = new Map();
       function updateServer() {
         variableContainer.replaceChildren(); variableInputs = new Map();
@@ -614,7 +617,7 @@
       }
       const requirements = operation.security == null ? api.security || [] : operation.security;
       const securityChoice = select("Authentication alternative", requirements.length ? requirements.map((requirement, index) => [index, Object.keys(requirement).length ? Object.keys(requirement).join(" + ") : "No authentication"]) : [[0, "No authentication"]]);
-      const authContainer = element("div", undefined, "api-client-credentials"); form.append(authContainer);
+      const authContainer = element("div", undefined, "api-client-credentials"); requestSettings.append(authContainer);
       let authInputs = new Map();
       function updateAuth() {
         for (const controls of authInputs.values()) for (const control of Object.values(controls)) control.value = "";
@@ -669,9 +672,9 @@
         }, listeners);
         actions.append(copyCurl);
       }
-      form.append(preview);
+      form.append(element("p", "Request preview", "api-client-section-title"), preview);
       if (curl) form.append(element("p", "cURL preview redacts credentials and body. Copying uses the values you entered, including credentials.", "api-client-help"), curl);
-      form.append(actions, status, response);
+      form.append(actions, status, element("p", "Live response", "api-client-section-title"), response);
       host.replaceChildren(form); host.hidden = false; host.className = "api-client";
       function collect() {
         const values = Object.create(null);

@@ -1,0 +1,51 @@
+{
+  "title": "Новый интерфейс документации",
+  "question": "Выбери композицию единого решения: документация, API и управление. Ориентиры зафиксированы: Mintlify + Scalar, плоский современный интерфейс.",
+  "options": [
+    {
+      "id": "unified-canvas",
+      "kind": "assigned",
+      "label": "Unified Canvas",
+      "thesis": "Единая платформа: спокойная документация и API-панель в одном визуальном языке.",
+      "palette": ["#FFFFFF", "#F7F8FA", "#111827", "#0D9373"],
+      "materials": ["плоские поверхности", "тонкие разделители", "общая верхняя навигация"],
+      "viewport": "Поиск в верхней панели, сгруппированная навигация слева, документ в центре и контекстная колонка справа; Studio продолжает тот же каркас.",
+      "risk": "Больше свободного пространства; для очень плотных API нужна отдельная компоновка.",
+      "html": ".impeccable/mocks/decision/unified-canvas.html",
+      "htmlFrame": "1440x900",
+      "comp": ".impeccable/mocks/decision/unified-canvas.png",
+      "wireframe": {"cols":12,"rows":10,"regions":[{"label":"Search / Docs / API / Studio","x":0,"y":0,"w":12,"h":1},{"label":"Navigation","x":0,"y":1,"w":2,"h":9},{"label":"Documentation","x":2,"y":1,"w":7,"h":9},{"label":"Context","x":9,"y":1,"w":3,"h":9}]}
+    },
+    {
+      "id": "reference-workspace",
+      "kind": "dealt",
+      "label": "Reference Workspace",
+      "thesis": "Документация как рабочее пространство разработчика: компактнее, с сильной API-частью в духе Scalar.",
+      "palette": ["#FFFFFF", "#F4F4F5", "#18181B", "#6557D2"],
+      "materials": ["нейтральный каркас", "плотная навигация", "контрастные примеры кода"],
+      "viewport": "Узкая навигация, описание и параметры в центральной колонке, примеры и ответы в широкой контрастной панели справа; руководства остаются полноценными страницами.",
+      "risk": "Более техническое ощущение; обычным статьям нужен спокойный режим чтения.",
+      "html": ".impeccable/mocks/decision/reference-workspace.html",
+      "htmlFrame": "1440x900",
+      "comp": ".impeccable/mocks/decision/reference-workspace.png",
+      "wireframe": {"cols":12,"rows":10,"regions":[{"label":"Workspace","x":0,"y":0,"w":12,"h":1},{"label":"Reference navigation","x":0,"y":1,"w":2,"h":9},{"label":"Guide / Operation","x":2,"y":1,"w":5,"h":9},{"label":"Examples / Response","x":7,"y":1,"w":5,"h":9,"accent":true}]}
+    },
+    {
+      "id": "publishing-desk",
+      "kind": "dealt",
+      "label": "Publishing Desk",
+      "thesis": "Документация и её CMS ощущаются одним продуктом, с компактным рабочим каркасом и выразительной типографикой.",
+      "palette": ["#FAFAFA", "#FFFFFF", "#151719", "#217C68"],
+      "materials": ["плоская рабочая область", "двухуровневая навигация", "редакционная сетка"],
+      "viewport": "Общая панель продукта и разделов, компактное дерево документов, широкая читаемая страница; публикация и редактор используют те же панели без тяжёлых карточек.",
+      "risk": "Меньше сходства с готовыми шаблонами; навигацию необходимо последовательно провести через CMS и reader.",
+      "html": ".impeccable/mocks/decision/publishing-desk.html",
+      "htmlFrame": "1440x900",
+      "comp": ".impeccable/mocks/decision/publishing-desk.png",
+      "wireframe": {"cols":12,"rows":10,"regions":[{"label":"Product workspace","x":0,"y":0,"w":12,"h":1},{"label":"Docs / API / Studio","x":0,"y":1,"w":12,"h":1},{"label":"Document tree","x":0,"y":2,"w":2,"h":8},{"label":"Reading / Editing canvas","x":2,"y":2,"w":8,"h":8},{"label":"Outline","x":10,"y":2,"w":2,"h":8}]}
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": {"value":"code","toggle":true}
+}

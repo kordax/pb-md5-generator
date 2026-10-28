@@ -294,8 +294,9 @@ func (reader *cmsReader) compile(ctx context.Context, sourceFS fs.FS, manifestPa
 		return site.PreviewResult{}, err
 	}
 	return site.CompilePreviewFSContext(ctx, sourceFS, manifestPath, page, source, site.PreviewOptions{
-		Compiler: compilerOptions(engine.DefaultCodegenSeed),
-		CanRead:  func(name string) bool { return canAccessSource(user, auth.ActionRead, name) },
+		Compiler:        compilerOptions(engine.DefaultCodegenSeed),
+		CanRead:         func(name string) bool { return canAccessSource(user, auth.ActionRead, name) },
+		ReaderStudioURL: reader.config.basePath + "/_docs/admin/",
 	})
 }
 

@@ -17,6 +17,20 @@ const controls = (doc, label) => [...doc.querySelectorAll("button")].filter(node
 const deletionPlan = (count = 3) => ({ path: "docs", revision: "p1", planRevision: "plan-1", fileCount: count - 1, directoryCount: 1, documentCount: 1, totalBytes: count - 1, entries: Array.from({ length: Math.min(count, 100) }, (_, index) => index === 0 ? { path: "docs", directory: true, size: 0 } : { path: index === 1 ? "docs/guide.md" : "docs/file" + index + ".go", directory: false, size: 1 }), truncated: count > 100 });
 const storageSnapshot = (backend = "git", revision = "c1", projectRevision = "p1") => ({ settings: { revision, backend, pullRemote: backend === "git" ? "origin" : "", remotes: backend === "git" ? [{ name: "origin", url: "git@example.com:team/docs.git", push: true }, { name: "backup", url: "/backups/docs.git", push: true }] : [] }, projectRevision, sync: { backend, branch: backend === "git" ? "main" : "", head: backend === "git" ? "abc123" : "", state: "ready", dirty: false }, remotes: backend === "git" ? [{ name: "origin", state: "ready", head: "abc123", lastPushedHead: "abc123", branch: "main", retryable: false }, { name: "backup", state: "pending", head: "abc123", lastPushedHead: "", branch: "main", retryable: true }] : [] });
 
+test("Studio API navigation follows a real API document within the mounted site", async () => {
+  for (const [outputPath, expected] of [["reference/pets.html", "https://docs.test/team/reference/pets.html"], ["../outside.html", null], ["https://elsewhere.test/api.html", null], ["javascript:alert(1)", null], ["", null]]) {
+    const env = environment({ respond({ route }) { if (route === "documents") return json({ revision: "p1", documents: [{ ...source, kind: "openapi", outputPath }] }); } });
+    await env.app.ready;
+    const link = env.document.getElementById("studio-api-reference");
+    assert.equal(link.hidden, !expected, outputPath);
+    assert.equal(link.getAttribute("href"), expected, outputPath);
+    env.app.dispose();
+  }
+  const env = environment(); await env.app.ready;
+  assert.equal(env.document.getElementById("studio-api-reference").hidden, true, "guides alone have no API link");
+  env.app.dispose();
+});
+
 function environment(options = {}) {
   const { document, window } = parseHTML(html);
   Object.defineProperty(document, "baseURI", { value: "https://docs.test/team/_docs/admin/" });

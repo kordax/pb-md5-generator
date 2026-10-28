@@ -47,6 +47,9 @@ type Manifest struct {
 	Editor      *document.EditorSettings     `json:"editor,omitempty"`
 	API         *document.APISettings        `json:"api,omitempty"`
 	Publishing  *document.PublishingSettings `json:"publishing,omitempty"`
+
+	// ReaderStudioURL is set only by the live CMS reader and is never portable project data.
+	ReaderStudioURL string `json:"-"`
 }
 
 // Page declares a Markdown, protobuf or OpenAPI source and an explicit HTML destination.

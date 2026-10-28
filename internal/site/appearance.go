@@ -22,7 +22,7 @@ type Appearance struct {
 }
 
 func DefaultTheme() document.Theme {
-	return document.Theme{ID: "default", Name: "Default", Description: "Clear, spacious documentation that follows the system color preference.", Mode: "auto", Accent: "#2563eb", Font: "system", Density: "comfortable", Width: "normal", Radius: 10, Dark: &document.ThemePalette{Accent: "#8eb7ff"}}
+	return document.Theme{ID: "default", Name: "Default", Description: "A clear reading workspace with quiet zinc surfaces and violet accents.", Mode: "light", Accent: "#6557d2", Font: "system", Density: "comfortable", Width: "normal", Radius: 5, Light: &document.ThemePalette{Background: "#ffffff", Surface: "#fafafa", Text: "#18181b", Muted: "#71717a", Border: "#e4e4e7"}, Dark: &document.ThemePalette{Background: "#191a1f", Surface: "#222329", Text: "#e4e4e7", Muted: "#a1a1aa", Border: "#37383f", Accent: "#a99bec"}}
 }
 
 // BuiltinThemes returns independent values; callers cannot mutate a global
@@ -225,12 +225,12 @@ func paletteCSS(selector string, palette *document.ThemePalette, fallback string
 // the stylesheet, and the reader's CSP never needs unsafe-inline.
 func appearanceCSS(m Manifest) string {
 	a := m.Appearance()
-	font := `ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`
+	font := `"DM Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`
 	if a.Theme.Font == "serif" {
 		font = `Georgia,"Times New Roman",serif`
 	}
 	if a.Theme.Font == "mono" {
-		font = `ui-monospace,SFMono-Regular,Consolas,monospace`
+		font = `"IBM Plex Mono",ui-monospace,SFMono-Regular,Consolas,monospace`
 	}
 	width, measure := "900px", "42rem"
 	if a.Theme.Width == "wide" {
@@ -242,7 +242,7 @@ func appearanceCSS(m Manifest) string {
 	css += paletteCSS(":root[data-theme=light]", a.Theme.Light, a.Theme.Accent) + paletteCSS(":root[data-theme=dark]", a.Theme.Dark, a.Theme.Accent)
 	css += "body{font-family:var(--docs-font)}article{max-width:var(--docs-article-width)}button,input[type=search],pre,.docs-callout,.docs-tab-panel:last-child{border-radius:var(--docs-radius)}.brand-logo{max-width:180px;max-height:40px;object-fit:contain}.page-sequence{display:flex;justify-content:space-between;gap:20px;margin-top:40px}.page-sequence a{max-width:48%;overflow-wrap:anywhere}.page-sequence .next{margin-inline-start:auto;text-align:end}"
 	if !a.Navigation.ShowTOC {
-		css += ".layout{grid-template-columns:265px minmax(0,1fr)}.toc{display:none}@media(max-width:1150px){.layout{grid-template-columns:240px minmax(0,1fr)}}@media(max-width:760px){.layout{display:block}}"
+		css += ".layout{grid-template-columns:224px minmax(0,1fr)}.toc{display:none}@media(max-width:1150px){.layout{grid-template-columns:224px minmax(0,1fr)}}@media(max-width:760px){.layout{display:block}}"
 	}
 	if !a.Navigation.StickyHeader {
 		css += ".topbar{position:static}@media(min-width:761px){.sidebar,.toc{top:0;height:100vh}}"

@@ -22,6 +22,7 @@ import (
 	"github.com/kordax/pb-md5-generator/internal/studio/auth"
 	"github.com/kordax/pb-md5-generator/internal/studio/content"
 	"github.com/kordax/pb-md5-generator/internal/studio/httpjson"
+	"github.com/kordax/pb-md5-generator/internal/uiassets"
 )
 
 const maxJSONBody = 8 << 20
@@ -69,6 +70,13 @@ func newHTTPHandler(options Options) (http.Handler, error) {
 			return nil, fmt.Errorf("CMS administration asset %s is missing or invalid", name)
 		}
 		h.assets[name] = bytes.Clone(data)
+	}
+	for _, name := range uiassets.Names() {
+		data, _, ok := uiassets.Resource(name)
+		if !ok {
+			return nil, fmt.Errorf("compiled administration asset %s is unavailable", name)
+		}
+		h.assets["assets/"+name] = data
 	}
 	if bytes.Count(h.assets["index.html"], []byte(noncePlaceholder)) != 1 {
 		return nil, errors.New("CMS administration index must contain exactly one CSP nonce placeholder")
@@ -256,6 +264,11 @@ func (h *handler) serveAsset(writer http.ResponseWriter, request *http.Request, 
 	media := mime.TypeByExtension(path.Ext(name))
 	if path.Ext(name) == ".mjs" || name == "editor.js" {
 		media = "text/javascript; charset=utf-8"
+	}
+	if path.Ext(name) == ".woff2" {
+		media = "font/woff2"
+	} else if path.Ext(name) == ".md" {
+		media = "text/markdown; charset=utf-8"
 	}
 	if media == "" {
 		media = "text/plain; charset=utf-8"

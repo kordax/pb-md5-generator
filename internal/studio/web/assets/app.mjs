@@ -82,6 +82,15 @@ export function boot({ document: doc = globalThis.document, window: win = global
   }
   async function refreshDocuments() {
     const result = await api.request("documents"); documents = result.documents || []; projectRevision = result.revision || projectRevision; renderTree();
+    const referenceLink = $("studio-api-reference");
+    if (referenceLink) {
+      const reference = documents.find(item => ["openapi", "protobuf"].includes(item.kind) && item.outputPath);
+      const siteRoot = new URL("../../", doc.baseURI);
+      const target = reference ? new URL(reference.outputPath, siteRoot) : null;
+      const available = target && target.origin === siteRoot.origin && target.pathname.startsWith(siteRoot.pathname) && !target.search && !target.hash;
+      referenceLink.hidden = !available;
+      if (available) referenceLink.setAttribute("href", target.href); else referenceLink.removeAttribute("href");
+    }
   }
   function renderTree() {
     const query = $("document-search").value.trim().toLocaleLowerCase(); const root = { folders: new Map(), documents: [] };
@@ -105,7 +114,9 @@ export function boot({ document: doc = globalThis.document, window: win = global
     currentView = view; destroyEditor(); $("error").hidden = true;
     doc.querySelectorAll("[data-view]").forEach(node => { if (node.dataset.view === view) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); });
     $("view-title").textContent = ({ documents: workspace.document?.title || "Documents", files: "Files", publishing: "Publishing", storage: "Storage", navigation: "Documentation navigation", appearance: "Appearance", settings: "Site settings", people: "People" })[view] || "Workspace";
-    $("view").replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    const description = $("view-description");
+    if (description) description.textContent = ({ documents: workspace.document ? "Edit source, save a draft and publish when it is ready." : "Write and organize your documentation.", files: "Manage the source files behind your published site.", publishing: "Review saved drafts and synchronize your project.", storage: "Connect the storage behind your documentation.", navigation: "Shape how readers explore your documentation.", appearance: "Choose and customize the look of your site.", settings: "Configure your site, authoring and publication.", people: "Manage accounts and access to your workspace." })[view] || "";
+    $("view").replaceChildren(h("p", { class: "muted", role: "status" }, "Loading…"));
     const active = () => sequence === viewSequence && !viewLoad.signal.aborted;
     if (view === "documents") { if (workspace.document) await renderEditor(sequence); else renderDocuments(); }
     if (view === "files") await renderFiles(".", active);
@@ -131,7 +142,8 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("view-title").textContent = "Documents";
     if (!documents.length) { $("view").replaceChildren(h("section", { class: "card empty" }, h("h2", {}, "A home for your documentation"), h("p", {}, "Create a guide, reference page or API document to get started."), user.role !== "viewer" ? button("Create document", createDocument, { class: "primary" }) : null)); return; }
     const rows = documents.map(item => h("tr", {}, h("td", {}, button(item.title, () => openDocument(item.id), { class: "quiet" })), h("td", { class: "path" }, item.path), h("td", {}, h("span", { class: "badge" }, item.kind)), h("td", {}, item.draft ? "Draft" : "Published")));
-    $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, "All documents"), user.role !== "viewer" ? button("Create document", createDocument, { class: "primary" }) : null), table(["Document", "Source", "Format", "State"], rows)));
+    const mobileRows = h("ul", { class: "mobile-document-list", "aria-label": "All documents" }, documents.map(item => h("li", {}, button(item.title, () => openDocument(item.id), { class: "quiet" }), h("p", { class: "path muted" }, item.path), h("div", { class: "document-row-meta" }, h("span", { class: "badge" }, item.kind), h("span", {}, item.draft ? "Draft" : "Published")))));
+    $("view").replaceChildren(h("section", { class: "card documents-panel" }, h("div", { class: "spread" }, h("h2", {}, "All documents"), user.role !== "viewer" ? button("Create document", createDocument, { class: "primary" }) : null), table(["Document", "Source", "Format", "State"], rows), mobileRows));
   }
   async function renderEditor(sequence) {
     const item = workspace.document; if (!item) return renderDocuments(); const sourceFile = item.resource === "file"; $("view-title").textContent = item.title || item.path;
@@ -484,7 +496,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("view").replaceChildren(form);
   }
   function themeFields(theme = {}) {
-    return [{ name: "id", label: "Theme ID", value: theme.id || "", required: true, pattern: "[a-z0-9][a-z0-9_-]{0,63}", readOnly: !!theme.id }, { name: "name", label: "Name", value: theme.name || "", required: true, maxlength: 120 }, { name: "description", label: "Description", value: theme.description || "", maxlength: 512 }, { name: "mode", label: "Color mode", value: theme.mode || "auto", options: [["auto", "System preference"], ["light", "Light"], ["dark", "Dark"]] }, { name: "accent", label: "Accent color", type: "color", value: theme.accent || "#315be8" }, { name: "font", label: "Font", value: theme.font || "system", options: ["system", "serif", "mono"] }, { name: "density", label: "Spacing", value: theme.density || "comfortable", options: ["comfortable", "compact"] }, { name: "width", label: "Reading width", value: theme.width || "normal", options: ["normal", "wide"] }, { name: "radius", label: "Corner radius", type: "number", value: theme.radius ?? 10, min: 0, max: 24 }, ...["light", "dark"].flatMap(mode => PALETTE_TOKENS.map(token => ({ name: mode + "." + token, label: (mode === "light" ? "Light" : "Dark") + " palette: " + token, value: theme[mode]?.[token] || "", placeholder: "Inherit theme default", pattern: "#[0-9a-fA-F]{6}", maxlength: 7, ...(token === "background" ? { help: "Optional #RRGGBB colors. Leave blank to use the theme defaults." } : {}) })))];
+    return [{ name: "id", label: "Theme ID", value: theme.id || "", required: true, pattern: "[a-z0-9][a-z0-9_-]{0,63}", readOnly: !!theme.id }, { name: "name", label: "Name", value: theme.name || "", required: true, maxlength: 120 }, { name: "description", label: "Description", value: theme.description || "", maxlength: 512 }, { name: "mode", label: "Color mode", value: theme.mode || "auto", options: [["auto", "System preference"], ["light", "Light"], ["dark", "Dark"]] }, { name: "accent", label: "Accent color", type: "color", value: theme.accent || "#6557d2" }, { name: "font", label: "Font", value: theme.font || "system", options: ["system", "serif", "mono"] }, { name: "density", label: "Spacing", value: theme.density || "comfortable", options: ["comfortable", "compact"] }, { name: "width", label: "Reading width", value: theme.width || "normal", options: ["normal", "wide"] }, { name: "radius", label: "Corner radius", type: "number", value: theme.radius ?? 5, min: 0, max: 24 }, ...["light", "dark"].flatMap(mode => PALETTE_TOKENS.map(token => ({ name: mode + "." + token, label: (mode === "light" ? "Light" : "Dark") + " palette: " + token, value: theme[mode]?.[token] || "", placeholder: "Inherit theme default", pattern: "#[0-9a-fA-F]{6}", maxlength: 7, ...(token === "background" ? { help: "Optional #RRGGBB colors. Leave blank to use the theme defaults." } : {}) })))];
   }
   async function renderAppearance(active) {
     const [original, result] = await Promise.all([loadSettings(), api.request("themes", { signal: viewLoad.signal })]); if (!active()) return; themes = result.themes || [];
