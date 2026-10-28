@@ -37,7 +37,7 @@ func TestPortableAppearanceChangesPublishedReaderAndProject(t *testing.T) {
 	assert.NotContains(t, string(html), "unsafe-inline")
 	css, err := os.ReadFile(filepath.Join(output, "_docs", "appearance.css"))
 	require.NoError(t, err)
-	assert.Contains(t, string(css), "Georgia")
+	assert.Contains(t, string(css), `--docs-font:"DM Sans",ui-sans-serif`)
 	assert.Contains(t, string(css), "#fffbf5")
 	assert.Contains(t, string(css), ".topbar{position:static}")
 	data, err = os.ReadFile(filepath.Join(output, "_docs", "project.json"))

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kordax/pb-md5-generator/internal/site"
 	"github.com/kordax/pb-md5-generator/internal/studio/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -139,8 +140,19 @@ func TestThemeHTTPCreateUpdateDeleteAndFailedSettingsPublication(t *testing.T) {
 		Themes []Theme `json:"themes"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &installed))
-	assert.Len(t, installed.Themes, 3)
-	assert.True(t, installed.Themes[0].Builtin)
+	builtins := site.BuiltinThemes()
+	require.GreaterOrEqual(t, len(builtins), 10)
+	require.Len(t, installed.Themes, len(builtins))
+	byID := make(map[string]Theme, len(installed.Themes))
+	for _, item := range installed.Themes {
+		assert.True(t, item.Builtin)
+		assert.NotContains(t, byID, item.ID, "installed IDs must be unique")
+		byID[item.ID] = item
+	}
+	for _, builtin := range builtins {
+		require.Contains(t, byID, builtin.ID)
+		assert.Equal(t, builtin, byID[builtin.ID].Theme, "the HTTP registry must expose every complete builtin")
+	}
 	response = requestHTTP(t, handler, http.MethodPost, "/themes", customTheme(), cookie, csrf)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	var theme Theme

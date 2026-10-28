@@ -13,7 +13,9 @@ func TestBuiltinResolutionAndCustomTypographyAffectTheReader(t *testing.T) {
 	manifest := Manifest{Title: "Docs", ThemeID: "paper", Pages: []Page{{ID: "home", Title: "Home", Source: "index.md", Path: "index.html"}, {ID: "guide", Title: "Guide", Source: "guide.md", Path: "guide.html"}}}
 	appearance := manifest.Appearance()
 	assert.Equal(t, "paper", appearance.Theme.ID)
-	assert.Equal(t, "serif", appearance.Theme.Font)
+	assert.Equal(t, DefaultTheme().Font, appearance.Theme.Font)
+	assert.Equal(t, DefaultTheme().Width, appearance.Theme.Width)
+	assert.NotEqual(t, DefaultTheme().Light.Background, appearance.Theme.Light.Background)
 	require.NoError(t, manifest.ValidateAppearance())
 	page, err := renderPage(manifest, 0, pageContent{HTML: "<p>Home</p>"})
 	require.NoError(t, err)

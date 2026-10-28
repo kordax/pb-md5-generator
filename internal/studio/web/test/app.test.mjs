@@ -31,6 +31,24 @@ test("Studio API navigation follows a real API document within the mounted site"
   env.app.dispose();
 });
 
+test("theme gallery previews real light and dark roles and rejects unsafe color values", async () => {
+  const theme = { id: "custom", name: "Palette <img src=x>", description: "Warm canvas, cool accents", mode: "auto", accent: "#176477", builtin: false, revision: "t1", light: { background: "#fff8ee", surface: "#f6ede0", text: "#312f2a", muted: "#686050", border: "#d7c6ad", accent: "#24597f" }, dark: { background: "url(https://elsewhere.test/pixel)", text: "#e0e0e8" } };
+  const env = environment({ respond({ route }) { if (route === "themes") return json({ themes: [theme] }); } });
+  await env.app.ready; await env.app.navigate("appearance");
+  const card = env.document.querySelector('[data-theme-id="custom"]');
+  assert.equal(card.querySelector("h3").textContent, theme.name);
+  assert.equal(card.querySelector("img"), null);
+  assert.deepEqual([...card.querySelectorAll("figcaption")].map(node => node.textContent), ["Light", "Dark"]);
+  const [light, dark] = card.querySelectorAll(".theme-preview");
+  for (const [role, color] of Object.entries(theme.light)) assert.equal(light.style.getPropertyValue("--preview-" + role), color);
+  assert.equal(dark.style.getPropertyValue("--preview-background"), "#191a1f");
+  assert.equal(dark.style.getPropertyValue("--preview-text"), "#e0e0e8");
+  assert.equal(dark.style.getPropertyValue("--preview-accent"), theme.accent);
+  assert.equal(card.querySelectorAll(".theme-preview button, .theme-preview a").length, 0);
+  assert.deepEqual([...card.querySelectorAll(".actions button")].map(node => node.textContent), ["Use theme", "Duplicate", "Edit", "Delete"]);
+  env.app.dispose();
+});
+
 function environment(options = {}) {
   const { document, window } = parseHTML(html);
   Object.defineProperty(document, "baseURI", { value: "https://docs.test/team/_docs/admin/" });

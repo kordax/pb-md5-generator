@@ -29,9 +29,26 @@ func DefaultTheme() document.Theme {
 // registry or affect settings in another project.
 func BuiltinThemes() []document.Theme {
 	standard := DefaultTheme()
-	paper := document.Theme{ID: "paper", Name: "Paper", Description: "A warm reading surface with serif typography.", Mode: "light", Accent: "#9a3412", Font: "serif", Density: "comfortable", Width: "normal", Radius: 4, Light: &document.ThemePalette{Background: "#fffbf5", Surface: "#faf2e6", Text: "#292524", Muted: "#6b6058", Border: "#e7dac9"}, Dark: &document.ThemePalette{Accent: "#fdba74"}}
-	midnight := document.Theme{ID: "midnight", Name: "Midnight", Description: "A compact dark workspace with wide content.", Mode: "dark", Accent: "#a5b4fc", Font: "system", Density: "compact", Width: "wide", Radius: 8, Light: &document.ThemePalette{Accent: "#4338ca"}, Dark: &document.ThemePalette{Background: "#11121b", Surface: "#191b29", Text: "#e9e9f4", Muted: "#aaabc5", Border: "#30334b"}}
-	return []document.Theme{standard, paper, midnight}
+	standard.Light.Accent = standard.Accent
+	paper := document.Theme{ID: "paper", Name: "Paper", Description: "Warm ivory and clay, with a quiet amber night palette.", Mode: "light", Accent: "#9a3412", Light: &document.ThemePalette{Background: "#fffbf5", Surface: "#faf2e6", Text: "#292524", Muted: "#6b6058", Border: "#e7dac9", Accent: "#9a3412"}, Dark: &document.ThemePalette{Background: "#191a1f", Surface: "#222329", Text: "#e4e4e7", Muted: "#a1a1aa", Border: "#37383f", Accent: "#fdba74"}}
+	midnight := document.Theme{ID: "midnight", Name: "Midnight", Description: "Ink-blue surfaces and soft periwinkle for focused evening reading.", Mode: "dark", Accent: "#a5b4fc", Light: &document.ThemePalette{Background: "#ffffff", Surface: "#fafafa", Text: "#18181b", Muted: "#71717a", Border: "#e4e4e7", Accent: "#4338ca"}, Dark: &document.ThemePalette{Background: "#11121b", Surface: "#191b29", Text: "#e9e9f4", Muted: "#aaabc5", Border: "#30334b", Accent: "#a5b4fc"}}
+	themes := []document.Theme{standard, paper, midnight,
+		{ID: "ocean", Name: "Ocean", Description: "Clear blue actions across cool porcelain and deep marine surfaces.", Mode: "light", Accent: "#1d5ea8", Light: &document.ThemePalette{Background: "#f7fbff", Surface: "#f0f6fc", Text: "#142b43", Muted: "#52657a", Border: "#cbd9e6", Accent: "#1d5ea8"}, Dark: &document.ThemePalette{Background: "#111d2a", Surface: "#192a3b", Text: "#e0ecf6", Muted: "#9eb3c7", Border: "#334b61", Accent: "#80bbf4"}},
+		{ID: "forest", Name: "Forest", Description: "Moss-green accents and natural, softly tinted reading surfaces.", Mode: "light", Accent: "#246844", Light: &document.ThemePalette{Background: "#f7fbf8", Surface: "#f0f6f1", Text: "#20392b", Muted: "#526b5b", Border: "#cbdccd", Accent: "#246844"}, Dark: &document.ThemePalette{Background: "#14221b", Surface: "#1c2e24", Text: "#e0efe5", Muted: "#a0b9a8", Border: "#395243", Accent: "#83c99e"}},
+		{ID: "sand", Name: "Sand", Description: "Honeyed canvas, bronze actions and warm sandstone shadows.", Mode: "light", Accent: "#8a571c", Light: &document.ThemePalette{Background: "#fffbf4", Surface: "#f8f0e1", Text: "#423323", Muted: "#75634c", Border: "#e1d3bb", Accent: "#8a571c"}, Dark: &document.ThemePalette{Background: "#272017", Surface: "#342a1e", Text: "#f3e7d3", Muted: "#c4af8f", Border: "#5a4832", Accent: "#e0b372"}},
+		{ID: "rose", Name: "Rose", Description: "Berry actions with pale rose surfaces and a warm burgundy night palette.", Mode: "light", Accent: "#a43762", Light: &document.ThemePalette{Background: "#fff8fa", Surface: "#fbeef3", Text: "#442735", Muted: "#7d5b6b", Border: "#e7cdd9", Accent: "#a43762"}, Dark: &document.ThemePalette{Background: "#291b24", Surface: "#382531", Text: "#f5e3ed", Muted: "#c7a4b8", Border: "#5b3f50", Accent: "#e99cbd"}},
+		{ID: "glacier", Name: "Glacier", Description: "Crisp cyan and glacial blue with clear, cool contrast.", Mode: "light", Accent: "#17677a", Light: &document.ThemePalette{Background: "#f4fbfc", Surface: "#e8f4f6", Text: "#19373d", Muted: "#526c73", Border: "#c5dce0", Accent: "#17677a"}, Dark: &document.ThemePalette{Background: "#122328", Surface: "#1a3037", Text: "#def0f4", Muted: "#9dbac2", Border: "#34555e", Accent: "#7dc9db"}},
+		{ID: "graphite", Name: "Graphite", Description: "Neutral charcoal, silver actions and restrained mineral surfaces.", Mode: "dark", Accent: "#b7c2cf", Light: &document.ThemePalette{Background: "#fafafa", Surface: "#f1f2f3", Text: "#24272b", Muted: "#62676e", Border: "#d3d6da", Accent: "#4f5964"}, Dark: &document.ThemePalette{Background: "#1b1d20", Surface: "#272a2f", Text: "#e8eaed", Muted: "#afb5bd", Border: "#454b53", Accent: "#b7c2cf"}},
+		{ID: "aubergine", Name: "Aubergine", Description: "Deep plum surfaces with orchid actions and soft lilac daylight.", Mode: "dark", Accent: "#cf9ce6", Light: &document.ThemePalette{Background: "#fcf8fd", Surface: "#f4edf6", Text: "#39283f", Muted: "#705c79", Border: "#dccfe3", Accent: "#7b3e91"}, Dark: &document.ThemePalette{Background: "#251c2c", Surface: "#33263d", Text: "#f0e5f6", Muted: "#bba5c7", Border: "#55415f", Accent: "#cf9ce6"}},
+		{ID: "teal-night", Name: "Teal Night", Description: "Deep teal and sea-glass actions, paired with a gentle mint daylight palette.", Mode: "dark", Accent: "#7ed0b9", Light: &document.ThemePalette{Background: "#f5fcfb", Surface: "#edf8f5", Text: "#173b36", Muted: "#506d67", Border: "#c5dcd6", Accent: "#166b5c"}, Dark: &document.ThemePalette{Background: "#122724", Surface: "#1b3631", Text: "#e0f2ed", Muted: "#a0beb6", Border: "#365a52", Accent: "#7ed0b9"}},
+	}
+	for index := range themes {
+		themes[index].Font = "system"
+		themes[index].Density = "comfortable"
+		themes[index].Width = "normal"
+		themes[index].Radius = 5
+	}
+	return themes
 }
 
 func (m Manifest) Appearance() Appearance {
@@ -206,6 +223,22 @@ func (m Manifest) ValidateAppearance() error {
 	return nil
 }
 
+// resolvedPalette fills omitted custom tokens from the reader's standard
+// surfaces while retaining the custom theme's own accent as its fallback.
+func resolvedPalette(palette, defaults *document.ThemePalette, accent string) document.ThemePalette {
+	result := *defaults
+	result.Accent = accent
+	if palette == nil {
+		return result
+	}
+	for _, pair := range [][2]*string{{&result.Background, &palette.Background}, {&result.Surface, &palette.Surface}, {&result.Text, &palette.Text}, {&result.Muted, &palette.Muted}, {&result.Border, &palette.Border}, {&result.Accent, &palette.Accent}} {
+		if *pair[1] != "" {
+			*pair[0] = *pair[1]
+		}
+	}
+	return result
+}
+
 func paletteCSS(selector string, palette *document.ThemePalette, fallback string) string {
 	var out strings.Builder
 	out.WriteString(selector + "{")
@@ -237,9 +270,15 @@ func appearanceCSS(m Manifest) string {
 		width, measure = "1200px", "48rem"
 	}
 	css := ":root{--docs-radius:" + strconv.Itoa(a.Theme.Radius) + "px;--docs-font:" + font + ";--docs-article-width:" + width + ";--reader-measure:" + measure + "}"
-	css += paletteCSS(":root", a.Theme.Light, a.Theme.Accent)
-	css += "@media(prefers-color-scheme:dark){" + paletteCSS(":root:not([data-theme=light])", a.Theme.Dark, a.Theme.Accent) + "}"
-	css += paletteCSS(":root[data-theme=light]", a.Theme.Light, a.Theme.Accent) + paletteCSS(":root[data-theme=dark]", a.Theme.Dark, a.Theme.Accent)
+	defaults := DefaultTheme()
+	light := resolvedPalette(a.Theme.Light, defaults.Light, a.Theme.Accent)
+	dark := resolvedPalette(a.Theme.Dark, defaults.Dark, a.Theme.Accent)
+	css += paletteCSS(":root", &light, a.Theme.Accent)
+	css += "@media(prefers-color-scheme:dark){" + paletteCSS(":root:not([data-theme=light])", &dark, a.Theme.Accent) + "}"
+	css += paletteCSS(":root[data-theme=light]", &light, a.Theme.Accent) + paletteCSS(":root[data-theme=dark]", &dark, a.Theme.Accent)
+	// The request workbench remains dark beside a light article, using the
+	// selected scheme's composed dark palette rather than fixed charcoal.
+	css += ":root{--api-bg:" + dark.Background + ";--api-panel:" + dark.Surface + ";--api-text:" + dark.Text + ";--api-muted:" + dark.Muted + ";--api-line:" + dark.Border + ";--api-accent:" + dark.Accent + ";--api-code:" + dark.Surface + ";--api-on-accent:" + dark.Background + ";}"
 	css += "body{font-family:var(--docs-font)}article{max-width:var(--docs-article-width)}button,input[type=search],pre,.docs-callout,.docs-tab-panel:last-child{border-radius:var(--docs-radius)}.brand-logo{max-width:180px;max-height:40px;object-fit:contain}.page-sequence{display:flex;justify-content:space-between;gap:20px;margin-top:40px}.page-sequence a{max-width:48%;overflow-wrap:anywhere}.page-sequence .next{margin-inline-start:auto;text-align:end}"
 	if !a.Navigation.ShowTOC {
 		css += ".layout{grid-template-columns:224px minmax(0,1fr)}.toc{display:none}@media(max-width:1150px){.layout{grid-template-columns:224px minmax(0,1fr)}}@media(max-width:760px){.layout{display:block}}"
