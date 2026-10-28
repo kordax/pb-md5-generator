@@ -243,6 +243,40 @@ Before the first CMS startup, prepare a dedicated self-contained clone in `<data
 
 Startup flags seed the first storage configuration. Once a configuration is saved, it takes precedence across restarts; manage later connection changes in Storage. Do not edit recovery journals or replace Git metadata while the CMS runs. A transaction interrupted before its settings commit is rolled back; a committed transaction is completed on restart. Unexpected changed metadata fails closed and remains available for investigation. A missing storage configuration after enrollment also stops startup; restore the complete data backup rather than silently replacing the connection policy.
 
+## Resource checks
+
+Run the bounded resource workload on Linux with a local Docker engine and cgroup v2:
+
+```sh
+task docker:resources
+```
+
+The task builds the current CMS image and uses its own temporary container, volume, account and loopback port. It does not change the running CMS or its data. The test project has 512 pages across Markdown, HTML, protobuf and OpenAPI, 128 local code includes and 64 MiB of attachments. The measured container has one CPU, 512 MiB of memory and no additional swap allowance.
+
+The workload measures cold startup, full-page and repeated hot/cold reads, page JSON, attachments, search and an explicit edit/publication. A scoped reader also checks that an administrator's cached responses do not expose private navigation or content. The generated `build/cms-resources.json` records timings, container CPU, cgroup memory and page cache, and process RSS/high-water memory separately. Temporary accounts and session material are not included in the report.
+
+Cold startup starts a fresh CMS process. The host filesystem cache stays in its normal state, and pages already written during fixture preparation can remain charged to an earlier cgroup. Read the process and cgroup measurements together.
+
+Acceptance requires no OOM, restart or unexpected HTTP failure, requests within the reader deadline, and bounded warm RSS growth across repeated phases. These measurements exercise one fixed large project; they do not prove that every supported maximum, arbitrary concurrency level or long-running workload is leak-free. Normal `task verify` does not run this longer Docker workload.
+
+Page requests use a read-only view with source-hash and project-revision checks inside the content gate. A cache miss reads the requested sources without creating a temporary copy of the entire project.
+
+A run on 2026-10-28 used an AMD Ryzen 9 9950X3D host, Linux `7.0.0-38-generic` and Docker `29.1.5`, with the container restricted to one CPU and 512 MiB. The fixture contained 68.4 MiB of source files and attachments. All 2106 requests returned their expected status, including denied private-page requests; publication became visible in HTML, page JSON and search for both permitted roles.
+
+| Measurement | Observed |
+| --- | --- |
+| Measured phase wall time | 240.9 s |
+| Container CPU time across measured phases | 216.8 s |
+| Cold traversal of 512 pages | 57.0 s |
+| Process high-water RSS | 77.2 MiB |
+| Peak cgroup memory, including its charged file cache | 291.9 MiB |
+| Warm RSS growth from batch 4 to batch 6 | 2.4 MiB |
+| Mixed-read p95 across the six batches | 93.3–118.8 ms |
+| Slowest uncached search request | 4.05 s |
+| Unexpected HTTP failures / OOM / restarts | 0 / 0 / 0 |
+
+The warm-growth allowance is 32 MiB. These are measurements of the fixed workload and host above. Search results larger than 2 MiB stay outside the reader response cache and their compilation cost is included. The generated JSON report contains the image identifier, source checkout state, individual phase measurements and sampling data.
+
 ## Static example and publishing
 
 The static example remains available separately:

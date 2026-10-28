@@ -70,6 +70,11 @@ func CompilePreviewContext(ctx context.Context, manifestPath string, page Page, 
 	if err != nil {
 		return PreviewResult{}, err
 	}
+	return compilePreviewLoaded(ctx, manifest, page, source, options, canRead, confinedSourceLoader(ctx, root, "", page.Source, source))
+}
+
+func compilePreviewLoaded(ctx context.Context, manifest Manifest, page Page, source []byte, options PreviewOptions, canRead func(string) bool, loadSource func(string) ([]byte, error)) (PreviewResult, error) {
+	var err error
 	index := -1
 	for i, existing := range manifest.Pages {
 		if (page.ID != "" && page.ID == existing.ID) || page.Source == existing.Source {
@@ -116,7 +121,6 @@ func CompilePreviewContext(ctx context.Context, manifestPath string, page Page, 
 	if current < 0 {
 		return PreviewResult{}, ErrPreviewAccess
 	}
-	loadSource := confinedSourceLoader(ctx, root, "", page.Source, source)
 	var denied atomic.Bool
 	var sourceMutex sync.Mutex
 	sources := map[string]bool{page.Source: true}

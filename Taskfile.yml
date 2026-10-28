@@ -80,6 +80,15 @@ tasks:
     cmds:
       - python3 testdata/docker-cms.test.py
 
+  docker:resources:
+    aliases: [cms:resources]
+    desc: "Measure CMS resources on an isolated 512-page project with 512 MiB RAM and one CPU"
+    dir: '{{.ROOT_DIR}}'
+    deps: [docker:check]
+    cmds:
+      - docker compose build cms
+      - python3 testdata/cms-resources.test.py --report build/cms-resources.json
+
   docker:static:
     desc: "Build and start the static example on localhost:8081"
     dir: '{{.ROOT_DIR}}'

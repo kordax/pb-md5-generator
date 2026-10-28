@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"net/url"
@@ -116,7 +117,9 @@ func (reader *cmsReader) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	var response readerResponse
-	err = reader.contents.View(ctx, func(ctx context.Context, root, manifestPath string) error {
+	revision := project.Revision
+	err = reader.contents.ReadView(ctx, func(ctx context.Context, snapshot content.ReadSnapshot) error {
+		revision = snapshot.Revision
 		current, err := apiweb.Principal(ctx)
 		if err != nil || current == nil {
 			return content.ErrOwnership
@@ -128,7 +131,7 @@ func (reader *cmsReader) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		}
 		currentDigest := sha256.Sum256(currentJSON)
 		key = hex.EncodeToString(currentDigest[:]) + ":" + name
-		manifest, err := readProjectManifest(root, manifestPath)
+		manifest, err := site.ReadManifestFS(ctx, snapshot.FS, snapshot.Manifest)
 		if err != nil {
 			return err
 		}
@@ -140,7 +143,7 @@ func (reader *cmsReader) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		if manifest.Favicon != "" && !canAccessSource(current, auth.ActionRead, manifest.Favicon) {
 			manifest.Favicon = ""
 		}
-		response, err = reader.render(ctx, root, manifestPath, manifest, current, name)
+		response, err = reader.render(ctx, snapshot.FS, snapshot.Manifest, manifest, current, name)
 		return err
 	})
 	if err != nil {
@@ -153,11 +156,28 @@ func (reader *cmsReader) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		}
 		return
 	}
-	reader.remember(project.Revision, key, response)
+	// Rendering and the final source check can outlive a permission change.
+	// Serve and cache these bytes only for the same freshly resolved principal.
+	current, err := apiweb.Principal(ctx)
+	if err != nil || current == nil {
+		http.Error(writer, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		reader.unavailable(writer)
+		return
+	}
+	currentDigest := sha256.Sum256(currentJSON)
+	if hex.EncodeToString(currentDigest[:])+":"+name != key {
+		reader.unavailable(writer)
+		return
+	}
+	reader.remember(revision, key, response)
 	reader.send(writer, request, response)
 }
 
-func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, manifest site.Manifest, user *auth.User, name string) (readerResponse, error) {
+func (reader *cmsReader) render(ctx context.Context, sourceFS fs.FS, manifestPath string, manifest site.Manifest, user *auth.User, name string) (readerResponse, error) {
 	response := readerResponse{contentType: "application/json; charset=utf-8"}
 	if name == "_docs/appearance.css" {
 		data, mediaType, ok := site.ReaderResource(name, manifest)
@@ -187,7 +207,7 @@ func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, 
 		}
 		count := 0
 		for _, page := range manifest.Pages {
-			compiled, err := reader.compile(ctx, root, manifestPath, page, user)
+			compiled, err := reader.compile(ctx, sourceFS, manifestPath, page, user)
 			if errors.Is(err, site.ErrPreviewAccess) {
 				continue
 			}
@@ -219,7 +239,7 @@ func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, 
 		if !slices.Contains(manifest.Assets, asset) {
 			return readerResponse{}, content.ErrNotFound
 		}
-		data, err := readReaderAsset(root, asset)
+		data, err := readReaderAsset(sourceFS, asset)
 		if err != nil {
 			return readerResponse{}, err
 		}
@@ -248,7 +268,7 @@ func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, 
 		if name != page.Path && name != site.PageDataPath(page) && !directory {
 			continue
 		}
-		compiled, err := reader.compile(ctx, root, manifestPath, page, user)
+		compiled, err := reader.compile(ctx, sourceFS, manifestPath, page, user)
 		if err != nil {
 			return readerResponse{}, err
 		}
@@ -265,28 +285,36 @@ func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, 
 	return readerResponse{}, content.ErrNotFound
 }
 
-func (reader *cmsReader) compile(ctx context.Context, root, manifestPath string, page site.Page, user *auth.User) (site.PreviewResult, error) {
-	source, err := readSource(root, page.Source)
+func (reader *cmsReader) compile(ctx context.Context, sourceFS fs.FS, manifestPath string, page site.Page, user *auth.User) (site.PreviewResult, error) {
+	if !canAccessSource(user, auth.ActionRead, page.Source) {
+		return site.PreviewResult{}, site.ErrPreviewAccess
+	}
+	source, err := fs.ReadFile(sourceFS, page.Source)
 	if err != nil {
 		return site.PreviewResult{}, err
 	}
-	return site.CompilePreviewContext(ctx, manifestPath, page, source, site.PreviewOptions{
+	return site.CompilePreviewFSContext(ctx, sourceFS, manifestPath, page, source, site.PreviewOptions{
 		Compiler: compilerOptions(engine.DefaultCodegenSeed),
 		CanRead:  func(name string) bool { return canAccessSource(user, auth.ActionRead, name) },
 	})
 }
 
-func readReaderAsset(rootDir, name string) ([]byte, error) {
-	root, err := os.OpenRoot(rootDir)
-	if err != nil {
-		return nil, err
-	}
-	defer root.Close()
-	file, err := root.Open(name)
+func readReaderAsset(sourceFS fs.FS, name string) ([]byte, error) {
+	file, err := sourceFS.Open(name)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 0 {
+		return nil, content.ErrInvalid
+	}
+	if info.Size() > content.MaxBinaryBytes {
+		return nil, content.ErrLimit
+	}
 	data, err := io.ReadAll(io.LimitReader(file, content.MaxBinaryBytes+1))
 	if err == nil && len(data) > content.MaxBinaryBytes {
 		err = content.ErrLimit
