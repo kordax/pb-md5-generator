@@ -72,13 +72,17 @@ def child_environment():
 
 def snapshot():
     paths = set()
-    ignored = {".git", "node_modules", "build", "site", ".task", "__pycache__"}
+    ignored = {".git", "node_modules", ".task", "__pycache__"}
+    generated = {ROOT / name for name in ("build", "site", "tmp")}
     for directory, children, files in os.walk(ROOT):
-        children[:] = [name for name in children if name not in ignored]
+        children[:] = [name for name in children if name not in ignored and Path(directory) / name not in generated]
         reader = Path(directory) == ROOT / "internal/site"
         paths.update(Path(directory) / name for name in files
                      if name.endswith(".go") or (reader and name.endswith(".js")))
     paths.update(ROOT / name for name in ("go.mod", "go.sum"))
+    resources = ROOT / "internal/uiassets/fonts"
+    for directory, _children, files in os.walk(resources):
+        paths.update(Path(directory) / name for name in files)
     web = ROOT / "internal/studio/web"
     for directory in (web / "assets", web / "src"):
         for parent, children, files in os.walk(directory):

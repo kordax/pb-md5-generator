@@ -1,15 +1,22 @@
 # syntax=docker/dockerfile:1
 
+FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS node
+
 FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 ARG DEV_UID=1000
 ARG DEV_GID=1000
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-       ca-certificates git nodejs npm openssh-client python3 \
+       ca-certificates git openssh-client python3 \
     && rm -rf /var/lib/apt/lists/* \
+    && ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && groupadd --gid "$DEV_GID" dev \
     && useradd --uid "$DEV_UID" --gid "$DEV_GID" --create-home --shell /bin/sh dev \
-    && install -d -o "$DEV_UID" -g "$DEV_GID" -m 0700 /dev-data /home/dev/.cache /go/pkg/mod \
+    && install -d -o "$DEV_UID" -g "$DEV_GID" -m 0700 /dev-data /home/dev/.cache /go/pkg/mod /go/pkg/sumdb /go/bin \
+    && chown -R "$DEV_UID:$DEV_GID" /go \
     && install -d -o "$DEV_UID" -g "$DEV_GID" /workspace/internal/studio/web/node_modules
 ENV GOTOOLCHAIN=local \
     CGO_ENABLED=0 \

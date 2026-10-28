@@ -23,18 +23,36 @@ class WatcherTests(unittest.TestCase):
     def test_watcher_prunes_dependencies_and_handles_disappearing_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ("main.go", "node_modules/skip.go", ".git/skip.go", "build/skip.go"):
+            for name in ("main.go", "internal/site/ui.go", "internal/site/api-client.js",
+                         "node_modules/skip.go", ".git/skip.go", "build/skip.go", "site/skip.go", "tmp/skip.go"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("package main\n")
             with patch.object(dev, "ROOT", root):
                 files = dev.snapshot()
                 self.assertIn(root / "main.go", files)
+                self.assertIn(root / "internal/site/ui.go", files)
+                self.assertIn(root / "internal/site/api-client.js", files)
+                self.assertNotIn(root / "site/skip.go", files)
+                self.assertNotIn(root / "tmp/skip.go", files)
                 self.assertNotIn(root / "node_modules/skip.go", files)
                 self.assertNotIn(root / ".git/skip.go", files)
                 self.assertNotIn(root / "build/skip.go", files)
                 with patch.object(Path, "stat", side_effect=FileNotFoundError):
                     self.assertEqual(dev.snapshot(), {})
+
+    def test_embedded_font_changes_rebuild_the_reader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            font = root / "internal/uiassets/fonts/dm-sans-latin.woff2"
+            font.parent.mkdir(parents=True)
+            font.write_bytes(b"original font")
+            with patch.object(dev, "ROOT", root):
+                before = dev.snapshot()
+                font.write_bytes(b"updated font bytes")
+                paths = dev.changed(before, dev.snapshot())
+                self.assertEqual(paths, {font})
+                self.assertEqual(dev.classify(paths), (False, True, False, True))
 
     def test_failed_build_preserves_the_previous_binary(self):
         with tempfile.TemporaryDirectory() as directory:

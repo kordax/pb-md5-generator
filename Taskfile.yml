@@ -144,6 +144,7 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/uiassets/fonts/**"
       - "internal/studio/web/assets/*"
       - "internal/studio/web/package*.json"
       - "internal/studio/web/build.mjs"
@@ -196,6 +197,7 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/uiassets/fonts/**"
       - "internal/studio/web/assets/*"
       - "internal/studio/web/package*.json"
       - "internal/studio/web/build.mjs"
@@ -212,6 +214,7 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/uiassets/fonts/**"
       - "internal/studio/web/assets/*"
       - "internal/studio/web/package*.json"
       - "internal/studio/web/build.mjs"
@@ -282,6 +285,7 @@ tasks:
     sources:
       - "**/*.go"
       - "internal/site/*.js"
+      - "internal/uiassets/fonts/**"
       - "internal/studio/web/assets/*"
       - "internal/studio/web/package*.json"
       - "internal/studio/web/build.mjs"
