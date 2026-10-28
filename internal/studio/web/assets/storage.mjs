@@ -72,7 +72,7 @@ export async function renderStorage({ host, api, user, h, button, field, workspa
   }
   function renderSummary(result) {
     const sync = result.sync;
-    summary.replaceChildren(h("dl", { class: "status-grid" }, [["Source", result.settings.backend === "git" ? "Git repository" : "Local files"], ["Branch", sync.branch || "—"], ["Commit", sync.head || "—"], ["Source changes", sync.dirty ? "Uncommitted changes" : "Clean"], ["Settings revision", result.settings.revision], ["Project revision", result.projectRevision]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", { class: "path" }, value)))), sync.error || sync.lastError ? h("p", { class: "notice" }, sync.error || sync.lastError) : null);
+    summary.replaceChildren(h("dl", { class: "status-grid" }, [["Source", result.settings.backend === "git" ? "Git repository" : "Local files"], ["Branch", sync.branch || "—"], ["Commit", sync.head || "—"], ["Source changes", sync.dirty ? "Uncommitted changes" : "Clean"], ["Settings revision", result.settings.revision], ["Project revision", result.projectRevision]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", { class: "path" }, value)))), ...(sync.error || sync.lastError ? [h("p", { class: "notice" }, sync.error || sync.lastError)] : []));
   }
   function renderComparison() {
     comparison.hidden = !stale;

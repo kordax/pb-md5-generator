@@ -91,6 +91,7 @@ func renderAPI(ctx context.Context, api *document.API, current int, manifest Man
 		title = page.Title
 	}
 	r.heading(1, document.APIAnchor("api", pageIdentity(page)), title)
+	r.markdown(api.Description, api.Source.File, "root")
 	r.raw(`<p class="api-meta">`)
 	r.text(strings.ToUpper(api.Protocol))
 	for _, value := range []string{api.Format, api.Version, api.APIVersion} {
@@ -100,9 +101,10 @@ func renderAPI(ctx context.Context, api *document.API, current int, manifest Man
 		}
 	}
 	r.raw(`</p>`)
+	r.raw(`<details class="api-raw api-contract"><summary>Contract details</summary>`)
 	r.source(api.Source)
 	r.modelLink("Complete page model (JSON)")
-	r.markdown(api.Description, api.Source.File, "root")
+	r.raw(`</details>`)
 	if api.Protocol == "http" {
 		r.servers(api.Servers, api.Source.File, "root-servers")
 	}
@@ -390,7 +392,11 @@ func (r *apiRenderer) operation(operation document.Operation) {
 	if r.api.Protocol == "grpc" {
 		label = operation.Service + "." + operation.RPCMethod
 	}
-	r.heading(3, operation.Anchor, strings.TrimSpace(label))
+	title := operation.Summary
+	if title == "" {
+		title = strings.TrimSpace(label)
+	}
+	r.heading(3, operation.Anchor, title)
 	r.raw(`<p class="api-operation-heading"><span class="api-method">`)
 	if r.api.Protocol == "grpc" {
 		r.text("RPC")
@@ -404,11 +410,8 @@ func (r *apiRenderer) operation(operation document.Operation) {
 		r.raw(` <strong class="api-deprecated">Deprecated</strong>`)
 	}
 	r.raw(`</p>`)
-	if operation.Summary != "" {
-		r.raw(`<p class="api-summary">`)
-		r.text(operation.Summary)
-		r.raw(`</p>`)
-	}
+	r.markdown(operation.Description, operation.Source.File, "operation:"+operation.ID)
+	r.raw(`<details class="api-raw api-contract"><summary>Operation details</summary>`)
 	r.source(operation.Source)
 	r.raw(`<p class="api-meta">Operation: <code>`)
 	r.text(operation.ID)
@@ -421,8 +424,7 @@ func (r *apiRenderer) operation(operation document.Operation) {
 		r.raw(` · Tags: `)
 		r.text(strings.Join(operation.Tags, ", "))
 	}
-	r.raw(`</p>`)
-	r.markdown(operation.Description, operation.Source.File, "operation:"+operation.ID)
+	r.raw(`</p></details>`)
 	if r.api.Protocol == "grpc" {
 		r.raw(`<dl class="api-rpc"><dt>Input schema</dt><dd>`)
 		r.schemaLink(operation.InputSchema)
@@ -742,7 +744,16 @@ func (r *apiRenderer) rawPreview(label, value string) {
 		return
 	}
 	truncated := len(value) > maxAPIRawPreview
-	r.raw(`<details class="api-raw"><summary>`)
+	example := label == "Example" || label == "Schema example" || label == "Example value"
+	r.raw(`<details class="api-raw`)
+	if example {
+		r.raw(` api-example-preview`)
+	}
+	r.raw(`"`)
+	if example {
+		r.raw(` open`)
+	}
+	r.raw(`><summary>`)
 	r.text(label)
 	if truncated {
 		r.text(" (preview truncated at 64 KiB)")
@@ -764,10 +775,15 @@ func (r *apiRenderer) schema(schema document.Schema) {
 		title = schema.ID
 	}
 	r.heading(3, schema.Anchor, title)
-	r.raw(`<p class="api-meta">Schema ID: <code>`)
+	// Inline definitions keep their deep links without crowding the page contents.
+	if schema.Name == "schema" && len(r.content.Headings) > 0 {
+		r.content.Headings = r.content.Headings[:len(r.content.Headings)-1]
+	}
+	r.raw(`<details class="api-raw api-contract"><summary>Schema details</summary><p class="api-meta">Schema ID: <code>`)
 	r.text(schema.ID)
 	r.raw(`</code></p>`)
 	r.source(schema.Source)
+	r.raw(`</details>`)
 	var definition map[string]json.RawMessage
 	if len(schema.Definition) > maxAPISchemaSummary {
 		r.raw(`<p class="api-truncated">Structured summary omitted because this definition exceeds 1 MiB. Use the raw preview or complete page model.</p>`)

@@ -43,14 +43,14 @@
         <button type="button" data-view="settings" data-admin hidden>Settings</button>
         <button type="button" data-view="people" data-admin hidden>People</button>
       </nav>
-      <div class="tree-heading"><h2>Documents</h2><button id="create-document" type="button" title="Create document" aria-label="Create document">+</button></div>
+      <div class="tree-heading"><h2>Documents</h2><button id="create-document" type="button" title="Create document" aria-label="Create document"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button></div>
       <label class="search-label">Find a document<input id="document-search" type="search" maxlength="128" placeholder="Title or path"></label>
       <div id="document-tree" class="document-tree" aria-label="Document list"></div>
     </details>
     <div class="sidebar-footer"><span id="identity"></span><span id="identity-role" class="badge"></span><button id="logout" type="button">Sign out</button></div>
   </aside>
   <div class="workspace">
-    <header class="workspace-header"><div><p id="view-eyebrow" class="eyebrow">WORKSPACE</p><h1 id="view-title">Documents</h1></div><a href="../../" class="button secondary" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a></header>
+    <header class="workspace-header"><div><p id="view-eyebrow" class="eyebrow">WORKSPACE</p><h1 id="view-title">Documents</h1></div><a href="../../" class="button secondary" target="_blank" rel="noopener">View site <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 17 17 7M7 7h10v10"/></svg></a></header>
     <div id="message" class="message" role="status" hidden></div>
     <div id="error" class="message error" role="alert" hidden></div>
     <main id="workspace-main" tabindex="-1"><div id="view"></div></main>

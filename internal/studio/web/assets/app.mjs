@@ -467,7 +467,10 @@ export function boot({ document: doc = globalThis.document, window: win = global
       { name: "api.enabled", label: "Enable API request client", type: "checkbox", value: original.api?.enabled ?? true }, { name: "api.showCurl", label: "Show cURL examples", type: "checkbox", value: original.api?.showCurl ?? true }, { name: "api.requestTimeoutMs", label: "API request timeout (milliseconds)", type: "number", value: original.api?.requestTimeoutMs || 30000, min: 1000, max: 30000 }, { name: "api.maxResponseBytes", label: "Maximum API response preview (bytes)", type: "number", value: original.api?.maxResponseBytes || 1048576, min: 1024, max: 1048576 },
       { name: "publishing.autoPublish", label: "Publish valid changes automatically", type: "checkbox", value: original.publishing?.autoPublish || false }, { name: "publishing.gitPushOnPublish", label: "Push Git commits after publication", type: "checkbox", value: original.publishing?.gitPushOnPublish || false },
     ];
-    const fields = definitions.map(field); const form = h("form", { class: "settings-form card" }, h("h2", {}, "General and reading settings"), h("p", { class: "muted small" }, "Changes are saved together. Appearance is managed separately."), h("div", { class: "settings-grid" }, fields.map(item => item.wrapper)), h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save settings")));
+    const fields = definitions.map(field);
+    const groups = [["Site identity", 0, 5], ["Reading", 5, 8], ["Authoring", 8, 10], ["API requests", 10, 14], ["Publishing", 14, 16]];
+    const sections = groups.map(([title, start, end]) => h("fieldset", { class: "settings-section" }, h("legend", {}, title), h("div", { class: "settings-grid" }, fields.slice(start, end).map(item => item.wrapper))));
+    const form = h("form", { class: "settings-form card" }, h("h2", {}, "General and reading settings"), h("p", { class: "muted small" }, "Changes are saved together. Appearance is managed separately."), sections, h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save settings")));
     form.addEventListener("input", () => { formDirty = true; }); form.addEventListener("change", () => { formDirty = true; });
     form.addEventListener("submit", safe(async event => {
       event.preventDefault(); const data = values(fields); const changes = {};
@@ -477,7 +480,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
         settings = await mutation(() => api.request("settings", { method: "PUT", body: mergeSettings(original, changes) }), appearanceMessage("Site settings saved.")); original = settings; formDirty = false; $("project-name").textContent = settings.title; applyAppearance(settings.theme);
       } finally { submit.disabled = false; fields.forEach(item => { item.input.disabled = false; }); }
     }));
-    if (canManageNavigation(user)) form.append(h("p", { class: "small" }, button("Edit documentation navigation", () => navigate("navigation"))));
+    if (canManageNavigation(user)) form.querySelector(".actions").append(button("Edit documentation navigation", () => navigate("navigation")));
     $("view").replaceChildren(form);
   }
   function themeFields(theme = {}) {
@@ -525,7 +528,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
   $("dialog-cancel").addEventListener("click", () => { if (!dialogBusy) $("action-dialog").close(); }); $("action-dialog").addEventListener("cancel", event => { if (dialogBusy) event.preventDefault(); });
   const beforeUnload = event => { if (workspace.dirty || formDirty || operationBusy || workspace.busy) { event.preventDefault(); event.returnValue = ""; } }; win.addEventListener("beforeunload", beforeUnload);
   const colorQuery = win.matchMedia("(prefers-color-scheme: dark)"); const colorChange = () => applyAppearance(settings?.theme); colorQuery.addEventListener("change", colorChange);
-  const compactQuery = win.matchMedia("(max-width: 720px)"); const navigation = doc.querySelector(".workspace-navigation"); let compactOpen = navigation.open; const navigationChange = () => { navigation.open = !compactQuery.matches || compactOpen; };
+  const compactQuery = win.matchMedia("(max-width: 800px)"); const navigation = doc.querySelector(".workspace-navigation"); let compactOpen = false; const navigationChange = () => { navigation.open = !compactQuery.matches || compactOpen; };
   navigation.addEventListener("toggle", () => { if (compactQuery.matches) compactOpen = navigation.open; }); compactQuery.addEventListener("change", navigationChange); navigationChange();
   const ready = api.request("session").then(enterSession).catch(showError).finally(() => { if (!user) $("login-progress").textContent = $("setup-notice").hidden ? "Sign in with your workspace account." : ""; });
   function dispose() { api.abortAll(); filesLoad?.abort(); viewLoad?.abort(); previewLoad?.abort(); workspace.dispose(); destroyEditor(); colorQuery.removeEventListener("change", colorChange); compactQuery.removeEventListener("change", navigationChange); win.removeEventListener("beforeunload", beforeUnload); for (const [timer, url] of downloadTimers) { clearTimeout(timer); URL.revokeObjectURL(url); } downloadTimers.clear(); }

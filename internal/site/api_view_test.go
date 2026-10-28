@@ -42,9 +42,11 @@ func TestAPIViewHTTPReference(t *testing.T) {
 	content := renderAPIViewFixture(t, api, manifest)
 	assert.True(t, content.Interactive)
 	assert.Equal(t, "../_docs/pages/fixture.json", content.APIData)
-	for _, value := range []string{"<h1", "Pets", "GET /pets/{id}", "api-method", "api-path", "Deprecated", "Style: matrix", "explode: true", "allowReserved: true", "X-Trace", "Request body", "Responses", "application/json", "Media encoding", "Stream item schema", "18446744073709551615", "External example (not fetched)", "contracts/api.yaml"} {
+	for _, value := range []string{"<h1", "Pets", "Find a pet", "api-method", "api-path", "Deprecated", "Style: matrix", "explode: true", "allowReserved: true", "X-Trace", "Request body", "Responses", "application/json", "Media encoding", "Stream item schema", "18446744073709551615", "External example (not fetched)", "contracts/api.yaml"} {
 		assert.Contains(t, content.HTML, value)
 	}
+	visibleText := html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(content.HTML, ""))
+	assert.Contains(t, visibleText, "GET /pets/{id}")
 	assert.Contains(t, content.HTML, `data-api-operation="findPet" data-api-url="../_docs/pages/fixture.json"`)
 	assert.Contains(t, content.HTML, `data-api-client hidden`)
 	assert.NotContains(t, content.HTML, `href="contracts/api.yaml`)

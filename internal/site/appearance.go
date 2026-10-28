@@ -232,11 +232,11 @@ func appearanceCSS(m Manifest) string {
 	if a.Theme.Font == "mono" {
 		font = `ui-monospace,SFMono-Regular,Consolas,monospace`
 	}
-	width := "900px"
+	width, measure := "900px", "42rem"
 	if a.Theme.Width == "wide" {
-		width = "1200px"
+		width, measure = "1200px", "48rem"
 	}
-	css := ":root{--docs-radius:" + strconv.Itoa(a.Theme.Radius) + "px;--docs-font:" + font + ";--docs-article-width:" + width + "}"
+	css := ":root{--docs-radius:" + strconv.Itoa(a.Theme.Radius) + "px;--docs-font:" + font + ";--docs-article-width:" + width + ";--reader-measure:" + measure + "}"
 	css += paletteCSS(":root", a.Theme.Light, a.Theme.Accent)
 	css += "@media(prefers-color-scheme:dark){" + paletteCSS(":root:not([data-theme=light])", a.Theme.Dark, a.Theme.Accent) + "}"
 	css += paletteCSS(":root[data-theme=light]", a.Theme.Light, a.Theme.Accent) + paletteCSS(":root[data-theme=dark]", a.Theme.Dark, a.Theme.Accent)
