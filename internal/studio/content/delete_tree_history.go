@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,80 +23,17 @@ func historyGeneration(ctx context.Context, directory string) (string, int64, er
 		return "", 0, err
 	}
 	defer root.Close()
-	dir, err := root.Open(".")
+	files, _, total, err := scanHistoryRoot(ctx, root, directory, true, validGenerationHistoryName)
 	if err != nil {
 		return "", 0, err
 	}
-	entries, readErr := dir.ReadDir(2*MaxHistory + 2)
-	if errors.Is(readErr, io.EOF) {
-		readErr = nil
-	}
-	if err := errors.Join(readErr, dir.Close()); err != nil {
-		return "", 0, err
-	}
-	if len(entries) > 2*MaxHistory+1 {
-		return "", 0, ErrLimit
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	digest := sha256.New()
-	metadata := make(map[string]Revision)
-	payloads := make(map[string]int64)
-	var total int64
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return "", 0, err
-		}
-		name := entry.Name()
-		if !entry.Type().IsRegular() || name != deleteTreeGeneration && (!validID(strings.TrimSuffix(strings.TrimSuffix(name, ".bin"), ".json")) || !strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".bin")) {
-			return "", 0, ErrOwnership
-		}
-		limit := int64(MaxBinaryBytes)
-		if strings.HasSuffix(name, ".json") || name == deleteTreeGeneration {
-			limit = 64 << 10
-		}
-		data, err := readSource(directory, name, limit)
-		if err != nil {
-			return "", 0, err
-		}
-		total += int64(len(data))
-		if total > MaxStateBytes {
-			return "", 0, ErrLimit
-		}
-		switch {
-		case name == deleteTreeGeneration:
-			if !validID(string(data)) {
-				return "", 0, ErrOwnership
-			}
-		case strings.HasSuffix(name, ".json"):
-			var revision Revision
-			id := strings.TrimSuffix(name, ".json")
-			if json.Unmarshal(data, &revision) != nil || revision.ID != id || !allowedFile(revision.Path) || !validRevision(revision.Revision) || revision.Size < 0 || revision.Size > MaxBinaryBytes || revision.Deleted && revision.Size != 0 {
-				return "", 0, ErrOwnership
-			}
-			metadata[id] = revision
-		case strings.HasSuffix(name, ".bin"):
-			payloads[strings.TrimSuffix(name, ".bin")] = int64(len(data))
-		}
-		if name != deleteTreeGeneration {
-			hash := sha256.Sum256(data)
-			_, _ = io.WriteString(digest, name+"\x00"+hex.EncodeToString(hash[:])+"\x00")
-		}
-	}
-	if len(metadata) > MaxHistory {
-		return "", 0, ErrLimit
-	}
-	for id, revision := range metadata {
-		size, exists := payloads[id]
-		if revision.Deleted && exists || !revision.Deleted && (!exists || size != revision.Size) {
-			return "", 0, ErrOwnership
-		}
-	}
-	for id := range payloads {
-		if _, exists := metadata[id]; !exists {
-			return "", 0, ErrOwnership
-		}
-	}
-	return hex.EncodeToString(digest.Sum(nil)), total, nil
+	return publicationHistoryHash(files), total, nil
+}
+
+// Retain the shipped filename predicate, including its error ordering for
+// malformed double extensions. Complete scans still reject orphan payloads.
+func validGenerationHistoryName(name string) bool {
+	return name == deleteTreeGeneration || validID(strings.TrimSuffix(strings.TrimSuffix(name, ".bin"), ".json")) && (strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".bin"))
 }
 
 // reserveDeleteTreeHistory constructs the entire next generation before any

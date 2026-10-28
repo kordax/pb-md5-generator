@@ -498,23 +498,18 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 		}
 		changes = expandedDeleteTree(scope)
 	}
-	var transaction, transactionID string
+	prefix := publicationTransactionPrefix
 	if recursive {
-		transaction, transactionID, err = createStorageStage(s.cfg.StateDir, deleteTreeTransactionPrefix)
-	} else {
-		transaction, err = os.MkdirTemp(s.cfg.StateDir, ".txn-")
+		prefix = deleteTreeTransactionPrefix
 	}
+	transaction, transactionID, err := createStorageStage(s.cfg.StateDir, prefix)
 	if err != nil {
 		return PublishResult{}, err
 	}
 	retainTransaction := false
 	defer func() {
 		if !retainTransaction {
-			if recursive {
-				_ = removeStorageTree(s.cfg.StateDir, filepath.Base(transaction))
-			} else {
-				_ = os.RemoveAll(transaction)
-			}
+			_ = removeStorageTree(s.cfg.StateDir, filepath.Base(transaction))
 		}
 	}()
 	before, after, err := s.candidate(ctx, transaction, changes, actor, true)
@@ -541,23 +536,34 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 		return PublishResult{}, err
 	}
 	var deletion *deleteTreeTransaction
+	var publication *publicationTransaction
+	status, err := s.cfg.Storage.Status(ctx)
+	if err != nil {
+		return PublishResult{}, err
+	}
 	if recursive {
-		status, err := s.cfg.Storage.Status(ctx)
-		if err != nil {
-			return PublishResult{}, err
-		}
 		deletion, err = s.prepareDeleteTreeTransaction(ctx, transaction, transactionID, scope, before, after, paths, draft, input, actor, status)
 		retainTransaction = deletion != nil
-		if err != nil {
-			return PublishResult{}, err
-		}
+	} else {
+		publication, err = s.preparePublication(ctx, transaction, transactionID, publicationPlan{Before: before, After: after, Paths: paths, Draft: draft, Input: input, Actor: actor, Status: status})
+		retainTransaction = publication != nil
+	}
+	if err != nil {
+		return PublishResult{}, err
 	}
 	sourceStarted := false
 	rollback := func() error {
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), s.cfg.OperationTimeout)
 		defer cancel()
-		if deletion == nil {
-			return errors.Join(applyFiles(rollbackCtx, s.cfg.Root, backup, paths, before), removeEmptyDirectories(s.cfg.Root, after.Dirs, before.Dirs))
+		if publication != nil {
+			if err := publication.rollback(rollbackCtx); err != nil {
+				return err
+			}
+			if err := publication.cleanup(); err != nil {
+				return err
+			}
+			retainTransaction = false
+			return nil
 		}
 		if sourceStarted {
 			if err := deletion.restoreSources(rollbackCtx, before, after); err != nil {
@@ -586,6 +592,20 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 		if err := deletion.install(ctx); err != nil {
 			return PublishResult{}, errors.Join(err, rollback())
 		}
+	} else {
+		if err := publication.installHistory(ctx); err != nil {
+			return PublishResult{}, errors.Join(err, rollback())
+		}
+		if s.cfg.Validate != nil {
+			if err := s.cfg.Validate(ctx, filepath.Join(transaction, "source"), changes, actor); err != nil {
+				return PublishResult{}, errors.Join(err, rollback())
+			}
+		}
+		s.cached = sourceTree{}
+		fresh, _, err := s.project(ctx)
+		if err != nil || fresh.Revision != before.Revision {
+			return PublishResult{}, errors.Join(ErrConflict, err, rollback())
+		}
 	}
 	sourceStarted = true
 	if err := applyFiles(ctx, s.cfg.Root, filepath.Join(transaction, "source"), paths, after); err != nil {
@@ -606,7 +626,13 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 		return PublishResult{}, errors.Join(ErrConflict, rollback())
 	}
 	s.cached = verified
-	published, outputErr := replaceOutput(filepath.Join(transaction, "site"), s.cfg.OutputDir)
+	var published bool
+	var outputErr error
+	if publication != nil {
+		published, outputErr = publication.replaceOutput()
+	} else {
+		published, outputErr = replaceOutput(filepath.Join(transaction, "site"), s.cfg.OutputDir)
+	}
 	if !published {
 		return PublishResult{}, errors.Join(outputErr, rollback())
 	}
@@ -617,6 +643,10 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 			result.Sync.State, result.Sync.Retryable, result.Sync.Error = "error", true, "Folder deletion is published; restart is required to recover synchronization state"
 			return result, nil
 		}
+	} else if err := publication.markPublished(); err != nil {
+		result.Sync = verificationStatus
+		result.Sync.State, result.Sync.Retryable, result.Sync.Error = "error", true, "Content is published; restart is required to recover transaction state"
+		return result, nil
 	}
 	status, statusErr := s.cfg.Storage.Status(ctx)
 	if statusErr != nil {
@@ -626,11 +656,6 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 	result.Sync = status
 	if outputErr != nil {
 		result.Sync.Error = "The new site is published; previous output cleanup needs attention"
-	}
-	if !recursive {
-		if err := s.recordHistory(before, after, backup, filepath.Join(transaction, "source"), paths, actor, status.Branch); err != nil {
-			result.Sync.Error = "Content is published; revision retention needs attention"
-		}
 	}
 	allowed := make(map[string]bool)
 	for _, name := range paths {
@@ -680,6 +705,12 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 			return result, nil
 		}
 	}
+	if publication != nil && status.Backend == "git" && result.Commit != "" {
+		if err := publication.recordCommit(result.Commit); err != nil {
+			result.Sync.State, result.Sync.Retryable, result.Sync.Error = "error", true, "Content is published; restart is required to recover commit confirmation"
+			return result, nil
+		}
+	}
 	if err := s.discard(draft); err != nil {
 		result.Sync.Error = "Content is published; stale draft cleanup needs attention"
 	}
@@ -689,6 +720,10 @@ func (s *Service) Publish(ctx context.Context, input PublishInput, actor Actor) 
 		} else {
 			retainTransaction = false
 		}
+	} else if err := publication.cleanup(); err != nil {
+		result.Sync.State, result.Sync.Retryable, result.Sync.Error = "error", true, "Content is published; restart is required to finish transaction cleanup"
+	} else {
+		retainTransaction = false
 	}
 	return result, nil
 }

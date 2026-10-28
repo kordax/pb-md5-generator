@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/kordax/pb-md5-generator/internal/site"
 )
@@ -65,35 +64,6 @@ func stateSize(directory string) (int64, error) {
 	return total, err
 }
 
-func (s *Service) historySpace(size int64) error {
-	revisions, err := s.revisions()
-	if err != nil {
-		return err
-	}
-	total, err := stateSize(s.cfg.StateDir)
-	if err != nil {
-		return err
-	}
-	for len(revisions) >= MaxHistory || total+size+8192 > MaxStateBytes {
-		if len(revisions) == 0 {
-			return ErrLimit
-		}
-		oldest := revisions[0]
-		if err := removeSource(s.cfg.StateDir, "history/"+oldest.ID+".json"); err != nil {
-			return err
-		}
-		if err := removeSource(s.cfg.StateDir, "history/"+oldest.ID+".bin"); err != nil {
-			return err
-		}
-		revisions = revisions[1:]
-		total, err = stateSize(s.cfg.StateDir)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func historyPage(directory, fallback, name string) site.Page {
 	manifest, err := loadManifest(directory)
 	if err != nil {
@@ -108,51 +78,6 @@ func historyPage(directory, fallback, name string) site.Page {
 		}
 	}
 	return site.Page{}
-}
-
-func (s *Service) saveRevision(name, directory string, tree sourceTree, actor Actor, branch string, page site.Page) error {
-	state, exists := tree.Files[name]
-	id, err := randomID()
-	if err != nil {
-		return err
-	}
-	revision := Revision{ID: id, Path: name, Branch: branch, Revision: tree.Revision, Actor: actor, CreatedAt: time.Now().UTC(), Deleted: !exists, Size: state.Size, Title: page.Title, Kind: page.Kind, Output: page.Path, DocumentID: page.ID}
-	if err := s.historySpace(state.Size); err != nil {
-		return err
-	}
-	if exists {
-		data, err := readSource(directory, name, MaxBinaryBytes)
-		if err != nil {
-			return err
-		}
-		if err := writeSource(s.cfg.StateDir, "history/"+id+".bin", data); err != nil {
-			return err
-		}
-	}
-	if err := s.writeState("history/"+id+".json", revision); err != nil {
-		_ = removeSource(s.cfg.StateDir, "history/"+id+".bin")
-		return err
-	}
-	return nil
-}
-
-func (s *Service) recordHistory(before, after sourceTree, backup, snapshot string, names []string, actor Actor, branch string) error {
-	for _, name := range names {
-		beforePage := historyPage(backup, s.cfg.Root, name)
-		if _, exists := before.Files[name]; exists {
-			if err := s.saveRevision(name, backup, before, actor, branch, beforePage); err != nil {
-				return err
-			}
-		}
-		afterPage := historyPage(snapshot, s.cfg.Root, name)
-		if _, exists := after.Files[name]; !exists {
-			afterPage = beforePage
-		}
-		if err := s.saveRevision(name, snapshot, after, actor, branch, afterPage); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Service) History(ctx context.Context, name string) ([]Revision, error) {

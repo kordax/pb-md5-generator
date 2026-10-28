@@ -218,6 +218,18 @@ If startup cannot verify an interrupted deletion's files or Git HEAD, it retains
 
 The CMS API contract in `internal/studio/api/openapi.yaml` documents file downloads, owned source draft revisions and deletion planning. The server provides it at `/_docs/api/v1/openapi.yaml` after sign-in.
 
+## Publication recovery
+
+Publication reserves history and saves durable source backups before changing live files. A failed build or history reservation keeps the last successful site and the saved draft. An interrupted publication is recorded privately in `state/content/publication.json`.
+
+On startup, recovery checks the recorded source, site and history versions together with the storage backend, branch and Git HEAD. It finishes a fully installed publication or restores a recognized partial publication to its previous state. A rollback keeps the saved draft for review and retry. Publication recovery does not create Git commits, push or reset HEAD. A crash after Git commits but before its receipt is recorded can require manual inspection.
+
+Recovery copies remain under `state/content/.txn-publication-<id>/` until verification and cleanup finish. This directory contains the source candidate, original source backups and the history plan. The previous compiled site is retained in a `.studio-publication-<output-hash>-<id>` directory beside `site/`. Retained history payloads stay in place; cleanup moves only newly added or evicted records.
+
+If a source, site, history record, journal or Git HEAD has an unrecognized value, startup stops and retains the recovery copies. A running process also blocks content operations while an incomplete rollback needs recovery. External files and symbolic links inside a folder scheduled for removal stop recovery before source restoration; they are not deleted to make the operation succeed.
+
+Keep the CMS stopped and make a private offline copy of the complete data volume before repairing such a failure. Inspect the journal, saved draft and retained copies together. Correct only the independently verified obstruction or restore the expected version, then start the CMS again. Do not delete the journal or transaction directories to bypass verification: a backup can be the only surviving original. Legacy publication directories with backups but no durable journal are also retained for manual review.
+
 ## Storage and synchronization
 
 The default source is local storage. Administrators with read and write access to the content root can manage it in **Storage**. The server keeps connection settings privately under `state/content/`; they are separate from `docs.json`, document Git history and theme settings. Full data backups include them.

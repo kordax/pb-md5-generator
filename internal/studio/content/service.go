@@ -18,12 +18,13 @@ import (
 )
 
 type Service struct {
-	cfg               Config
-	gate              chan struct{}
-	locks             []*os.File
-	closed            bool
-	cached            sourceTree
-	deleteTreePending bool
+	cfg                Config
+	gate               chan struct{}
+	locks              []*os.File
+	closed             bool
+	cached             sourceTree
+	deleteTreePending  bool
+	publicationPending bool
 }
 
 type ownership struct {
@@ -74,10 +75,19 @@ func New(config Config) (*Service, error) {
 		if i == 1 {
 			permissions = 0o700
 		}
-		if err := os.MkdirAll(*value, permissions); err != nil {
+		if i == 2 {
+			// The previous output may be between journaled renames. Do not
+			// disguise that state by creating an empty replacement here.
+			if err := os.MkdirAll(filepath.Dir(*value), permissions); err != nil {
+				return nil, err
+			}
+		} else if err := os.MkdirAll(*value, permissions); err != nil {
 			return nil, err
 		}
 		info, err := os.Lstat(*value)
+		if i == 2 && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("%w: managed locations must be real directories", ErrInvalid)
 		}
@@ -112,6 +122,9 @@ func New(config Config) (*Service, error) {
 		entries, err := os.ReadDir(config.StateDir)
 		if err != nil || len(entries) != 1 || entries[0].Name() != ".studio-lock" {
 			return nil, ErrOwnership
+		}
+		if err := os.MkdirAll(config.OutputDir, 0o750); err != nil {
+			return nil, err
 		}
 		output, err := os.ReadDir(config.OutputDir)
 		if err != nil || len(output) != 0 {
@@ -171,10 +184,16 @@ func New(config Config) (*Service, error) {
 	}
 	service := &Service{cfg: config, gate: make(chan struct{}, 1), locks: locks}
 	recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), config.OperationTimeout)
-	recoveryErr := service.recoverDeleteTree(recoveryCtx)
+	recoveryErr := service.recoverPublication(recoveryCtx)
+	if recoveryErr == nil {
+		recoveryErr = service.recoverDeleteTree(recoveryCtx)
+	}
 	cancelRecovery()
 	if recoveryErr != nil {
 		return nil, recoveryErr
+	}
+	if err := os.MkdirAll(config.OutputDir, 0o750); err != nil {
+		return nil, err
 	}
 	stateRoot, err := os.OpenRoot(config.StateDir)
 	if err != nil {
@@ -257,13 +276,13 @@ func (s *Service) enter(ctx context.Context) (context.Context, func(), error) {
 			cancel()
 			return nil, nil, err
 		}
-		if s.closed || s.deleteTreePending {
+		if s.closed || s.deleteTreePending || s.publicationPending {
 			<-s.gate
 			cancel()
 			if s.closed {
 				return nil, nil, ErrOwnership
 			}
-			return nil, nil, fmt.Errorf("%w: interrupted folder deletion requires recovery", ErrConflict)
+			return nil, nil, fmt.Errorf("%w: interrupted publication requires recovery", ErrConflict)
 		}
 		return ctx, func() { <-s.gate; cancel() }, nil
 	case <-ctx.Done():

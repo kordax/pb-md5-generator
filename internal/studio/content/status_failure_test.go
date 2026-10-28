@@ -53,15 +53,23 @@ func TestPublicationStatusFailureRetainsBackendAndBranchHistory(t *testing.T) {
 			assert.Equal(t, name, result.Sync.Backend)
 			assert.Equal(t, "error", result.Sync.State)
 			assert.True(t, result.Sync.Retryable)
-			assert.Contains(t, result.Sync.Error, "Storage status is unavailable")
-			assert.Contains(t, result.Sync.Error, "commit failed")
+			assert.Contains(t, result.Sync.Error, "restart is required")
 			assert.NotContains(t, result.Sync.Error, "private backend")
 			if name == "git" {
 				assert.Equal(t, "main", result.Sync.Branch)
 			}
-			history, err := service.History(context.Background(), "index.md")
+			_, err = service.History(context.Background(), "index.md")
+			assert.ErrorIs(t, err, ErrConflict, "unconfirmed publication authority must block public operations")
+			require.NoError(t, service.Close())
+			recovered, err := New(config)
 			require.NoError(t, err)
-			assert.Len(t, history, 2)
+			t.Cleanup(func() { require.NoError(t, recovered.Close()) })
+			history, err := recovered.History(context.Background(), "index.md")
+			require.NoError(t, err)
+			assert.Len(t, history, 2, "recovery must retain history under the original backend and branch")
+			file, err := recovered.Read(context.Background(), "index.md")
+			require.NoError(t, err)
+			assert.Equal(t, "# Publication with unavailable storage status\n", file.Content)
 		})
 	}
 }
