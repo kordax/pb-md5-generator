@@ -102,7 +102,7 @@ export class Workspace {
   constructor(api, { confirmDiscard = () => true, changed = () => {} } = {}) {
     this.api = api; this.confirmDiscard = confirmDiscard; this.changed = changed; this.document = null; this.content = ""; this.base = ""; this.conflict = null; this.busy = false; this.load = null; this.sequence = 0;
   }
-  get dirty() { return !!this.document && this.content !== this.base; }
+  get dirty() { return !!this.document && (this.document.isNew || this.content !== this.base); }
   get loading() { return this.load !== null; }
   edit(content) { if (this.document?.resource === "file" && content.includes("\u0000")) throw new APIError("Text source cannot contain binary NUL bytes.", 415, "not_text"); this.content = textWithinLimit(content); this.changed(); }
   async discardAllowed() { return !this.dirty || await this.confirmDiscard(); }
@@ -117,6 +117,18 @@ export class Workspace {
       this.document = doc; this.content = doc.content; this.base = doc.content; this.conflict = null; return true;
     } catch (error) { if (error?.name === "AbortError" || sequence !== this.sequence) return false; throw error; }
     finally { if (sequence === this.sequence) this.load = null; this.changed(); }
+  }
+  async createFile(path, { revision, canWrite = true } = {}) {
+    cleanPath(path);
+    if (typeof revision !== "string" || !revision || revision.length > 512 || /[\"\u0000-\u001f]/.test(revision)) throw new APIError("Refresh the folder before creating a text file.", 409, "conflict");
+    if (!canWrite) throw new APIError("You cannot create a file at this path.", 403);
+    if (this.busy) throw new APIError("Wait for the current save to finish.", 409, "busy");
+    const document = this.document, content = this.content, sequence = this.sequence;
+    if (!await this.discardAllowed()) return false;
+    if (this.busy || sequence !== this.sequence || document !== this.document || content !== this.content) return false;
+    this.load?.abort(); this.load = null; this.sequence++;
+    this.document = { id: "file:" + path, resource: "file", path, title: path.split("/").at(-1), revision, content: "", canWrite, isNew: true, draft: false, draftId: "", draftRevision: "", baseRevision: "" };
+    this.content = ""; this.base = ""; this.conflict = null; this.changed(); return true;
   }
   async openFile(path, { draftId = "", draftRevision = "", force = false, canWrite = true } = {}) {
     cleanPath(path);
@@ -141,7 +153,7 @@ export class Workspace {
       if (sequence !== this.sequence) return;
       if (!result?.revision || !result.published && (!result.draft?.id || !result.draft.revision || !result.draft.baseRevision)) throw new APIError("The source save response is incomplete. Your text is retained; check Publishing before retrying.");
       const draft = result.published ? null : result.draft;
-      this.document = { ...this.document, revision: draft?.baseRevision || result.revision, content, draft: !!draft, draftId: draft?.id || "", draftRevision: draft?.revision || "", baseRevision: draft?.baseRevision || "" };
+      this.document = { ...this.document, revision: draft?.baseRevision || result.revision, content, isNew: false, draft: !!draft, draftId: draft?.id || "", draftRevision: draft?.revision || "", baseRevision: draft?.baseRevision || "" };
       this.base = content; this.conflict = null;
     };
     return this.exclusive(async () => {
@@ -190,9 +202,26 @@ export class Workspace {
       }
     });
   }
+  async rebaseSource(revision) {
+    const document = this.document, content = this.content, sequence = this.sequence;
+    if (typeof revision !== "string" || !revision || revision.length > 512 || /[\"\u0000-\u001f]/.test(revision) || document.draftId && !document.draftRevision) throw new APIError("Compare the latest published source before saving a merged draft.", 409, "conflict");
+    return this.exclusive(async () => {
+      try {
+        const result = await this.api.request("files/rebase?path=" + encodeURIComponent(document.path), { method: "POST", raw: true, body: content, headers: { "Content-Type": "application/octet-stream", "If-Match": '"' + revision + '"', ...(document.draftId ? { "X-Draft-ID": document.draftId, "X-Draft-Revision": document.draftRevision } : {}) } });
+        if (sequence !== this.sequence) return result;
+        const draft = result?.draft;
+        if (result?.published !== false || result.revision !== revision || !draft?.id || !draft.revision || draft.baseRevision !== revision || draft.path !== document.path || document.draftId && draft.id !== document.draftId) throw new APIError("The merged draft response is incomplete. Your text is retained; check Publishing before retrying.");
+        this.document = { ...this.document, revision, content, isNew: false, draft: true, draftId: draft.id, draftRevision: draft.revision, baseRevision: draft.baseRevision };
+        this.base = content; this.conflict = null; return result;
+      } catch (error) {
+        if (sequence === this.sequence && (error.status === 409 || error.code === "conflict")) this.conflict = { message: error.message, revision: error.details?.currentRevision || "" };
+        throw error;
+      }
+    });
+  }
   async rebase(revision) {
     if (!this.document) throw new APIError("Open a document first.");
-    if (this.document.resource === "file") throw new APIError("Source file drafts keep their original base. Download your text and reopen the current source before creating a new merged draft.", 409, "conflict");
+    if (this.document.resource === "file") return this.rebaseSource(revision);
     const id = this.document.id, content = this.content, sequence = this.sequence;
     return this.exclusive(async () => {
       let draftId = this.document.draftId, draftRevision = this.document.draftRevision;

@@ -462,6 +462,11 @@ func (s *Service) SaveDraft(ctx context.Context, input DraftInput, actor Actor) 
 		return Draft{}, err
 	}
 	defer done()
+	return s.saveDraftLocked(ctx, input, actor, nil)
+}
+
+func (s *Service) saveDraftLocked(ctx context.Context, input DraftInput, actor Actor, guard func() error) (Draft, error) {
+	var err error
 	actor, err = normalizeActor(actor)
 	if err != nil {
 		return Draft{}, err
@@ -533,6 +538,11 @@ func (s *Service) SaveDraft(ctx context.Context, input DraftInput, actor Actor) 
 	}
 	digest := sha256.Sum256(data)
 	draft.Revision = hex.EncodeToString(digest[:])
+	if guard != nil {
+		if err := guard(); err != nil {
+			return Draft{}, err
+		}
+	}
 	if err := s.storeDraft(draft, old.Revision); err != nil {
 		return Draft{}, err
 	}

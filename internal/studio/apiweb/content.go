@@ -69,6 +69,12 @@ func (h *handler) serveContent(w http.ResponseWriter, r *http.Request) {
 		h.preview(w, r, user)
 	case "/files", "/files/content", "/files/move", "/files/delete-preview", "/files/delete-tree":
 		h.files(w, r, user)
+	case "/files/rebase":
+		h.rebaseSource(w, r)
+	case "/files/history":
+		h.sourceHistory(w, r)
+	case "/files/restore":
+		h.restoreSource(w, r)
 	case "/branches", "/branches/checkout", "/sync", "/sync/status":
 		h.storage(w, r, user)
 	default:

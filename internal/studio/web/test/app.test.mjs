@@ -10,6 +10,7 @@ const html = readFileSync(new URL("../assets/index.html", import.meta.url), "utf
 const admin = { id: "u1", username: "admin", displayName: "Admin", role: "admin", disabled: false };
 const source = { id: "guide", path: "docs/guide.md", title: "Guide <img src=x onerror=alert(1)>", kind: "markdown", content: "# Guide\r\n", revision: "p1", canWrite: true };
 const json = (value, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+const historical = (path, changes = {}) => ({ id: "h1", path, revision: "p0", author: "Author", createdAt: "2026-10-28T00:00:00Z", size: 0, deleted: false, restorable: true, ...changes });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 const controls = (doc, label) => [...doc.querySelectorAll("button")].filter(node => node.textContent === label);
 const deletionPlan = (count = 3) => ({ path: "docs", revision: "p1", planRevision: "plan-1", fileCount: count - 1, directoryCount: 1, documentCount: 1, totalBytes: count - 1, entries: Array.from({ length: Math.min(count, 100) }, (_, index) => index === 0 ? { path: "docs", directory: true, size: 0 } : { path: index === 1 ? "docs/guide.md" : "docs/file" + index + ".go", directory: false, size: 1 }), truncated: count > 100 });
@@ -658,7 +659,7 @@ test("literal code source uses the existing text editor without preview and resa
   } });
   await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open source")[0], "click"); await settle();
   assert.equal(language, "text"); assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.document.querySelector(".source-editor").value, content); assert.equal(env.document.querySelector(".editor-host script"), null);
-  assert.equal(controls(env.document, "Preview").length, 0); assert.equal(controls(env.document, "History").length, 0);
+  assert.equal(controls(env.document, "Preview").length, 0); assert.equal(controls(env.document, "History").length, 1);
   const text = env.document.querySelector(".source-editor"); text.value += "// edited\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
   let put = env.requests.find(item => item.route === "files/content" && item.method === "PUT"); assert.equal(put.body, content); assert.equal(put.headers["If-Match"], '\"p1\"'); assert.equal(put.headers["Content-Type"], "application/octet-stream"); assert.equal(env.requests.some(item => item.route === "preview"), false);
   await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.draftRevision, "d1");
@@ -683,7 +684,7 @@ test("draft-only literal files reopen from Files and Publishing with safe draft 
   await env.app.navigate("publishing"); env.event(controls(env.document, "Open source draft")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "SELECT '<script>';\r\n"); assert.equal(env.document.querySelector(".editor-host script"), null); env.app.dispose();
 });
 
-test("source CAS conflicts keep text and original base while comparison never offers silent rebase", async () => {
+test("source CAS conflicts keep text and original base until an explicitly confirmed reviewed rebase", async () => {
   const draft = { id: "saved-go", revision: "d1", baseRevision: "p0", path: "main.go", operation: "write" };
   const env = environment({ files: [], drafts: [draft], respond({ route, request, search }) {
     if (route !== "files/content") return;
@@ -692,8 +693,91 @@ test("source CAS conflicts keep text and original base while comparison never of
   } });
   await env.app.ready; await env.app.navigate("files"); env.event(controls(env.document, "Open saved draft")[0], "click"); await settle(); const text = env.document.querySelector(".source-editor"); text.value = "my retained source"; env.event(text, "input"); env.event(controls(env.document, "Save draft")[0], "click"); await settle();
   assert.equal(env.app.workspace.content, "my retained source"); assert.equal(env.app.workspace.document.baseRevision, "p0"); assert.equal(env.app.workspace.document.draftRevision, "d1"); assert.equal(env.app.workspace.dirty, true);
-  env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').value, "current published source"); assert.equal(controls(env.document, "Use my merged draft")[0].hidden, true);
-  assert.equal(env.app.workspace.document.baseRevision, "p0"); env.window.confirm = () => false; env.event(controls(env.document, "Open current published source")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "my retained source"); env.app.dispose();
+  env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').value, "current published source"); assert.equal(controls(env.document, "Save merged draft")[0].hidden, false); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').readOnly, true);
+  assert.equal(env.requests.some(item => item.route === "files/rebase"), false); assert.equal(env.app.workspace.document.baseRevision, "p0"); env.window.confirm = () => false; env.event(controls(env.document, "Save merged draft")[0], "click"); await settle(); assert.equal(env.requests.some(item => item.route === "files/rebase"), false); assert.equal(env.app.workspace.document.draftRevision, "d1"); env.event(controls(env.document, "Open current published source")[0], "click"); await settle(); assert.equal(env.app.workspace.content, "my retained source"); env.app.dispose();
+});
+
+test("Create text file opens an empty unsaved literal buffer without a request until Save", async () => {
+  const env = environment({ files: [], respond({ route, request, search, body }) {
+    if (route === "files/content" && request.method === "PUT") { assert.equal(new URLSearchParams(search).get("path"), "empty.txt"); assert.equal(body, ""); return json({ revision: "p1", published: false, draft: { id: "empty-source", revision: "d1", baseRevision: "p1", path: "empty.txt", operation: "write" } }); }
+  } });
+  await env.app.ready; await env.app.navigate("files"); const requestsBefore = env.requests.length;
+  env.event(controls(env.document, "Create text file")[0], "click"); env.document.querySelector('#dialog-fields [name="name"]').value = "empty.txt"; env.event(env.document.getElementById("dialog-form"), "submit"); await settle();
+  assert.equal(env.requests.length, requestsBefore); assert.equal(env.app.workspace.document.path, "empty.txt"); assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.app.workspace.document.isNew, true); assert.equal(env.app.workspace.dirty, true); assert.equal(env.document.querySelector(".source-editor").value, ""); assert.equal(controls(env.document, "Preview").length, 0); assert.equal(controls(env.document, "Save draft")[0].disabled, false);
+  env.event(controls(env.document, "Save draft")[0], "click"); await settle(); const saves = env.requests.filter(item => item.route === "files/content"); assert.equal(saves.length, 1); assert.equal(saves[0].method, "PUT"); assert.equal(saves[0].headers["If-Match"], '"p1"'); assert.equal(env.app.workspace.document.isNew, false); assert.equal(env.app.workspace.document.draftId, "empty-source"); assert.equal(env.app.workspace.dirty, false); env.app.dispose();
+});
+
+test("Create text file refuses published and draft aliases and retains a dirty editor when discard is canceled", async () => {
+  const env = environment({ confirm: false, files: [{ path: "Existing.TXT", name: "Existing.TXT", directory: false, revision: "p1", canWrite: true }], drafts: [{ id: "existing-draft", revision: "d1", baseRevision: "p1", path: "saved.go", operation: "write" }] });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep unsaved document"); const previous = env.app.workspace.document; await env.app.navigate("files");
+  env.event(controls(env.document, "Create text file")[0], "click"); const name = env.document.querySelector('#dialog-fields [name="name"]');
+  name.value = "existing.txt"; env.event(env.document.getElementById("dialog-form"), "submit"); await settle(); assert.match(env.document.getElementById("dialog-error").textContent, /already uses this name/i);
+  name.value = "saved.go"; env.event(env.document.getElementById("dialog-form"), "submit"); await settle(); assert.match(env.document.getElementById("dialog-error").textContent, /saved change/i);
+  name.value = "new.html"; env.event(env.document.getElementById("dialog-form"), "submit"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "keep unsaved document"); assert.equal(env.app.workspace.dirty, true); assert.equal(env.document.getElementById("action-dialog").open, true); assert.equal(env.requests.some(item => item.route === "files/content"), false); env.app.dispose();
+});
+
+test("reviewed raw rebase remains a separate draft with autoPublish and requires reviewing again after a conflict", async () => {
+  let current = "p2", attempts = 0;
+  const env = environment({ settings: { publishing: { autoPublish: true, gitPushOnPublish: true } }, respond({ route, request, body }) {
+    if (route === "files/content") return request.method === "PUT" ? json({ error: { code: "conflict", message: "The source changed", currentRevision: current } }, 409) : new Response("current published " + current + "\r\n", { headers: { ETag: '"' + current + '"' } });
+    if (route === "files/rebase") { attempts++; if (attempts === 1) { current = "p3"; return json({ error: { code: "conflict", message: "The reviewed version changed", currentRevision: current } }, 409); } assert.equal(body, "\uFEFFmy reviewed merge\r\n"); return json({ revision: current, published: false, draft: { id: "new-merged", revision: "d2", baseRevision: current, path: "example.go", operation: "write" } }); }
+  } });
+  await env.app.ready; await env.app.openSource("example.go"); const text = env.document.querySelector(".source-editor"); text.value = "\uFEFFmy reviewed merge\r\n"; env.event(text, "input"); env.event(controls(env.document, "Save and publish")[0], "click"); await settle();
+  assert.equal(controls(env.document, "Save merged draft")[0].hidden, true); env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').readOnly, true); assert.equal(env.document.querySelector('[aria-label="Latest published source"]').value, "current published p2\r\n");
+  env.event(controls(env.document, "Save merged draft")[0], "click"); await settle(); assert.equal(attempts, 1); assert.equal(env.app.workspace.content, "\uFEFFmy reviewed merge\r\n"); assert.equal(env.app.workspace.document.draftId, ""); assert.equal(env.app.workspace.dirty, true); assert.equal(controls(env.document, "Save merged draft")[0].hidden, true);
+  env.event(controls(env.document, "Save merged draft")[0], "click"); await settle(); assert.equal(attempts, 1); env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); env.event(controls(env.document, "Save merged draft")[0], "click"); await settle();
+  const rebases = env.requests.filter(item => item.route === "files/rebase"); assert.equal(rebases.length, 2); assert.deepEqual(rebases.map(item => item.headers["If-Match"]), ['"p2"', '"p3"']); assert.equal(rebases.every(item => item.method === "POST" && item.headers["Content-Type"] === "application/octet-stream" && !item.headers["X-Draft-ID"] && !item.headers["X-Draft-Revision"]), true);
+  assert.equal(env.requests.some(item => /drafts\/.*\/publish/.test(item.route) || item.route === "sync"), false); assert.equal(env.requests.filter(item => item.route === "files/content" && item.method === "PUT").length, 1); assert.equal(env.app.workspace.document.draftId, "new-merged"); assert.equal(env.app.workspace.document.baseRevision, "p3"); assert.equal(env.app.workspace.dirty, false); assert.match(env.document.getElementById("message").textContent, /saved as a draft/i); env.app.dispose();
+});
+
+test("a compare action from an older resource cannot rebase the more recently selected file", async () => {
+  const env = environment({ respond({ route, request, search }) {
+    if (route !== "files/content") return;
+    if (request.method === "PUT") return json({ error: { code: "conflict", message: "Source changed", currentRevision: "p2" } }, 409);
+    const path = new URLSearchParams(search).get("path"); return new Response(path === "new.json" ? "new resource" : "published", { headers: { ETag: '"p2"' } });
+  } });
+  await env.app.ready; await env.app.openSource("old.md"); env.app.workspace.edit("old merge"); env.event(controls(env.document, "Save draft")[0], "click"); await settle(); env.event(controls(env.document, "Compare latest")[0], "click"); await settle(); const oldAction = controls(env.document, "Save merged draft")[0];
+  await env.app.openSource("new.json"); env.event(oldAction, "click"); await settle(); assert.equal(env.requests.some(item => item.route === "files/rebase"), false); assert.equal(env.app.workspace.document.path, "new.json"); assert.equal(env.app.workspace.content, "new resource"); assert.match(env.document.getElementById("error").textContent, /Compare the latest source again/); env.app.dispose();
+});
+
+test("exact-path history reaches deleted files and restores zero bytes without replacing a dirty editor or registering a page", async () => {
+  const path = "deleted.md";
+  const env = environment({ files: [], respond({ route, request, search, body }) {
+    if (route === "files/history") { assert.equal(new URLSearchParams(search).get("path"), path); return json({ path, revision: "p2", revisions: [historical(path, { id: "removed", deleted: true, restorable: false }), historical(path, { author: "Author <img id=history-injection src=x>" })] }); }
+    if (route === "files/restore") { assert.deepEqual(body, { path, historyId: "h1", revision: "p2" }); return json({ revision: "p2", published: false, draft: { id: "restored-raw", revision: "dr2", baseRevision: "p2", path, operation: "write" } }); }
+    if (route === "files/content" && request.method === "GET") { const draftId = new URLSearchParams(search).get("draftId"); return new Response(draftId ? "" : "\uFEFFactive source\r\n", { headers: { ETag: draftId ? '"dr2"' : '"p1"', ...(draftId ? { "X-Base-Revision": "p2" } : {}) } }); }
+  } });
+  await env.app.ready; await env.app.openSource("active.sql"); env.app.workspace.edit("\uFEFFkeep active changes\r\n"); const previous = env.app.workspace.document; await env.app.navigate("files"); env.event(controls(env.document, "File history")[0], "click"); env.document.querySelector('#dialog-fields [name="path"]').value = path; env.event(env.document.getElementById("dialog-form"), "submit"); await settle();
+  assert.match(env.document.getElementById("view").textContent, /Deleted/); assert.match(env.document.getElementById("view").textContent, /does not recreate a deleted document entry/i); assert.equal(controls(env.document, "Restore as draft").length, 1); assert.equal(env.document.querySelector("#history-injection"), null);
+  env.event(controls(env.document, "Restore as draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "\uFEFFkeep active changes\r\n"); assert.equal(env.app.workspace.dirty, true); assert.equal(env.requests.some(item => item.route === "documents" && item.method === "POST" || /drafts\/.*\/publish/.test(item.route)), false);
+  const reads = env.requests.filter(item => item.route === "files/content").length; env.window.confirm = () => false; env.event(controls(env.document, "Open restored draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document, previous); assert.equal(env.requests.filter(item => item.route === "files/content").length, reads);
+  env.window.confirm = () => true; env.event(controls(env.document, "Open restored draft")[0], "click"); await settle(); assert.equal(env.app.workspace.document.path, path); assert.equal(env.app.workspace.document.resource, "file"); assert.equal(env.app.workspace.document.draftId, "restored-raw"); assert.equal(env.app.workspace.document.baseRevision, "p2"); assert.equal(env.app.workspace.content, ""); assert.equal(controls(env.document, "Preview").length, 0); env.app.dispose();
+});
+
+test("read-only file history exposes no restore action and rejects another exact path before requesting it", async () => {
+  const path = "allowed.md";
+  const env = environment({ files: [], user: { role: "viewer", grants: { read: [path], write: [] } }, respond({ route, search }) { if (route === "files/history") { assert.equal(new URLSearchParams(search).get("path"), path); return json({ path, revision: "p2", revisions: [historical(path)] }); } } });
+  await env.app.ready; await env.app.navigate("files"); assert.equal(controls(env.document, "Create text file").length, 0); env.event(controls(env.document, "File history")[0], "click"); env.document.querySelector('#dialog-fields [name="path"]').value = path; env.event(env.document.getElementById("dialog-form"), "submit"); await settle(); assert.equal(controls(env.document, "Restore as draft").length, 0);
+  env.event(controls(env.document, "Choose file path")[0], "click"); env.document.querySelector('#dialog-fields [name="path"]').value = "private.md"; env.event(env.document.getElementById("dialog-form"), "submit"); await settle(); assert.match(env.document.getElementById("dialog-error").textContent, /cannot read history/i); assert.equal(env.requests.filter(item => item.route === "files/history").length, 1); assert.equal(env.requests.some(item => item.route === "files/restore"), false); env.app.dispose();
+});
+
+test("a stale restore requires an explicit history refresh before another reviewed attempt", async () => {
+  const path = "sample.go"; let histories = 0, restores = 0;
+  const env = environment({ files: [{ path, name: path, directory: false, revision: "p1", canWrite: true }], respond({ route, body }) {
+    if (route === "files/history") return json({ path, revision: "p" + (++histories + 1), revisions: [historical(path)] });
+    if (route === "files/restore") { restores++; if (restores === 1) return json({ error: { code: "conflict", message: "Project changed", currentRevision: "p3" } }, 409); assert.equal(body.revision, "p3"); return json({ revision: "p3", published: false, draft: { id: "restored", revision: "d3", baseRevision: "p3", path, operation: "write" } }); }
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep editor"); const previous = env.app.workspace.document; await env.app.navigate("files"); env.event(controls(env.document, "History")[0], "click"); await settle(); env.event(controls(env.document, "Restore as draft")[0], "click"); await settle(); assert.equal(restores, 1); assert.equal(histories, 1); assert.equal(controls(env.document, "Restore as draft")[0].disabled, true); assert.equal(env.app.workspace.document, previous); assert.equal(env.app.workspace.content, "keep editor");
+  env.event(controls(env.document, "Refresh history")[0], "click"); await settle(); assert.equal(histories, 2); assert.equal(controls(env.document, "Restore as draft")[0].disabled, false); env.event(controls(env.document, "Restore as draft")[0], "click"); await settle(); assert.equal(restores, 2); assert.equal(env.app.workspace.content, "keep editor"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("late history and restore responses never replace the selected editor or newer text", async () => {
+  const path = "slow.go"; let finishHistory, finishRestore;
+  const historyPending = new Promise(resolve => { finishHistory = resolve; }), restorePending = new Promise(resolve => { finishRestore = resolve; });
+  let slow = true;
+  const env = environment({ files: [{ path, name: path, directory: false, revision: "p1", canWrite: true }], respond({ route }) { if (route === "files/history") return slow ? historyPending : json({ path, revision: "p2", revisions: [historical(path)] }); if (route === "files/restore") return restorePending; } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("retained editor"); await env.app.navigate("files"); env.event(controls(env.document, "History")[0], "click"); await settle(); await env.app.navigate("documents"); const first = env.document.querySelector(".source-editor"); first.value = "newer during history"; env.event(first, "input"); finishHistory(json({ path, revision: "p2", revisions: [historical(path)] })); await settle(); assert.equal(env.document.querySelector(".source-editor"), first); assert.equal(env.app.workspace.content, "newer during history");
+  slow = false; await env.app.navigate("files"); env.event(controls(env.document, "History")[0], "click"); await settle(); env.event(controls(env.document, "Restore as draft")[0], "click"); await settle(); await env.app.navigate("documents"); const second = env.document.querySelector(".source-editor"); second.value = "newer during restore"; env.event(second, "input"); finishRestore(json({ revision: "p2", published: false, draft: { id: "late-restore", revision: "d2", baseRevision: "p2", path, operation: "write" } })); await settle(); assert.equal(env.document.querySelector(".source-editor"), second); assert.equal(env.app.workspace.document.id, "guide"); assert.equal(env.app.workspace.content, "newer during restore"); assert.equal(env.app.workspace.dirty, true); assert.equal(controls(env.document, "Open restored draft").length, 0); env.app.dispose();
 });
 
 test("literal upload preflight uses the text limit and refuses overlapping saved drafts before any upload", async () => {

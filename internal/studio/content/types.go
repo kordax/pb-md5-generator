@@ -44,6 +44,7 @@ type Config struct {
 	Validate            func(context.Context, string, []Change, Actor) error
 	AuthorizeStorage    func(context.Context, Actor) error
 	AuthorizeDeleteTree func(context.Context, Actor, []Entry) error
+	AuthorizeSource     func(context.Context, Actor, string, SourceAccess) error
 	Storage             Backend
 }
 

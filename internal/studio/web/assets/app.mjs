@@ -2,7 +2,7 @@ import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, clea
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
 import { renderStorage, canManageStorage } from "./storage.mjs";
 import { renderNavigation, canManageNavigation } from "./navigation.mjs";
-import { UPLOAD_ACCEPT, textFilePath, insideFolder, reviewFolderDeletion } from "./files.mjs";
+import { UPLOAD_ACCEPT, textFilePath, newTextFilePath, sourceHistorySnapshot, insideFolder, reviewFolderDeletion } from "./files.mjs";
 
 export function boot({ document: doc = globalThis.document, window: win = globalThis.window, fetcher = globalThis.fetch, loadEditor = () => import("./editor.js") } = {}) {
   const $ = id => doc.getElementById(id);
@@ -132,8 +132,8 @@ export function boot({ document: doc = globalThis.document, window: win = global
     const message = h("input", { type: "text", maxlength: 256, placeholder: "Change note (optional)", "aria-label": "Change note" });
     const save = button(settings?.publishing?.autoPublish ? "Save and publish" : "Save draft", async () => { const result = await workspace.save(false, message.value); await refreshDocuments(); note(publicationMessage(result)); if (!sourceFile && settings?.editor?.previewOnSave) await preview(); }, { class: "primary" });
     const publish = button("Publish", async () => { const result = await workspace.save(true, message.value); await refreshDocuments(); message.value = ""; note(publicationMessage(result)); }, { class: "secondary" });
-    const previewButton = button("Preview", preview); const history = button("History", () => renderHistory(item.id)); const move = button("Move", () => moveDocument(item)); const remove = button("Delete", () => deleteDocument(item), { class: "danger" });
-    const actions = h("div", { class: "actions" }, writable() ? [save, publish] : h("span", { class: "badge" }, "Read only"), sourceFile ? null : [previewButton, history], button("Download source", downloadDraft), writable() && !sourceFile ? [move, remove] : null);
+    const previewButton = button("Preview", preview); const history = button("History", () => sourceFile ? renderSourceHistory(item.path) : renderHistory(item.id)); const move = button("Move", () => moveDocument(item)); const remove = button("Delete", () => deleteDocument(item), { class: "danger" });
+    const actions = h("div", { class: "actions" }, writable() ? [save, publish] : h("span", { class: "badge" }, "Read only"), sourceFile ? history : [previewButton, history], button("Download source", downloadDraft), writable() && !sourceFile ? [move, remove] : null);
     const host = h("div", { class: "editor-host" });
     const fallback = h("textarea", { class: "source-editor", spellcheck: "false", "aria-label": "Document source", maxlength: MAX_SOURCE_BYTES, value: workspace.content, readOnly: !writable() });
     fallback.addEventListener("input", () => { try { workspace.edit(fallback.value); } catch (error) { fallback.value = workspace.content; showError(error); } });
@@ -166,13 +166,22 @@ export function boot({ document: doc = globalThis.document, window: win = global
     }
   }
   function renderConflict() {
-    const host = $("conflict-host"); if (!host) return; renderedConflict = workspace.conflict; let comparedRevision = "";
+    const host = $("conflict-host"); if (!host) return; renderedConflict = workspace.conflict;
+    const sourceFile = workspace.document?.resource === "file"; let compared = null, comparisonRun = 0;
     const latest = h("textarea", { readOnly: true, "aria-label": "Latest published source", rows: 10 }); latest.hidden = true;
-    const rebase = button("Use my merged draft", async () => {
-      if (!comparedRevision || !win.confirm("Save your current text as a draft based on the version you just reviewed? Make sure your text includes the changes you want to keep from the latest published source.")) return;
-      await workspace.rebase(comparedRevision); await refreshDocuments(); note("Your merged draft is saved. Preview and publish it when ready.");
+    const matches = snapshot => snapshot && snapshot.document === workspace.document && snapshot.sequence === workspace.sequence && $("conflict-host") === host;
+    const rebase = button(sourceFile ? "Save merged draft" : "Use my merged draft", async () => {
+      if (!matches(compared)) throw new APIError("Compare the latest source again before saving a merged draft.", 409, "conflict");
+      if (!win.confirm("Save your current text as a draft based on the version you just reviewed? Make sure your text includes the changes you want to keep from the latest published source. Publication remains a separate step.")) return;
+      const revision = compared.revision; compared = null; rebase.hidden = true;
+      await workspace.rebase(revision); await refreshDocuments(); note(sourceFile ? "Merged source saved as a draft. Publish it from Publishing when ready." : "Your merged draft is saved. Preview and publish it when ready.");
     }, { hidden: true });
-    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, workspace.document?.resource === "file" ? "Your source is still here. Compare the published version or download your text. File drafts keep their original base; reopening current source requires an explicit discard confirmation." : "Your draft is still here. Compare the latest source, then edit your draft above to keep the changes you need from both versions."), h("div", { class: "actions" }, button("Compare latest", async () => { const value = await workspace.latest(); latest.value = value.content; latest.hidden = false; comparedRevision = value.revision; rebase.hidden = !writable() || workspace.document?.resource === "file"; }), rebase, button("Download my draft", downloadDraft), button(workspace.document?.resource === "file" ? "Reload saved source" : "Reload document", async () => { if (workspace.document?.resource === "file") await openSource(workspace.document.path, workspace.document.draftId ? { id: workspace.document.draftId } : null); else if (await workspace.open(workspace.document.id)) await navigate("documents"); }), workspace.document?.resource === "file" ? button("Open current published source", () => openSource(workspace.document.path)) : null), latest));
+    const compare = button("Compare latest", async () => {
+      const run = ++comparisonRun, snapshot = { document: workspace.document, sequence: workspace.sequence }; compared = null; rebase.hidden = true;
+      const value = await workspace.latest(); if (run !== comparisonRun || !matches(snapshot)) return;
+      latest.value = value.content; latest.hidden = false; compared = { ...snapshot, revision: value.revision }; rebase.hidden = !writable();
+    });
+    host.replaceChildren(h("div", { class: "conflict" }, h("h2", {}, "This document changed elsewhere"), h("p", {}, sourceFile ? "Your source is still here. Compare the latest published source, then edit your text above. Save merged draft changes its base after your confirmation and keeps publication separate." : "Your draft is still here. Compare the latest source, then edit your draft above to keep the changes you need from both versions."), h("div", { class: "actions" }, compare, rebase, button("Download my draft", downloadDraft), button(sourceFile ? "Reload saved source" : "Reload document", async () => { if (workspace.document?.resource === "file") await openSource(workspace.document.path, workspace.document.draftId ? { id: workspace.document.draftId } : null); else if (await workspace.open(workspace.document.id)) await navigate("documents"); }), sourceFile ? button("Open current published source", () => openSource(workspace.document.path)) : null), latest));
   }
   function downloadDraft() {
     if (!workspace.document) return; const blob = new Blob([source()], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob);
@@ -193,7 +202,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("dialog-form").onsubmit = async event => {
       event.preventDefault(); if (dialogBusy) return;
       const data = values(fields); fields.filter(item => item.type === "password").forEach(item => { item.input.value = ""; }); dialogBusy = true; fields.forEach(item => { item.input.disabled = true; }); $("dialog-submit").disabled = true; $("dialog-cancel").disabled = true;
-      try { await action(data); $("action-dialog").close(); } catch (error) { $("dialog-error").textContent = error.message; }
+      try { if (await action(data) !== false) $("action-dialog").close(); } catch (error) { $("dialog-error").textContent = error.message; }
       finally { dialogBusy = false; fields.forEach(item => { item.input.disabled = false; }); $("dialog-submit").disabled = false; $("dialog-cancel").disabled = false; }
     }; $("action-dialog").showModal();
   }
@@ -222,6 +231,49 @@ export function boot({ document: doc = globalThis.document, window: win = global
       const restored = await mutation(() => api.request("documents/" + key(id) + "/restore", { method: "POST", body: { historyId: item.id, revision: workspace.document.revision } })); workspace.clear(); await openDocument(restored.document?.id || id); note("Historical version restored as a draft.");
     }) : null)));
     $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, workspace.document?.title || "History"), button("Back to editor", () => navigate("documents"))), rows.length ? table(["Saved", "Change", "Author", ""], rows) : h("p", { class: "muted" }, "No published revisions yet.")));
+  }
+  function createTextFile(folder, files, drafts, revision, active) {
+    dialog("Create text file", [{ name: "name", label: "File name", required: true, maxlength: 255, help: "A supported text extension is required. The new file stays in the editor until you save it." }], "Open editor", async data => {
+      if (!active()) throw new APIError("Refresh the folder before creating a file.", 409, "conflict");
+      const path = newTextFilePath(data.name, folder, files, drafts);
+      if (!can(user, "read", path) || !can(user, "write", path)) throw new APIError("You cannot create a file at this path.", 403);
+      if (!await workspace.createFile(path, { revision })) return false;
+      currentView = "documents"; await navigate("documents"); renderTree(); return true;
+    });
+  }
+  function sourceHistoryDialog(folder = ".") {
+    dialog("File history", [{ name: "path", label: "Exact file path", required: true, maxlength: 4096, value: folder === "." ? "" : folder + "/", help: "Enter a known file path, including a file that has been deleted." }], "View history", data => renderSourceHistory(data.path));
+  }
+  async function renderSourceHistory(path) {
+    cleanPath(path); if (!can(user, "read", path)) throw new APIError("You cannot read history at this path.", 403);
+    if (!await allowViewChange()) return false;
+    viewLoad?.abort(); filesLoad?.abort(); filesSequence++; viewLoad = new AbortController(); const controller = viewLoad, sequence = ++viewSequence;
+    currentView = "files"; destroyEditor(); $("error").hidden = true; $("view-title").textContent = "File history";
+    doc.querySelectorAll("[data-view]").forEach(node => { if (node.dataset.view === "files") node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); });
+    const active = () => sequence === viewSequence && !controller.signal.aborted;
+    $("view").replaceChildren(h("p", { class: "muted" }, "Loading file history…"));
+    const result = await api.request("files/history?path=" + key(path), { signal: controller.signal }); if (!active()) return false;
+    const snapshot = sourceHistorySnapshot(result, path), status = h("p", { role: "status" }), outcome = h("div", { class: "actions" });
+    const restoreButtons = []; let pending = false, completed = false, stale = false;
+    const rows = snapshot.revisions.map(item => {
+      const restore = can(user, "write", path) && item.restorable && !item.deleted ? button("Restore as draft", async () => {
+        if (!active() || pending || completed || stale || !win.confirm("Restore the contents of “" + path + "” from this version as a new draft? Current document registration stays as it is. A deleted document entry will not be recreated. Your current editor stays open and publication remains a separate step.")) return;
+        pending = true; restoreButtons.forEach(node => { node.disabled = true; });
+        try {
+          const saved = await mutation(() => api.request("files/restore", { method: "POST", body: { path, historyId: item.id, revision: snapshot.revision } }));
+          if (saved?.published !== false || !saved.draft?.id || !saved.draft.revision || saved.draft.path !== path || !saved.draft.baseRevision) throw new APIError("The restore response is incomplete. Check Publishing before retrying; your editor is unchanged.");
+          completed = true; if (!active()) return;
+          status.textContent = "File contents restored as a new draft. Your editor and the published files are unchanged.";
+          outcome.replaceChildren(textFilePath(path) ? button("Open restored draft", () => openSource(path, saved.draft)) : null, button("Open Publishing", () => navigate("publishing"))); note("File contents restored as a draft.");
+        } catch (error) {
+          stale = true; if (active()) status.textContent = "Restoration was not confirmed. Your editor is unchanged. Check Publishing and refresh this history before trying again."; throw error;
+        } finally { pending = false; if (active() && !completed && !stale) restoreButtons.forEach(node => { node.disabled = false; }); }
+      }) : null;
+      if (restore) restoreButtons.push(restore);
+      const date = new Date(item.createdAt);
+      return h("tr", {}, h("td", {}, Number.isNaN(date.valueOf()) ? "Saved revision" : date.toLocaleString()), h("td", {}, item.deleted ? "Deleted" : item.size.toLocaleString() + " bytes"), h("td", {}, item.author || "Unknown author"), h("td", {}, restore));
+    });
+    $("view").replaceChildren(h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", { class: "path" }, path), h("div", { class: "actions" }, button("Choose file path", () => sourceHistoryDialog()), button("Refresh history", () => renderSourceHistory(path)), button("Back to files", () => navigate("files")), workspace.document ? button("Back to editor", () => navigate("documents")) : null)), h("p", { class: "muted" }, "History is limited to this exact path. Restoring copies file contents into a new draft and preserves current document registration. It does not recreate a deleted document entry."), rows.length ? table(["Saved", "Contents", "Author", ""], rows) : h("p", {}, "No retained published versions were found for this path."), status, outcome)); return true;
   }
   async function renderFiles(path = ".", active = () => true) {
     filesLoad?.abort(); const controller = new AbortController(); filesLoad = controller; const run = ++filesSequence; const parentSignal = viewLoad?.signal; const abort = () => controller.abort();
@@ -262,7 +314,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
       } catch (error) { if (staged || published) note(staged + " file(s) saved as drafts; " + published + " file(s) published before the upload stopped."); throw error; }
       finally { uploading = false; upload.disabled = false; }
     }));
-    const controls = h("div", { class: "actions" }, path !== "." ? button("Parent folder", () => renderFiles(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".", active)) : null, user.role !== "viewer" ? button("New folder", () => dialog("Create folder", [{ name: "path", label: "Folder path", required: true, value: path === "." ? "" : path + "/" }], settings?.publishing?.autoPublish ? "Create and publish" : "Create draft", async data => { cleanPath(data.path); await mutation(() => api.request("files", { method: "POST", body: { path: data.path, revision: projectRevision } }), result => result?.published ? "Folder published." : "Folder saved as a draft. Publish it from Publishing."); if (run === filesSequence && active()) await renderFiles(path, active); })) : null);
+    const controls = h("div", { class: "actions" }, path !== "." ? button("Parent folder", () => renderFiles(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".", active)) : null, button("File history", () => sourceHistoryDialog(path)), user.role !== "viewer" ? button("Create text file", () => createTextFile(path, result.files || [], drafts, result.revision, () => active() && run === filesSequence && !controller.signal.aborted)) : null, user.role !== "viewer" ? button("New folder", () => dialog("Create folder", [{ name: "path", label: "Folder path", required: true, value: path === "." ? "" : path + "/" }], settings?.publishing?.autoPublish ? "Create and publish" : "Create draft", async data => { cleanPath(data.path); await mutation(() => api.request("files", { method: "POST", body: { path: data.path, revision: projectRevision } }), result => result?.published ? "Folder published." : "Folder saved as a draft. Publish it from Publishing."); if (run === filesSequence && active()) await renderFiles(path, active); })) : null);
     const items = new Map((result.files || []).map(item => [item.path, { ...item, drafts: [] }]));
     for (const draft of drafts) {
       if (draft.operation !== "write" || !textFilePath(draft.path) || !can(user, "read", draft.path)) continue;
@@ -277,6 +329,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
         if (!item.draftOnly) actions.push(button("Open source", () => openSource(item.path)));
         for (const draft of item.drafts) actions.push(button(item.drafts.length > 1 ? "Open draft “" + draft.id.slice(0, 12) + "”" : "Open saved draft", () => openSource(item.path, draft)), item.draftOnly ? h("a", { class: "button", href: new URL("files/content?path=" + key(item.path) + "&draftId=" + key(draft.id), api.base).href, download: "" }, "Download draft") : null);
       }
+      if (!item.directory) actions.push(button("History", () => renderSourceHistory(item.path)));
       if (write && !item.draftOnly) {
         actions.push(button("Move", () => dialog("Move file", [{ name: "to", label: "New path", required: true, value: item.path }], settings?.publishing?.autoPublish ? "Move and publish" : "Save move as draft", async data => { cleanPath(data.to); await mutation(() => api.request("files/move", { method: "POST", body: { path: item.path, to: data.to, revision: item.revision } }), result => result?.published ? "Move published." : "Move saved as a draft."); if (run === filesSequence && active()) await renderFiles(path, active); })));
         if (item.directory) { if (can(user, "read", item.path)) actions.push(button("Review folder deletion", () => showDeleteReview(item), { class: "danger" })); }

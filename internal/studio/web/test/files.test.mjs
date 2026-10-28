@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { API, APIError, Workspace, MAX_SOURCE_BYTES, formatLanguage } from "../assets/core.mjs";
-import { deleteTreePlan, insideFolder, literalCodePath, textFilePath, UPLOAD_ACCEPT, reviewFolderDeletion } from "../assets/files.mjs";
+import { deleteTreePlan, insideFolder, literalCodePath, textFilePath, newTextFilePath, sourceHistorySnapshot, UPLOAD_ACCEPT, reviewFolderDeletion } from "../assets/files.mjs";
 
 const metadata = (id = "file-draft", revision = "d1", baseRevision = "p0") => ({ id, revision, baseRevision, path: "examples/main.go", operation: "write" });
 const saved = (draft = metadata()) => ({ revision: "current-project", published: false, draft });
@@ -40,12 +40,13 @@ test("source streaming cancels an over-limit response before retaining its bytes
 
 test("source workspace resaves with owner draft CAS and original stale base, without silent rebase", async () => {
   const requests = [], reads = [];
-  const api = { async source(path, options = {}) { reads.push({ path, options }); return options.draftId ? source("old source", "d0", "p0") : source("latest published", "p9"); }, async request(path, options) { requests.push({ path, options }); return saved(metadata("file-draft", "d1", "p0")); } };
+  const api = { async source(path, options = {}) { reads.push({ path, options }); return options.draftId ? source("old source", "d0", "p0") : source("latest published", "p9"); }, async request(path, options) { requests.push({ path, options }); return path.startsWith("files/rebase?") ? { revision: "p9", published: false, draft: metadata("file-draft", "d2", "p9") } : saved(metadata("file-draft", "d1", "p0")); } };
   const workspace = new Workspace(api); await workspace.openFile("examples/main.go", { draftId: "file-draft", draftRevision: "d0" }); workspace.edit("\uFEFF// новый пример\r\n");
   await workspace.save(); const request = requests[0]; assert.equal(request.path, "files/content?path=examples%2Fmain.go"); assert.equal(request.options.raw, true); assert.equal(request.options.body, "\uFEFF// новый пример\r\n"); assert.deepEqual(request.options.headers, { "Content-Type": "application/octet-stream", "If-Match": '"p0"', "X-Draft-ID": "file-draft", "X-Draft-Revision": "d0" });
   assert.equal(workspace.document.resource, "file"); assert.equal(workspace.document.revision, "p0"); assert.equal(workspace.document.draftRevision, "d1"); assert.equal(workspace.dirty, false);
   const latest = await workspace.latest(); assert.equal(latest.revision, "p9"); assert.equal(workspace.document.baseRevision, "p0");
-  await assert.rejects(workspace.rebase("p9"), /original base/); assert.equal(requests.length, 1); assert.equal(reads.at(-1).options.draftId, undefined);
+  assert.equal(requests.length, 1); assert.equal(reads.at(-1).options.draftId, undefined);
+  await workspace.rebase(latest.revision); assert.equal(requests.length, 2); assert.equal(requests[1].path, "files/rebase?path=examples%2Fmain.go"); assert.deepEqual(requests[1].options.headers, { "Content-Type": "application/octet-stream", "If-Match": '"p9"', "X-Draft-ID": "file-draft", "X-Draft-Revision": "d1" }); assert.equal(requests[1].options.body, "\uFEFF// новый пример\r\n"); assert.equal(workspace.document.baseRevision, "p9"); assert.equal(workspace.document.draftRevision, "d2"); assert.equal(workspace.dirty, false);
 });
 
 test("source opens protect dirty documents and discard late or stale-draft responses", async () => {
@@ -91,6 +92,70 @@ test("abandoning a source workspace cannot resurrect it or trigger a follow-up p
   let finish; const pending = new Promise(resolve => { finish = resolve; }); const paths = [];
   const workspace = new Workspace({ async source() { return source(); }, async request(path) { paths.push(path); return pending; } }); await workspace.openFile("examples/main.go"); workspace.edit("submitted"); const saving = workspace.save(true); workspace.clear(); finish(saved()); await saving;
   assert.equal(paths.length, 1); assert.equal(workspace.document, null); assert.equal(workspace.content, "");
+});
+
+test("a new empty text buffer is dirty and sends no request until its first save", async () => {
+  const requests = [];
+  const workspace = new Workspace({ async request(path, options) { requests.push({ path, options }); return { revision: "p1", published: false, draft: { id: "empty", revision: "d1", baseRevision: "p1", path: "empty.txt", operation: "write" } }; } });
+  assert.equal(await workspace.createFile("empty.txt", { revision: "p1" }), true); assert.equal(requests.length, 0); assert.equal(workspace.document.resource, "file"); assert.equal(workspace.document.isNew, true); assert.equal(workspace.content, ""); assert.equal(workspace.dirty, true);
+  await workspace.save(); assert.equal(requests.length, 1); assert.equal(requests[0].path, "files/content?path=empty.txt"); assert.equal(requests[0].options.body, ""); assert.equal(requests[0].options.headers["If-Match"], '"p1"'); assert.equal(workspace.document.isNew, false); assert.equal(workspace.document.draftId, "empty"); assert.equal(workspace.dirty, false);
+});
+
+test("creating a local buffer respects dirty cancellation and cannot override a newer selection during confirmation", async () => {
+  let requests = 0, finish;
+  const canceled = new Workspace({ request() { requests++; } }, { confirmDiscard: () => false });
+  await canceled.createFile("first.txt", { revision: "p1" }); canceled.edit("keep me"); const previous = canceled.document;
+  assert.equal(await canceled.createFile("second.txt", { revision: "p1" }), false); assert.equal(canceled.document, previous); assert.equal(canceled.content, "keep me"); assert.equal(requests, 0);
+  const confirmation = new Promise(resolve => { finish = resolve; });
+  const workspace = new Workspace({ async source() { return source("new selection", "p2"); } }, { confirmDiscard: () => confirmation });
+  await workspace.createFile("first.txt", { revision: "p1" }); workspace.edit("older input"); const creating = workspace.createFile("second.txt", { revision: "p1" });
+  await workspace.openFile("selected.sql", { force: true }); finish(true); assert.equal(await creating, false); assert.equal(workspace.document.path, "selected.sql"); assert.equal(workspace.content, "new selection");
+  await assert.rejects(workspace.createFile("invalid.txt", { revision: "bad\r\nrevision" }), error => error.status === 409); await assert.rejects(workspace.createFile("readonly.txt", { revision: "p2", canWrite: false }), error => error.status === 403); assert.equal(workspace.document.path, "selected.sql");
+});
+
+test("explicit source rebase without a saved draft stages the reviewed bytes once and preserves newer input", async () => {
+  let finish; const pending = new Promise(resolve => { finish = resolve; }); const requests = [];
+  const workspace = new Workspace({ async source() { return source("published", "p0"); }, async request(path, options) { requests.push({ path, options }); return pending; } });
+  await workspace.openFile("examples/main.go"); const merged = "\uFEFF// объединено\r\n"; workspace.edit(merged); const rebasing = workspace.rebase("p2"); workspace.edit(merged + "// newer\r\n");
+  await assert.rejects(workspace.rebase("p2"), error => error.code === "busy");
+  finish({ revision: "p2", published: false, draft: metadata("new-merged", "d2", "p2") }); await rebasing;
+  assert.equal(requests.length, 1); assert.equal(requests[0].path, "files/rebase?path=examples%2Fmain.go"); assert.equal(requests[0].options.method, "POST"); assert.equal(requests[0].options.raw, true); assert.equal(requests[0].options.body, merged); assert.deepEqual(requests[0].options.headers, { "Content-Type": "application/octet-stream", "If-Match": '"p2"' });
+  assert.equal(workspace.document.draftId, "new-merged"); assert.equal(workspace.document.baseRevision, "p2"); assert.equal(workspace.base, merged); assert.equal(workspace.content, merged + "// newer\r\n"); assert.equal(workspace.dirty, true);
+});
+
+test("failed source rebase keeps owner CAS and content without automatically selecting or retrying a draft", async () => {
+  const requests = [];
+  const workspace = new Workspace({ async source() { return source("old saved", "d0", "p0"); }, async request(path, options) { requests.push({ path, options }); throw new APIError("The reviewed version changed", 409, "conflict", { currentRevision: "p3" }); } });
+  await workspace.openFile("examples/main.go", { draftId: "owned", draftRevision: "d0" }); workspace.edit("\uFEFFmy merge\r\n"); const previous = workspace.document;
+  await assert.rejects(workspace.rebase("p2"), error => error.status === 409); await Promise.resolve(); assert.equal(requests.length, 1); assert.equal(requests[0].options.headers["X-Draft-ID"], "owned"); assert.equal(requests[0].options.headers["X-Draft-Revision"], "d0"); assert.equal(requests[0].options.headers["If-Match"], '"p2"'); assert.equal(workspace.document, previous); assert.equal(workspace.document.baseRevision, "p0"); assert.equal(workspace.content, "\uFEFFmy merge\r\n"); assert.equal(workspace.conflict.revision, "p3"); assert.equal(workspace.dirty, true);
+});
+
+test("an abandoned source rebase cannot resurrect its file or trigger publication", async () => {
+  let finish; const pending = new Promise(resolve => { finish = resolve; }); const paths = [];
+  const workspace = new Workspace({ async source() { return source(); }, async request(path) { paths.push(path); return pending; } });
+  await workspace.openFile("examples/main.go"); workspace.edit("submitted merge"); const rebasing = workspace.rebase("p2"); workspace.clear(); finish({ revision: "p2", published: false, draft: metadata("merged", "d2", "p2") }); await rebasing;
+  assert.deepEqual(paths, ["files/rebase?path=examples%2Fmain.go"]); assert.equal(workspace.document, null); assert.equal(workspace.content, "");
+});
+
+test("source rebase rejects a response for another owner draft before adopting any state", async () => {
+  let calls = 0;
+  const workspace = new Workspace({ async source() { return source("saved", "d0", "p0"); }, async request() { calls++; return { revision: "p2", published: false, draft: metadata("some-other-draft", "d2", "p2") }; } });
+  await workspace.openFile("examples/main.go", { draftId: "owned", draftRevision: "d0" }); workspace.edit("keep merged bytes\r\n"); const previous = workspace.document;
+  await assert.rejects(workspace.rebase("p2"), /incomplete/); assert.equal(calls, 1); assert.equal(workspace.document, previous); assert.equal(workspace.document.draftRevision, "d0"); assert.equal(workspace.content, "keep merged bytes\r\n"); assert.equal(workspace.dirty, true);
+});
+
+test("new text filenames reject published aliases and overlapping saved operations without inventing page kinds", () => {
+  assert.equal(newTextFilePath("example.HTML", "snippets", [], []), "snippets/example.HTML"); assert.equal(formatLanguage({ resource: "file", path: "snippets/example.HTML" }), "text");
+  assert.throws(() => newTextFilePath("existing.txt", ".", [{ path: "EXISTING.TXT" }]), error => error.status === 409);
+  for (const draft of [{ path: "snippets", operation: "delete-tree" }, { path: "old.txt", to: "snippets/new.txt", operation: "move" }, { path: "snippets/new.txt", operation: "write" }]) assert.throws(() => newTextFilePath("new.txt", "snippets", [], [draft]), error => error.status === 409);
+  for (const name of ["../escape.txt", "folder/file.txt", "folder\\file.txt", "run.exe"]) assert.throws(() => newTextFilePath(name, "."), { name: "APIError" });
+});
+
+test("history snapshots permit zero-byte versions while rejecting other paths and unsafe restore metadata", () => {
+  const item = { id: "h1", path: "deleted.md", revision: "p0", author: "Author <script>", createdAt: "2026-10-28T00:00:00Z", size: 0, deleted: false, restorable: true, documentId: "historical-id", outputPath: "private.html" };
+  const snapshot = { path: item.path, revision: "p2", revisions: [item, { ...item, id: "deleted", deleted: true, restorable: false }] };
+  const result = sourceHistorySnapshot(snapshot, item.path); assert.equal(result.revisions[0].restorable, true); assert.equal(result.revisions[0].size, 0); assert.equal(result.revisions[1].restorable, false); assert.equal(result.revisions[0].documentId, undefined); assert.equal(result.revisions[0].outputPath, undefined);
+  for (const invalid of [{ ...snapshot, path: "private.md" }, { ...snapshot, revisions: [{ ...item, path: "private.md" }] }, { ...snapshot, revisions: [item, item] }, { ...snapshot, revisions: [{ ...item, deleted: true }] }, { ...snapshot, revisions: [{ ...item, size: -1 }] }, { ...snapshot, revisions: new Array(257).fill(item) }]) assert.throws(() => sourceHistorySnapshot(invalid, item.path), { name: "APIError" });
 });
 
 function plan(count = 2) { return { path: "examples", revision: "p1", planRevision: "plan-cas", fileCount: count - 1, directoryCount: 1, documentCount: 0, totalBytes: count - 1, entries: Array.from({ length: Math.min(count, 100) }, (_, index) => index === 0 ? { path: "examples", directory: true, size: 0 } : { path: "examples/file" + index + ".go", directory: false, size: 1 }), truncated: count > 100 }; }

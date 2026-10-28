@@ -113,18 +113,36 @@ func (h *handler) fileContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) uploadFile(w http.ResponseWriter, r *http.Request, user *auth.User, name, draftID, draftRevision string) {
-	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/octet-stream" || len(params) != 0 || r.Header.Get("Content-Encoding") != "" && r.Header.Get("Content-Encoding") != "identity" {
-		writeError(w, http.StatusUnsupportedMediaType, "invalid_request", "Upload original bytes with Content-Type application/octet-stream.", "", nil)
-		return
-	}
 	limit := int64(content.MaxBinaryBytes)
 	if sourceTextPath(name) {
 		limit = content.MaxTextBytes
 	}
+	data, ok := readSourceBytes(w, r, limit)
+	if !ok {
+		return
+	}
+	policy, err := h.policy(r.Context())
+	if err != nil {
+		serviceError(w, err)
+		return
+	}
+	draft, err := h.opts.Content.SaveSource(r.Context(), content.SourceDraftInput{Path: name, Revision: ifMatch(r), DraftID: draftID, DraftRevision: draftRevision, Data: data}, actor(user))
+	if err != nil {
+		h.operationError(w, r, err)
+		return
+	}
+	h.completeSourceSave(w, r, user, draft, policy)
+}
+
+func readSourceBytes(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/octet-stream" || len(params) != 0 || r.Header.Get("Content-Encoding") != "" && r.Header.Get("Content-Encoding") != "identity" {
+		writeError(w, http.StatusUnsupportedMediaType, "invalid_request", "Upload original bytes with Content-Type application/octet-stream.", "", nil)
+		return nil, false
+	}
 	if r.ContentLength > limit {
 		serviceError(w, content.ErrLimit)
-		return
+		return nil, false
 	}
 	defer r.Body.Close()
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
@@ -135,43 +153,13 @@ func (h *handler) uploadFile(w http.ResponseWriter, r *http.Request, user *auth.
 		} else {
 			serviceError(w, content.ErrInvalid)
 		}
-		return
+		return nil, false
 	}
 	if err := r.Context().Err(); err != nil {
 		serviceError(w, err)
-		return
+		return nil, false
 	}
-	if draftID == "" {
-		h.stage(w, r, user, content.Change{Operation: "write", Path: name, Data: data}, ifMatch(r), nil)
-		return
-	}
-	h.resaveFile(w, r, name, draftID, draftRevision, data)
-}
-
-func (h *handler) resaveFile(w http.ResponseWriter, r *http.Request, name, id, expected string, data []byte) {
-	draft, err := h.opts.Content.ReadDraft(r.Context(), id)
-	if err != nil {
-		serviceError(w, err)
-		return
-	}
-	user, ok := h.filePrincipal(w, r, name, false)
-	if !ok {
-		return
-	}
-	changes := changesOf(draft)
-	if !draftVisible(draft, user, true) || len(changes) != 1 || changes[0].Operation != "write" || changes[0].Path != name {
-		serviceError(w, content.ErrNotFound)
-		return
-	}
-	if draft.Revision != expected || draft.BaseRevision != ifMatch(r) {
-		h.conflict(w, r)
-		return
-	}
-	change := changes[0]
-	change.Content, change.Data = nil, data
-	// The stored base is authoritative. A changed published project does not
-	// silently rebase a successful owner-CAS save; publication may still conflict.
-	h.save(w, r, user, content.DraftInput{ID: draft.ID, Revision: expected, BaseRevision: draft.BaseRevision, Change: change}, nil, false, false, "", http.StatusOK)
+	return data, true
 }
 
 func (h *handler) downloadDraft(w http.ResponseWriter, r *http.Request, name, id string) {

@@ -50,7 +50,7 @@ func newFixture(t *testing.T, modify func(*Options)) *fixture {
 	_, err = authService.Bootstrap(t.Context(), "owner", "Owner", []byte(testPassword))
 	require.NoError(t, err)
 	managed, output := filepath.Join(root, "sources"), filepath.Join(root, "site")
-	contentService, err := content.New(content.Config{Root: managed, StateDir: filepath.Join(root, "state"), OutputDir: output, Initialize: true, Compile: func(ctx context.Context, manifest, directory string) error {
+	contentService, err := content.New(content.Config{Root: managed, StateDir: filepath.Join(root, "state"), OutputDir: output, Initialize: true, AuthorizeSource: authorizeSourceForHTTPTest, Compile: func(ctx context.Context, manifest, directory string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

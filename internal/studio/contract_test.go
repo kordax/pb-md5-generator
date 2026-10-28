@@ -18,7 +18,7 @@ func TestCMSContractValidatesWithoutExternalResolution(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, api)
-	assert.Equal(t, 43, len(api.Operations))
+	assert.Equal(t, 46, len(api.Operations))
 	first := APIContract()
 	first[0] = '!'
 	assert.True(t, strings.HasPrefix(string(APIContract()), "openapi:"))
@@ -71,6 +71,8 @@ func TestCMSContractMutationsDeclareCSRFAndRevisionProtection(t *testing.T) {
 		{"/files/move", "post"},
 		{"/files/delete-preview", "post"},
 		{"/files/delete-tree", "post"},
+		{"/files/rebase", "post"},
+		{"/files/restore", "post"},
 		{"/branches", "post"},
 		{"/branches/checkout", "post"},
 		{"/sync", "post"},
@@ -152,6 +154,9 @@ func TestCMSContractHTTPRoutesAndDefaultErrors(t *testing.T) {
 		"/themes":                 {"get", "post"},
 		"/themes/{id}":            {"delete"},
 	}
+	routes["/files/history"] = []string{"get"}
+	routes["/files/rebase"] = []string{"post"}
+	routes["/files/restore"] = []string{"post"}
 	routes["/files/delete-preview"] = []string{"post"}
 	routes["/files/delete-tree"] = []string{"post"}
 	routes["/storage/configuration"] = []string{"get", "put"}
@@ -337,6 +342,36 @@ func TestCMSFileContractProtectsReviewedDeletionAndDraftResaves(t *testing.T) {
 	assert.True(t, headers["X-Draft-ID"])
 	assert.True(t, headers["X-Draft-Revision"])
 	assert.NotContains(t, headers, "X-Draft-Rebase", "file saves must not imply an unreviewed rebase")
+}
+
+func TestCMSSourceWorkflowContractKeepsRestoresAndReviewedMergesUnpublished(t *testing.T) {
+	var root map[string]any
+	require.NoError(t, yaml.Unmarshal(APIContract(), &root))
+	paths := contractObject(t, root["paths"])
+	schemas := contractObject(t, contractObject(t, root["components"])["schemas"])
+	result := contractObject(t, schemas["SourceDraftResult"])
+	variants, ok := result["allOf"].([]any)
+	require.True(t, ok)
+	require.Len(t, variants, 2)
+	assert.Equal(t, false, contractObject(t, contractObject(t, contractObject(t, variants[1])["properties"])["published"])["const"])
+	restore := contractObject(t, schemas["SourceRestore"])
+	assert.Equal(t, false, restore["additionalProperties"])
+	assert.ElementsMatch(t, []any{"path", "historyId", "revision"}, restore["required"])
+	assert.Len(t, contractObject(t, restore["properties"]), 3, "a file restore must not accept page metadata or publication flags")
+	entry := contractObject(t, contractObject(t, schemas["SourceHistoryEntry"])["properties"])
+	for _, private := range []string{"actor", "email", "branch", "documentId", "content", "data"} {
+		assert.NotContains(t, entry, private)
+	}
+	for _, path := range []string{"/files/rebase", "/files/restore"} {
+		operation := contractObject(t, contractObject(t, paths[path])["post"])
+		response := contractObject(t, contractObject(t, operation["responses"])["200"])
+		media := contractObject(t, contractObject(t, response["content"])["application/json"])
+		assert.Equal(t, "#/components/schemas/SourceDraftResult", contractObject(t, media["schema"])["$ref"])
+	}
+	rebase := contractObject(t, contractObject(t, paths["/files/rebase"])["post"])
+	body := contractObject(t, rebase["requestBody"])
+	media := contractObject(t, contractObject(t, body["content"])["application/octet-stream"])
+	assert.Equal(t, 4<<20, contractObject(t, media["schema"])["maxLength"])
 }
 
 func TestCMSContractLimitsAndPublicationMetadata(t *testing.T) {

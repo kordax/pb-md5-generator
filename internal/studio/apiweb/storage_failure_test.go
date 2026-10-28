@@ -36,6 +36,9 @@ func replaceContentForHTTPTest(t *testing.T, f *fixture, config content.Config) 
 	config.Compile = func(ctx context.Context, manifest, output string) error {
 		return site.BuildContext(ctx, manifest, output, site.Options{})
 	}
+	if config.AuthorizeSource == nil {
+		config.AuthorizeSource = authorizeSourceForHTTPTest
+	}
 	service, err := content.New(config)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })

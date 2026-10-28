@@ -7,6 +7,29 @@ export function literalCodePath(path) { return LITERAL_CODE_EXTENSIONS.includes(
 export function textFilePath(path) { return TEXT_EXTENSIONS.includes(path.split(".").at(-1)?.toLowerCase()); }
 export function insideFolder(path, folder) { return typeof path === "string" && (path === folder || path.startsWith(folder + "/")); }
 
+export function newTextFilePath(name, folder, files = [], drafts = []) {
+  if (typeof name !== "string" || !name || /[\\/]/.test(name)) throw new APIError("Enter a filename in the current folder.");
+  const path = cleanPath(folder === "." ? name : folder + "/" + name);
+  if (!textFilePath(path)) throw new APIError("Choose a supported text file extension.", 415);
+  const folded = path.toLowerCase(), overlaps = target => typeof target === "string" && (folded === target.toLowerCase() || folded.startsWith(target.toLowerCase() + "/") || target.toLowerCase().startsWith(folded + "/"));
+  if (files.some(item => overlaps(item.path))) throw new APIError("A published file or folder already uses this name. Open it from Files instead.", 409, "conflict");
+  if (drafts.some(item => overlaps(item.path) || overlaps(item.to))) throw new APIError("A saved change already targets this path. Open or discard it from Publishing first.", 409, "conflict");
+  return path;
+}
+
+export function sourceHistorySnapshot(value, path) {
+  cleanPath(path);
+  const token = input => typeof input === "string" && input.length > 0 && input.length <= 512 && !/[\"\u0000-\u001f\u007f]/.test(input);
+  if (value?.path !== path || !token(value.revision) || !Array.isArray(value.revisions) || value.revisions.length > 256) throw new APIError("This file history response is incomplete. Refresh before restoring a version.");
+  const ids = new Set();
+  const revisions = value.revisions.map(item => {
+    if (!token(item?.id) || ids.has(item.id) || item.path !== path || !token(item.revision) || typeof item.author !== "string" || item.author.length > 512 || typeof item.createdAt !== "string" || item.createdAt.length > 64 || !Number.isSafeInteger(item.size) || item.size < 0 || typeof item.deleted !== "boolean" || typeof item.restorable !== "boolean" || item.deleted && item.restorable) throw new APIError("This file history response is incomplete. Refresh before restoring a version.");
+    ids.add(item.id);
+    return { id: item.id, path, revision: item.revision, author: item.author, createdAt: item.createdAt, size: item.size, deleted: item.deleted, restorable: item.restorable };
+  });
+  return { path, revision: value.revision, revisions };
+}
+
 export function deleteTreePlan(value, folder, revision) {
   cleanPath(folder);
   if (!value || value.path !== folder || value.revision !== revision || typeof value.planRevision !== "string" || !value.planRevision || value.planRevision.length > 256 || /[\u0000-\u001f\u007f]/.test(value.planRevision) || !Array.isArray(value.entries) || value.entries.length > 100 || typeof value.truncated !== "boolean") throw new APIError("The folder deletion plan is incomplete. Refresh the folder and review it again.");

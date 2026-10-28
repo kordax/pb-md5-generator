@@ -39,7 +39,7 @@ func useGitStorage(t *testing.T, f *fixture) string {
 	gitForHTTPTest(t, f.root, "push", "-u", "origin", "main")
 	backend, err := content.NewGitBackend(content.GitConfig{Root: f.root, Remote: "origin", Timeout: 10 * time.Second})
 	require.NoError(t, err)
-	service, err := content.New(content.Config{Root: f.root, StateDir: filepath.Join(filepath.Dir(f.root), "state"), OutputDir: f.output, Storage: backend, Compile: func(ctx context.Context, manifest, output string) error {
+	service, err := content.New(content.Config{Root: f.root, StateDir: filepath.Join(filepath.Dir(f.root), "state"), OutputDir: f.output, Storage: backend, AuthorizeSource: authorizeSourceForHTTPTest, Compile: func(ctx context.Context, manifest, output string) error {
 		return site.BuildContext(ctx, manifest, output, site.Options{})
 	}})
 	require.NoError(t, err)

@@ -137,6 +137,22 @@ def exercise_source_and_folder_deletion(client):
     client.request(path, "PUT", original, expected=409, headers=headers)
     require(client.request(path + "&draftId=" + current["id"], parse=False) == updated,
             "A stale save overwrote the newer source draft")
+    settings = client.request("/_docs/api/v1/settings")
+    settings.pop("sync", None)
+    settings["footer"] = "Source rebase verification"
+    client.request("/_docs/api/v1/settings", "PUT", settings)
+    latest = client.request("/_docs/api/v1/documents")["revision"]
+    require(latest != base, "Independent publication did not advance the project revision")
+    resave_headers = {"If-Match": f'"{base}"', "X-Draft-ID": current["id"], "X-Draft-Revision": current["revision"]}
+    current = client.request(path, "PUT", updated, headers=resave_headers)["draft"]
+    require(current["baseRevision"] == base, "Ordinary source save silently changed its stored base")
+    rebase_headers = {"If-Match": f'"{base}"', "X-Draft-ID": current["id"], "X-Draft-Revision": current["revision"]}
+    client.request("/_docs/api/v1/files/rebase?path=examples/client.js", "POST", updated, expected=409, headers=rebase_headers)
+    rebase_headers["If-Match"] = f'"{latest}"'
+    rebased = client.request("/_docs/api/v1/files/rebase?path=examples/client.js", "POST", updated, headers=rebase_headers)
+    require(rebased.get("published") is False and rebased["draft"]["id"] == current["id"]
+            and rebased["draft"]["baseRevision"] == latest, "Reviewed source rebase did not retain its owned draft")
+    current = rebased["draft"]
     published = client.request(f"/_docs/api/v1/drafts/{current['id']}/publish", "POST",
                                {"revision": current["revision"], "push": True, "message": "docs: add literal code example"})
     require(published.get("published") is True, "Code example publication failed")
@@ -146,6 +162,13 @@ def exercise_source_and_folder_deletion(client):
     require(client.response_headers.get("x-content-type-options") == "nosniff", "Code download allows MIME sniffing")
     require("sandbox" in client.response_headers.get("content-security-policy", ""), "Code download lacks sandbox policy")
     client.request("/examples/client.js", expected=404, parse=False)
+    history = client.request("/_docs/api/v1/files/history?path=examples/client.js")
+    require(history["path"] == "examples/client.js" and history["revisions"], "Source history is missing")
+    restore_id = next((entry["id"] for entry in history["revisions"] if not entry["deleted"] and entry["size"] == len(updated)), None)
+    require(restore_id, "Source history omitted the retained code bytes")
+    for entry in history["revisions"]:
+        require(entry["path"] == history["path"] and not ({"actor", "email", "branch", "documentId"} & entry.keys()),
+                "Source history exposed unrelated paths or private metadata")
     settings = client.request("/_docs/api/v1/settings")
     settings.pop("sync", None)
     settings["publishing"]["autoPublish"] = True
@@ -164,11 +187,27 @@ def exercise_source_and_folder_deletion(client):
                             {"revision": deletion["revision"], "push": True, "message": "docs: remove literal examples"})
     require(result.get("published") is True, "Folder deletion publication failed")
     client.request(path, expected=404, parse=False)
+    history = client.request("/_docs/api/v1/files/history?path=examples/client.js")
+    restored = client.request("/_docs/api/v1/files/restore", "POST",
+                              {"path": "examples/client.js", "historyId": restore_id, "revision": history["revision"]})
+    require(restored.get("published") is False and restored.get("draft"), "File restore bypassed explicit publication")
+    client.request(path, expected=404, parse=False)
+    restored_draft = restored["draft"]
+    client.request(f"/_docs/api/v1/drafts/{restored_draft['id']}/publish", "POST",
+                   {"revision": restored_draft["revision"], "push": True, "message": "docs: restore literal source"})
+    require(client.request(path, parse=False) == updated, "Restored source bytes changed")
+    project = client.request("/_docs/api/v1/documents")
+    plan = client.request("/_docs/api/v1/files/delete-preview", "POST", {"path": "examples", "revision": project["revision"]})
+    final_delete = client.request("/_docs/api/v1/files/delete-tree", "POST",
+                                  {"path": plan["path"], "revision": plan["revision"], "planRevision": plan["planRevision"]})["draft"]
+    client.request(f"/_docs/api/v1/drafts/{final_delete['id']}/publish", "POST",
+                   {"revision": final_delete["revision"], "push": True, "message": "docs: finish restored source verification"})
+    client.request(path, expected=404, parse=False)
     settings = client.request("/_docs/api/v1/settings")
     settings.pop("sync", None)
     settings["publishing"]["autoPublish"] = False
     client.request("/_docs/api/v1/settings", "PUT", settings)
-    print("Literal source drafts, stale CAS, safe downloads and explicit folder deletion passed", flush=True)
+    print("Literal drafts, reviewed rebase, exact-path history, file restore and explicit folder deletion passed", flush=True)
 
 
 def main():

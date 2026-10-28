@@ -514,6 +514,111 @@ paths:
               schema: {$ref: '#/components/schemas/SaveResult'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /files/history:
+    parameters: [{$ref: '#/components/parameters/Path'}]
+    get:
+      operationId: sourceFileHistory
+      tags: [Files]
+      summary: Read permitted history for one exact source path, including a deleted file
+      description: |
+        Read access to the requested source path is required. The metadata and
+        current project revision come from one serialized view. Only the current
+        branch's exact path is selected; document IDs never follow moves into
+        other paths. No payload bytes, branch names, account IDs or emails are
+        returned. Tombstones are visible but cannot be restored. Restorable
+        indicates permission and metadata eligibility, not payload availability.
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Bounded newest-first source history and its project revision
+          headers:
+            ETag: {schema: {type: string}, description: Quoted current project revision}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceHistory'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+  /files/rebase:
+    parameters: [{$ref: '#/components/parameters/Path'}]
+    post:
+      operationId: rebaseSourceFileDraft
+      tags: [Files]
+      summary: Save an explicitly reviewed source merge as an unpublished draft
+      description: |
+        Editors need fresh read and write access to this exact source path.
+        If-Match must be the latest project revision the caller reviewed.
+        X-Draft-ID and X-Draft-Revision are optional together. When supplied,
+        they update only that owned single-write draft on its current branch.
+        When absent, a new draft is created without selecting another draft.
+        A competing current-branch path or move destination returns a generic
+        conflict. Project and draft revisions, branch, permission and persistence
+        are checked under one content gate. Source is valid UTF-8 without NUL,
+        at most 4 MiB; empty text, BOM and line endings are preserved.
+        This operation never publishes, including when autoPublish is enabled.
+      parameters:
+        - {$ref: '#/components/parameters/CSRF'}
+        - {$ref: '#/components/parameters/Origin'}
+        - {$ref: '#/components/parameters/IfMatch'}
+        - in: header
+          name: X-Draft-ID
+          description: Optional owned draft ID; requires X-Draft-Revision
+          schema: {type: string, pattern: '^[0-9a-f]{32}$', minLength: 32, maxLength: 32}
+        - in: header
+          name: X-Draft-Revision
+          description: Expected owned draft revision; requires X-Draft-ID
+          schema: {$ref: '#/components/schemas/Revision'}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, maxLength: 4194304}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: Reviewed merged draft, retaining the supplied owned ID when present
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceDraftResult'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+  /files/restore:
+    post:
+      operationId: restoreSourceFile
+      tags: [Files]
+      summary: Restore retained historical file bytes into a new unpublished draft
+      description: |
+        The JSON body is at most 32 KiB. Fresh read and write grants, current
+        project revision, exact historical path and branch, and the bounded
+        retained payload are checked inside one content gate. Tombstones are not
+        restorable. The request never overwrites an existing draft or publishes.
+        Historical document metadata is ignored: current page registration stays
+        in place and a deleted page is restored only as an unregistered source
+        file. Page IDs, titles, kinds, output paths and navigation are not reset.
+      parameters: [{$ref: '#/components/parameters/CSRF'}, {$ref: '#/components/parameters/Origin'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SourceRestore'}
+      responses:
+        default: {$ref: '#/components/responses/Failure'}
+        '200':
+          description: New source draft; publication remains explicit
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceDraftResult'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Missing'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
   /files/delete-preview:
     post:
       operationId: previewFolderDeletion
@@ -1185,6 +1290,42 @@ components:
       properties:
         path: {type: string, minLength: 1, maxLength: 2048}
         to: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+    SourceDraftResult:
+      allOf:
+        - {$ref: '#/components/schemas/SaveResult'}
+        - type: object
+          required: [draft]
+          properties:
+            published: {type: boolean, const: false}
+    SourceHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [id, path, revision, author, createdAt, size, deleted, restorable]
+      properties:
+        id: {type: string, pattern: '^[0-9a-f]{32}$'}
+        path: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision', description: Historical project revision; not a payload checksum}
+        author: {type: string, maxLength: 256, description: Display name only; account IDs and email are omitted}
+        createdAt: {type: string, format: date-time}
+        size: {type: integer, minimum: 0, maximum: 16777216}
+        deleted: {type: boolean}
+        restorable: {type: boolean, description: Non-tombstone with current write permission; the retained payload is validated only on restore}
+    SourceHistory:
+      type: object
+      additionalProperties: false
+      required: [path, revision, revisions]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        revision: {$ref: '#/components/schemas/Revision'}
+        revisions: {type: array, maxItems: 256, items: {$ref: '#/components/schemas/SourceHistoryEntry'}}
+    SourceRestore:
+      type: object
+      additionalProperties: false
+      required: [path, historyId, revision]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 2048}
+        historyId: {type: string, pattern: '^[0-9a-f]{32}$', minLength: 32, maxLength: 32}
         revision: {$ref: '#/components/schemas/Revision'}
     DeleteTreeInput:
       type: object
