@@ -115,11 +115,23 @@ func renderAPI(ctx context.Context, api *document.API, current int, manifest Man
 	r.securitySchemes()
 	if len(api.Schemas) > 0 {
 		r.heading(2, document.APIAnchor("api-schemas", pageIdentity(page)), "Schemas")
+		var inline []document.Schema
 		for _, schema := range api.Schemas {
 			if !r.step() {
 				break
 			}
-			r.schema(schema)
+			if schema.Name == "" || schema.Name == "schema" {
+				inline = append(inline, schema)
+			} else {
+				r.schema(schema)
+			}
+		}
+		if len(inline) > 0 {
+			r.raw(`<section class="api-inline-schemas" aria-label="Inline schema definitions"><h3>Inline schema definitions</h3>`)
+			for _, schema := range inline {
+				r.schema(schema)
+			}
+			r.raw(`</section>`)
 		}
 	}
 	r.raw(`</article>`)
@@ -302,16 +314,59 @@ func (r *apiRenderer) knownTarget(value, source string) string {
 	return r.targets[file+"#"+parsed.Fragment]
 }
 
+// schemaLabel follows only bounded, already imported local aliases. Stable links
+// continue to point at the original node even when its label names the target.
+func (r *apiRenderer) schemaLabel(id string) string {
+	original := id
+	seen := make(map[string]bool)
+	for depth := 0; depth < 16 && !seen[id]; depth++ {
+		seen[id] = true
+		schema, known := r.schemas[id]
+		if !known {
+			break
+		}
+		if schema.Name != "" && schema.Name != "schema" {
+			return schema.Name
+		}
+		if len(schema.Definition) > maxAPISchemaSummary {
+			break
+		}
+		var definition struct {
+			Title string `json:"title"`
+			Ref   string `json:"$ref"`
+		}
+		if err := json.Unmarshal(schema.Definition, &definition); err != nil {
+			break
+		}
+		if definition.Title != "" {
+			return definition.Title
+		}
+		ref, err := url.Parse(definition.Ref)
+		if err != nil || ref.IsAbs() || ref.Host != "" || ref.RawQuery != "" || ref.Fragment == "" {
+			break
+		}
+		file := schema.Source.File
+		if file == "" {
+			file = r.api.Source.File
+		}
+		if ref.Path != "" {
+			file = path.Clean(path.Join(path.Dir(file), ref.Path))
+		}
+		id = file + "#" + ref.Fragment
+	}
+	if label := r.parameterType(original); label != "schema" {
+		return label
+	}
+	return "Schema definition"
+}
+
 func (r *apiRenderer) schemaLink(id string) {
 	if id == "" {
 		r.text("Not declared")
 		return
 	}
-	schema, known := r.schemas[id]
-	label := id
-	if known && schema.Name != "" {
-		label = schema.Name
-	}
+	_, known := r.schemas[id]
+	label := r.schemaLabel(id)
 	if anchor := r.targets[id]; known && anchor != "" {
 		r.raw(`<a href="#`)
 		r.text(anchor)
@@ -909,15 +964,21 @@ func (r *apiRenderer) rawPreview(label, value string) {
 }
 
 func (r *apiRenderer) schema(schema document.Schema) {
-	r.raw(`<section class="api-schema">`)
-	title := schema.Name
-	if title == "" {
-		title = schema.ID
-	}
-	r.heading(3, schema.Anchor, title)
-	// Inline definitions keep their deep links without crowding the page contents.
-	if schema.Name == "schema" && len(r.content.Headings) > 0 {
-		r.content.Headings = r.content.Headings[:len(r.content.Headings)-1]
+	inline := schema.Name == "" || schema.Name == "schema"
+	if inline {
+		r.anchor(schema.Anchor)
+		r.raw(`<details class="api-schema api-inline-schema"><summary id="`)
+		r.text(schema.Anchor)
+		r.raw(`">`)
+		label := r.schemaLabel(schema.ID)
+		r.text(label)
+		if label != "Schema definition" {
+			r.raw(` <span>definition</span>`)
+		}
+		r.raw(`</summary>`)
+	} else {
+		r.raw(`<section class="api-schema">`)
+		r.heading(3, schema.Anchor, schema.Name)
 	}
 	r.raw(`<details class="api-raw api-contract"><summary>Schema details</summary><p class="api-meta">Schema ID: <code>`)
 	r.text(schema.ID)
@@ -981,7 +1042,11 @@ func (r *apiRenderer) schema(schema document.Schema) {
 		r.raw(`</ul></div>`)
 	}
 	r.rawPreview("Raw schema definition", string(schema.Definition))
-	r.raw(`</section>`)
+	if inline {
+		r.raw(`</details>`)
+	} else {
+		r.raw(`</section>`)
+	}
 }
 
 func (r *apiRenderer) properties(schema document.Schema, definition map[string]json.RawMessage) {
