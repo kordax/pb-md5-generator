@@ -1238,9 +1238,9 @@ components:
       type: string
       format: password
       writeOnly: true
-      minLength: 15
+      minLength: 10
       maxLength: 1024
-      description: At least 15 Unicode characters and at most 1024 UTF-8 bytes; no trimming or silent truncation
+      description: At least 10 Unicode characters and at most 1024 UTF-8 bytes; no trimming or silent truncation
     Role:
       type: string
       enum: [admin, editor, viewer]

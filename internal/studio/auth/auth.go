@@ -306,8 +306,8 @@ func normalizeGrants(grants *Grants) (*Grants, error) {
 }
 
 func validatePassword(password, username, displayName string) error {
-	if !utf8.ValidString(password) || len(password) > maxPasswordBytes || utf8.RuneCountInString(password) < 15 {
-		return fmt.Errorf("%w: password must contain at least 15 Unicode characters and at most 1024 UTF-8 bytes", ErrInvalid)
+	if !utf8.ValidString(password) || len(password) > maxPasswordBytes || utf8.RuneCountInString(password) < 10 {
+		return fmt.Errorf("%w: password must contain at least 10 Unicode characters and at most 1024 UTF-8 bytes", ErrInvalid)
 	}
 	normalized := strings.ToLower(strings.TrimSpace(password))
 	common := map[string]bool{

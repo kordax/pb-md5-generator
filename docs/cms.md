@@ -23,7 +23,7 @@ printf '%s' "$cms_password" | docker compose run --rm -T cms admin-user \
 unset cms_password
 ```
 
-Choose a unique passphrase of at least 15 Unicode characters and at most 1024 UTF-8 bytes. `--password-stdin` reads until EOF and uses the exact bytes received. `printf '%s'` sends no newline. Leading and trailing spaces are preserved; newline characters are rejected by the account password policy. There is no default account or password. `admin-user` creates the first account once; manage additional users and permissions in the administration panel.
+Choose a unique passphrase of at least 10 Unicode characters and at most 1024 UTF-8 bytes. `--password-stdin` reads until EOF and uses the exact bytes received. `printf '%s'` sends no newline. Leading and trailing spaces are preserved; newline characters are rejected by the account password policy. There is no default account or password. `admin-user` creates the first account once; manage additional users and permissions in the administration panel.
 
 Start or update the CMS:
 

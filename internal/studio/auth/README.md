@@ -69,7 +69,7 @@ storage hardware failure.
 
 Passwords use PBKDF2-HMAC-SHA-256, random 32-byte salts, at least 600,000 iterations
 and constant-time digest comparisons. Production has no KDF-cost override.
-Passwords need at least 15 Unicode characters and at most 1024 UTF-8 bytes. They
+Passwords need at least 10 Unicode characters and at most 1024 UTF-8 bytes. They
 are not trimmed or truncated. A small local common-value blocklist rejects known
 weak values; it is not a complete breached-password database. There is no MFA or
 external identity provider yet.
