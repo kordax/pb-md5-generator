@@ -194,7 +194,7 @@ func newRuntimeContent(config runtimeConfig, authentication *auth.Service, resou
 }
 
 func newRuntimeAppearance(config runtimeConfig, contents *content.Service) (*appearance.Service, error) {
-	return appearance.New(appearance.Config{Content: contents, Root: config.contentDir, Manifest: "docs.json"})
+	return appearance.New(appearance.Config{Content: contents, Root: config.contentDir, Manifest: "docs.json", AuthorizeNavigation: authorizeStorage})
 }
 
 func newRuntimeHandler(config runtimeConfig, authentication *auth.Service, contents *content.Service, settings *appearance.Service) (http.Handler, error) {

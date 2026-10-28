@@ -162,6 +162,10 @@ def main():
         require(storage["settings"]["pullRemote"] == "origin", "Pull authority did not survive")
         require(storage["settings"]["remotes"] == [{"name": "origin", "url": "/data/remote.git", "push": True}],
                 "Managed connections did not survive")
+        settings = client.request("/_docs/api/v1/settings")
+        tree = settings.get("navigation", {}).get("tree", {})
+        require(tree.get("unlistedPages") == "append" and any(item.get("id") == "getting-started" for item in tree.get("items", [])),
+                "Published navigation hierarchy did not survive")
 
     try:
         if not options.skip_build:
@@ -184,9 +188,10 @@ def main():
         admin = client.request("/_docs/admin/", parse=False)
         require(b"__PB_DOCS_CSP_NONCE__" not in admin, "Admin nonce placeholder was not replaced")
         client.request("/_docs/admin/app.mjs", parse=False)
-        storage_module = client.request("/_docs/admin/storage.mjs", parse=False)
-        with open(os.path.join(ROOT, "internal/studio/web/assets/storage.mjs"), "rb") as source:
-            require(storage_module == source.read(), "Packaged storage editor module differs from the built source")
+        for module in ["storage.mjs", "navigation.mjs"]:
+            served_module = client.request(f"/_docs/admin/{module}", parse=False)
+            with open(os.path.join(ROOT, "internal/studio/web/assets", module), "rb") as source:
+                require(served_module == source.read(), "Packaged editor module differs from the built source")
         storage = client.request("/_docs/api/v1/storage/configuration")
         require(storage["settings"]["backend"] == "git", "Legacy Git startup did not seed managed storage")
         require(len(storage["settings"]["revision"]) == 64 and len(storage["projectRevision"]) == 64,
@@ -206,6 +211,13 @@ def main():
         require(published.get("published") is True, "Publication did not complete")
         require(published.get("sync", {}).get("backend") == "git", "Publication lost its backend identity")
         require(not published["sync"].get("error"), "Git publication or push failed")
+        settings = client.request("/_docs/api/v1/settings")
+        settings.pop("sync", None)
+        settings["navigation"]["tree"] = {"unlistedPages": "append", "items": [
+            {"kind": "group", "id": "getting-started", "title": "Getting started", "collapsed": True,
+             "children": [{"kind": "page", "pageId": "home"}]}]}
+        client.request("/_docs/api/v1/settings", "PUT", settings)
+        require(b"Getting started" in client.request("/", parse=False), "Published navigation group is missing")
         require(b"Docker publication verification" in client.request("/", parse=False), "Reader did not update")
         project_state = client.request("/_docs/api/v1/documents")
         created = client.request("/_docs/api/v1/documents", "POST", {

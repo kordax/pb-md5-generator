@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"unicode"
@@ -94,9 +95,40 @@ func (h *handler) documents(w http.ResponseWriter, r *http.Request, user *auth.U
 		h.createDocument(w, r, user)
 		return
 	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		serviceError(w, content.ErrInvalid)
+		return
+	}
+	publishedOnly := false
+	if values, present := query["published"]; present {
+		if len(values) != 1 || values[0] != "true" && values[0] != "false" {
+			serviceError(w, content.ErrInvalid)
+			return
+		}
+		publishedOnly = values[0] == "true"
+	}
 	project, err := h.opts.Content.Project(r.Context())
 	if err != nil {
 		serviceError(w, err)
+		return
+	}
+	drafts := []content.Draft{}
+	if !publishedOnly {
+		drafts, err = h.ownedDrafts(r, user)
+		if err != nil {
+			serviceError(w, err)
+			return
+		}
+	}
+	drafts, err = h.currentDrafts(r, drafts)
+	if err != nil {
+		serviceError(w, err)
+		return
+	}
+	user, err = Principal(r.Context())
+	if err != nil || user == nil {
+		serviceError(w, auth.ErrUnauthorized)
 		return
 	}
 	items := []Document{}
@@ -107,23 +139,13 @@ func (h *handler) documents(w http.ResponseWriter, r *http.Request, user *auth.U
 			seen[entry.ID] = true
 		}
 	}
-	drafts, err := h.ownedDrafts(r, user)
-	if err != nil {
-		serviceError(w, err)
-		return
-	}
-	drafts, err = h.currentDrafts(r, drafts)
-	if err != nil {
-		serviceError(w, err)
-		return
-	}
 	for _, draft := range drafts {
 		changes := changesOf(draft)
 		if len(changes) != 1 {
 			continue
 		}
 		change := changes[0]
-		if change.Operation == "write" && change.DocumentID != "" && change.Title != "" && change.Kind != "" && !seen[change.DocumentID] {
+		if change.Operation == "write" && change.DocumentID != "" && change.Title != "" && change.Kind != "" && !seen[change.DocumentID] && permitted(user, auth.ActionRead, change.Path) && permitted(user, auth.ActionWrite, change.Path) {
 			items = append(items, draftDocument(change, draft, project.Revision, user))
 			seen[change.DocumentID] = true
 		}

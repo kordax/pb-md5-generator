@@ -246,6 +246,46 @@ func TestCMSStorageContractProtectsConnectionsAndIndependentRevisions(t *testing
 	assert.Contains(t, states["enum"], "error", "HTTP 200 does not imply successful synchronization")
 }
 
+func TestCMSNavigationContractDeclaresPresenceAndPublishedCatalog(t *testing.T) {
+	var root map[string]any
+	require.NoError(t, yaml.Unmarshal(APIContract(), &root))
+	paths := contractObject(t, root["paths"])
+	components := contractObject(t, root["components"])
+	schemas := contractObject(t, components["schemas"])
+	settings := contractObject(t, schemas["Settings"])
+	assert.Contains(t, settings["description"], "512 KiB")
+	properties := contractObject(t, settings["properties"])
+	navigation := contractObject(t, properties["navigation"])
+	navigationProperties := contractObject(t, navigation["properties"])
+	tree := contractObject(t, navigationProperties["tree"])
+	variants, ok := tree["oneOf"].([]any)
+	require.True(t, ok)
+	require.Len(t, variants, 2)
+	assert.Equal(t, "#/components/schemas/NavigationTree", contractObject(t, variants[0])["$ref"])
+	assert.Equal(t, "null", contractObject(t, variants[1])["type"])
+	assert.Contains(t, tree["description"], "preserves")
+	assert.Contains(t, tree["description"], "empty items")
+	treeSchema := contractObject(t, schemas["NavigationTree"])
+	assert.Equal(t, false, treeSchema["additionalProperties"])
+	assert.Contains(t, treeSchema["required"], "items")
+	items := contractObject(t, contractObject(t, treeSchema["properties"])["items"])
+	assert.Equal(t, 4096, items["maxItems"])
+	assert.Equal(t, "#/components/schemas/NavigationNode", contractObject(t, items["items"])["$ref"])
+	group := contractObject(t, schemas["NavigationGroup"])
+	assert.ElementsMatch(t, []any{"kind", "id", "title", "children"}, group["required"])
+	page := contractObject(t, schemas["NavigationPage"])
+	assert.ElementsMatch(t, []any{"kind", "pageId"}, page["required"])
+	assert.NotContains(t, contractObject(t, page["properties"]), "url", "navigation links come from stable published page IDs")
+	operation := contractObject(t, contractObject(t, paths["/documents"])["get"])
+	parameters, ok := operation["parameters"].([]any)
+	require.True(t, ok)
+	require.Len(t, parameters, 1)
+	published := contractObject(t, parameters[0])
+	assert.Equal(t, "published", published["name"])
+	assert.Equal(t, "query", published["in"])
+	assert.Equal(t, false, contractObject(t, published["schema"])["default"])
+}
+
 func TestCMSContractLimitsAndPublicationMetadata(t *testing.T) {
 	var root map[string]any
 	require.NoError(t, yaml.Unmarshal(APIContract(), &root))

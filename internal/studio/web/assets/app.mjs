@@ -1,6 +1,7 @@
 import { API, APIError, Workspace, MAX_SOURCE_BYTES, MAX_UPLOAD_BYTES, can, cleanPath, mergeSettings, formatLanguage, previewDocument } from "./core.mjs";
 import { mergeThemeFields, PALETTE_TOKENS } from "./themes.mjs";
 import { renderStorage, canManageStorage } from "./storage.mjs";
+import { renderNavigation, canManageNavigation } from "./navigation.mjs";
 
 export function boot({ document: doc = globalThis.document, window: win = globalThis.window, fetcher = globalThis.fetch, loadEditor = () => import("./editor.js") } = {}) {
   const $ = id => doc.getElementById(id);
@@ -61,6 +62,7 @@ export function boot({ document: doc = globalThis.document, window: win = global
     $("identity").textContent = user.displayName || user.username; $("identity-role").textContent = user.role;
     doc.querySelectorAll("[data-admin]").forEach(node => { node.hidden = !can(user, "admin"); });
     doc.querySelector('[data-view="storage"]').hidden = !canManageStorage(user);
+    doc.querySelector('[data-view="navigation"]').hidden = !canManageNavigation(user);
     $("create-document").hidden = user.role === "viewer";
     await Promise.all([refreshDocuments(), loadSettings().then(value => { $("project-name").textContent = value.title; applyAppearance(value.theme); }).catch(error => { if (error.status !== 403) showError(error); })]); await navigate("documents");
   }
@@ -87,19 +89,21 @@ export function boot({ document: doc = globalThis.document, window: win = global
   }
   async function allowViewChange() { if (formDirty && !win.confirm("Discard the unsaved changes in this form?")) return false; formDirty = false; return true; }
   async function navigate(view) {
+    if (view === "navigation" && !canManageNavigation(user)) throw new APIError("An administrator with read and write access to the entire project is required.", 403);
     if (view === "storage" && !canManageStorage(user)) throw new APIError("An administrator with read and write access to the entire project is required.", 403);
     if (!await allowViewChange()) return;
-    if (["people", "settings", "appearance", "storage"].includes(view) && !can(user, "admin")) throw new APIError("An administrator account is required.", 403);
+    if (["people", "settings", "appearance", "storage", "navigation"].includes(view) && !can(user, "admin")) throw new APIError("An administrator account is required.", 403);
     viewLoad?.abort(); filesLoad?.abort(); filesSequence++; viewLoad = new AbortController(); const sequence = ++viewSequence;
     currentView = view; destroyEditor(); $("error").hidden = true;
     doc.querySelectorAll("[data-view]").forEach(node => { if (node.dataset.view === view) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); });
-    $("view-title").textContent = ({ documents: workspace.document?.title || "Documents", files: "Files", publishing: "Publishing", storage: "Storage", appearance: "Appearance", settings: "Site settings", people: "People" })[view] || "Workspace";
+    $("view-title").textContent = ({ documents: workspace.document?.title || "Documents", files: "Files", publishing: "Publishing", storage: "Storage", navigation: "Documentation navigation", appearance: "Appearance", settings: "Site settings", people: "People" })[view] || "Workspace";
     $("view").replaceChildren(h("p", { class: "muted" }, "Loading…"));
     const active = () => sequence === viewSequence && !viewLoad.signal.aborted;
     if (view === "documents") { if (workspace.document) await renderEditor(sequence); else renderDocuments(); }
     if (view === "files") await renderFiles(".", active);
     if (view === "publishing") await renderPublishing(active);
     if (view === "storage") await renderStorage({ host: $("view"), api, user, h, button, field, workspace, mutate: mutation, confirm: message => win.confirm(message), active, signal: viewLoad.signal, onDirty: value => { if (active()) formDirty = value; }, onRevision: value => { if (active()) projectRevision = value; }, notify: message => { if (active()) note(message); } });
+    if (view === "navigation") await renderNavigation({ host: $("view"), api, user, h, button, field, workspace, mutate: mutation, confirm: message => win.confirm(message), active, signal: viewLoad.signal, onDirty: value => { if (active()) formDirty = value; }, onRevision: value => { if (active()) projectRevision = value; }, onSettings: value => { if (active()) { settings = value; $("project-name").textContent = value.title; applyAppearance(value.theme); } }, notify: message => { if (active()) note(message); } });
     if (view === "settings") await renderSettings(active);
     if (view === "appearance") await renderAppearance(active);
     if (view === "people") await renderPeople(active);
@@ -295,7 +299,9 @@ export function boot({ document: doc = globalThis.document, window: win = global
       try {
         settings = await mutation(() => api.request("settings", { method: "PUT", body: mergeSettings(original, changes) }), appearanceMessage("Site settings saved.")); original = settings; formDirty = false; $("project-name").textContent = settings.title; applyAppearance(settings.theme);
       } finally { submit.disabled = false; fields.forEach(item => { item.input.disabled = false; }); }
-    })); $("view").replaceChildren(form);
+    }));
+    if (canManageNavigation(user)) form.append(h("p", { class: "small" }, button("Edit documentation navigation", () => navigate("navigation"))));
+    $("view").replaceChildren(form);
   }
   function themeFields(theme = {}) {
     return [{ name: "id", label: "Theme ID", value: theme.id || "", required: true, pattern: "[a-z0-9][a-z0-9_-]{0,63}", readOnly: !!theme.id }, { name: "name", label: "Name", value: theme.name || "", required: true, maxlength: 120 }, { name: "description", label: "Description", value: theme.description || "", maxlength: 512 }, { name: "mode", label: "Color mode", value: theme.mode || "auto", options: [["auto", "System preference"], ["light", "Light"], ["dark", "Dark"]] }, { name: "accent", label: "Accent color", type: "color", value: theme.accent || "#315be8" }, { name: "font", label: "Font", value: theme.font || "system", options: ["system", "serif", "mono"] }, { name: "density", label: "Spacing", value: theme.density || "comfortable", options: ["comfortable", "compact"] }, { name: "width", label: "Reading width", value: theme.width || "normal", options: ["normal", "wide"] }, { name: "radius", label: "Corner radius", type: "number", value: theme.radius ?? 10, min: 0, max: 24 }, ...["light", "dark"].flatMap(mode => PALETTE_TOKENS.map(token => ({ name: mode + "." + token, label: (mode === "light" ? "Light" : "Dark") + " palette: " + token, value: theme[mode]?.[token] || "", placeholder: "Inherit theme default", pattern: "#[0-9a-fA-F]{6}", maxlength: 7, ...(token === "background" ? { help: "Optional #RRGGBB colors. Leave blank to use the theme defaults." } : {}) })))];

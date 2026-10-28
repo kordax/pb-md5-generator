@@ -171,6 +171,11 @@ paths:
       operationId: listDocuments
       tags: [Documents]
       summary: List readable documents and the current project revision
+      parameters:
+        - in: query
+          name: published
+          description: Return only published page metadata without reading or merging saved drafts; useful for stable navigation page IDs
+          schema: {type: boolean, default: false}
       responses:
         default: {$ref: '#/components/responses/Failure'}
         '200':
@@ -1307,7 +1312,7 @@ components:
         retryable: {type: boolean}
         error: {type: string, maxLength: 1024}
     Settings:
-      description: Full settings object, at most 32 KiB JSON. The selected themeId resolves registry tokens. Missing or stale revision returns 409. Sync metadata is response-only and ignored if supplied.
+      description: Full settings object, at most 512 KiB JSON. The selected themeId resolves registry tokens. Missing or stale revision returns 409. Sync metadata is response-only and ignored if supplied. The full navigation tree is visible and editable only to administrators with root read and write access. Omitting navigation.tree preserves the stored tree; explicit null resets it.
       type: object
       additionalProperties: false
       required: [revision, title]
@@ -1328,6 +1333,11 @@ components:
             showTOC: {type: boolean}
             showPreviousNext: {type: boolean}
             stickyHeader: {type: boolean}
+            tree:
+              description: Optional custom hierarchy; omitted on updates preserves the existing tree, null resets to legacy flat navigation, and an explicit empty items array stays custom
+              oneOf:
+                - {$ref: '#/components/schemas/NavigationTree'}
+                - {type: 'null'}
         editor:
           type: object
           additionalProperties: false
@@ -1348,6 +1358,37 @@ components:
           properties:
             autoPublish: {type: boolean}
             gitPushOnPublish: {type: boolean, description: Enabling this requires configured Git storage; local storage returns 400}
+    NavigationTree:
+      type: object
+      additionalProperties: false
+      required: [items]
+      description: At most 256 KiB of encoded JSON, 4096 nodes and eight authored node levels. Referenced published page IDs must exist and appear once. Empty source groups and cycles are rejected. Unreadable pages and empty groups are removed from reader projections with all their metadata.
+      properties:
+        unlistedPages: {type: string, enum: [append, omit], default: append, description: Append other permitted pages in manifest order, or omit them only from navigation and previous/next; this does not change access or search}
+        items: {type: array, maxItems: 4096, items: {$ref: '#/components/schemas/NavigationNode'}}
+    NavigationNode:
+      oneOf:
+        - {$ref: '#/components/schemas/NavigationPage'}
+        - {$ref: '#/components/schemas/NavigationGroup'}
+    NavigationPage:
+      type: object
+      additionalProperties: false
+      required: [kind, pageId]
+      properties:
+        kind: {type: string, const: page}
+        pageId: {type: string, minLength: 1, maxLength: 128, description: Published stable document ID; its URL is resolved from the manifest}
+        title: {type: string, maxLength: 256, description: Optional plain-text navigation label, at most 256 UTF-8 bytes; an empty label uses the page title}
+    NavigationGroup:
+      type: object
+      additionalProperties: false
+      required: [kind, id, title, children]
+      properties:
+        kind: {type: string, const: group}
+        id: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', description: Unique stable group ID}
+        title: {type: string, minLength: 1, maxLength: 256, description: Plain-text group label, at most 256 UTF-8 bytes}
+        description: {type: string, maxLength: 512, description: Optional plain text, at most 512 UTF-8 bytes}
+        collapsed: {type: boolean, default: false, description: Initially collapse the native disclosure; current-page ancestors are opened automatically}
+        children: {type: array, minItems: 1, maxItems: 4096, items: {$ref: '#/components/schemas/NavigationNode'}}
     Diagnostic:
       type: object
       required: [message]

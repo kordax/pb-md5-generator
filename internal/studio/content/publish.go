@@ -48,6 +48,10 @@ func mutateSnapshot(ctx context.Context, directory string, changes []Change) err
 	if err != nil {
 		return err
 	}
+	initialPageIDs := make(map[string]bool, len(manifest.Pages))
+	for _, page := range manifest.Pages {
+		initialPageIDs[page.ID] = true
+	}
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return err
@@ -224,6 +228,26 @@ func mutateSnapshot(ctx context.Context, directory string, changes []Change) err
 	envelope["pages"], err = json.Marshal(manifest.Pages)
 	if err != nil {
 		return err
+	}
+	retainedPageIDs := make(map[string]bool, len(manifest.Pages))
+	for _, page := range manifest.Pages {
+		retainedPageIDs[page.ID] = true
+	}
+	removedPage := false
+	for id := range initialPageIDs {
+		removedPage = removedPage || !retainedPageIDs[id]
+	}
+	if removedPage && manifest.Navigation != nil && manifest.Navigation.Tree != nil {
+		tree, err := site.PruneNavigation(manifest.Navigation.Tree, retainedPageIDs)
+		if err != nil {
+			return fmt.Errorf("%w: navigation cannot be pruned", ErrInvalid)
+		}
+		navigation := *manifest.Navigation
+		navigation.Tree = tree
+		envelope["navigation"], err = json.Marshal(navigation)
+		if err != nil {
+			return err
+		}
 	}
 	if len(manifest.Assets) == 0 {
 		delete(envelope, "assets")

@@ -28,6 +28,7 @@ function environment(options = {}) {
   let session = options.anonymous ? { user: null } : { user: { ...admin, ...(options.user || {}) }, csrfToken: "csrf-memory" };
   let draft = null, conflict = false, storage = options.storage || storageSnapshot(), storageSaves = 1;
   let settings = { revision: "s1", title: "Docs", description: "Description", logo: "", favicon: "", footer: "Footer", themeId: "paper", theme: { id: "paper", name: "Paper", mode: "auto", accent: "#315be8", font: "system", density: "comfortable", width: "normal", radius: 10 }, navigation: { showTOC: true, showPreviousNext: false, stickyHeader: true }, editor: { defaultFormat: "markdown", previewOnSave: false }, api: { enabled: true, showCurl: true, requestTimeoutMs: 18000, maxResponseBytes: 65536 }, publishing: { autoPublish: false, gitPushOnPublish: true } };
+  if (options.settings) settings = { ...settings, ...options.settings };
   const fetcher = async (url, request) => {
     const route = url.pathname.replace("/team/_docs/api/v1/", "");
     const body = request.body && typeof request.body === "string" ? JSON.parse(request.body) : request.body;
@@ -38,6 +39,7 @@ function environment(options = {}) {
       if (request.method === "DELETE") { session = { user: null }; return json(null, 204); }
       return json(session);
     }
+    if (route === "documents" && url.searchParams.get("published") === "true") return json({ documents: [{ ...source, content: undefined }, { ...source, id: "reference", title: "Reference", path: "docs/reference.md", content: undefined }], revision: settings.revision });
     if (route === "documents") return request.method === "POST" ? json({ ...source, ...body, id: "new-page", draft: true }, 201) : json({ documents: [{ ...source, content: undefined }], revision: "p1" });
     if (route === "documents/guide") {
       if (request.method === "PUT") {
@@ -417,4 +419,109 @@ test("an active storage timeout is visible and retains edits instead of silently
   assert.match(env.document.querySelector('[data-remote-status="backup"]').textContent, /timed out/);
   assert.equal(env.document.querySelector(".storage-form"), form); assert.equal(address.value, "git@timeout.example:docs.git"); assert.equal(address.disabled, false);
   assert.equal(env.app.workspace.content, "retained after timeout"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("navigation editor requires root grants while scoped admins retain ordinary reading settings", async () => {
+  for (const user of [{ role: "viewer" }, { role: "editor" }, { role: "admin", grants: { read: ["docs"], write: ["."] } }, { role: "admin", grants: { read: ["."], write: ["docs"] } }]) {
+    const env = environment({ user }); await env.app.ready;
+    assert.equal(env.document.querySelector('[data-view="navigation"]').hidden, true);
+    await assert.rejects(env.app.navigate("navigation"), error => error.status === 403);
+    assert.equal(env.requests.some(item => item.route === "documents" && item.search === "?published=true"), false);
+    if (user.role === "admin") {
+      await env.app.navigate("settings"); const form = env.document.querySelector(".settings-form"); assert.ok(form); assert.equal(controls(env.document, "Edit documentation navigation").length, 0);
+      env.event(form, "submit"); await settle(); const put = env.requests.find(item => item.route === "settings" && item.method === "PUT"); assert.equal(Object.hasOwn(put.body.navigation, "tree"), false);
+    }
+    env.app.dispose();
+  }
+});
+
+test("accessible navigation actions group, reorder, indent and outdent stable page identities", async () => {
+  const env = environment(); await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep my editor draft"); const document = env.app.workspace.document;
+  await env.app.navigate("navigation"); assert.ok(env.requests.some(item => item.route === "documents" && item.search === "?published=true"));
+  env.event(controls(env.document, "Customize navigation")[0], "click"); env.event(controls(env.document, "Add section")[0], "click"); await settle();
+  env.event(env.document.querySelector('[aria-label="Move up New section"]'), "click"); env.event(env.document.querySelector('[aria-label="Move up New section"]'), "click");
+  const guide = env.document.querySelector('[data-navigation-page="guide"]'); env.event([...guide.querySelectorAll("button")].find(node => node.textContent === "Indent"), "click");
+  const reference = env.document.querySelector('[data-navigation-page="reference"]'); env.event([...reference.querySelectorAll("button")].find(node => node.textContent === "Indent"), "click");
+  let group = env.document.querySelector('[data-navigation-group="section-1"]');
+  group.querySelector('[name="navigationGroupId"]').value = "guides"; env.event(group.querySelector('[name="navigationGroupId"]'), "input");
+  group.querySelector('[name="navigationGroupTitle"]').value = "Guides"; env.event(group.querySelector('[name="navigationGroupTitle"]'), "input");
+  assert.ok(group.querySelector('[aria-label="Move up Guides"]')); assert.ok([...env.document.querySelector('[name="navigationParent"]').options].some(option => option.textContent === "Guides"));
+  group.querySelector('[name="navigationGroupDescription"]').value = "Read first\nThen explore"; env.event(group.querySelector('[name="navigationGroupDescription"]'), "input");
+  group.querySelector('[name="navigationGroupCollapsed"]').checked = true; env.event(group.querySelector('[name="navigationGroupCollapsed"]'), "change");
+  const alias = env.document.querySelector('[data-navigation-page="guide"] [name="navigationPageTitle"]'); alias.value = "Start here"; env.event(alias, "input");
+  env.event(env.document.querySelector('[aria-label="Outdent Reference"]'), "click");
+  env.event(env.document.querySelector('[aria-label="Move down Guides"]'), "click");
+  const unlisted = env.document.querySelector('[name="navigationUnlisted"]'); unlisted.value = "omit"; env.event(unlisted, "change");
+  env.event(env.document.querySelector(".navigation-form"), "submit"); await settle();
+  const request = env.requests.find(item => item.route === "settings" && item.method === "PUT"); assert.equal(request.body.revision, "s1");
+  assert.deepEqual(request.body.navigation.tree, { unlistedPages: "omit", items: [{ kind: "page", pageId: "reference" }, { kind: "group", id: "guides", title: "Guides", description: "Read first\nThen explore", collapsed: true, children: [{ kind: "page", pageId: "guide", title: "Start here" }] }] });
+  assert.equal(request.body.navigation.showPreviousNext, false); assert.deepEqual(env.app.settings.navigation.tree, request.body.navigation.tree); assert.equal(request.body.api.maxResponseBytes, 65536); assert.equal(env.app.workspace.document, document); assert.equal(env.app.workspace.content, "keep my editor draft"); assert.equal(env.app.workspace.dirty, true);
+  env.event(env.document.querySelector(".navigation-form"), "submit"); await settle(); const puts = env.requests.filter(item => item.route === "settings" && item.method === "PUT"); assert.equal(puts[1].body.revision, "s2"); env.app.dispose();
+});
+
+test("custom empty navigation survives mode toggles and explicit automatic reset sends null", async () => {
+  const env = environment({ settings: { navigation: { showTOC: true, showPreviousNext: true, stickyHeader: true, tree: { unlistedPages: "omit", items: [] } } } });
+  await env.app.ready; await env.app.navigate("navigation"); assert.match(env.document.querySelector(".navigation-form").textContent, /custom tree is empty/);
+  env.event(controls(env.document, "Use automatic navigation")[0], "click"); env.event(controls(env.document, "Customize navigation")[0], "click");
+  assert.equal(env.document.querySelectorAll("[data-navigation-page]").length, 0); assert.equal(env.document.querySelector('[name="navigationUnlisted"]').value, "omit");
+  env.event(env.document.querySelector(".navigation-form"), "submit"); await settle();
+  let puts = env.requests.filter(item => item.route === "settings" && item.method === "PUT"); assert.deepEqual(puts[0].body.navigation.tree, { unlistedPages: "omit", items: [] });
+  env.event(controls(env.document, "Use automatic navigation")[0], "click"); env.event(env.document.querySelector(".navigation-form"), "submit"); await settle();
+  puts = env.requests.filter(item => item.route === "settings" && item.method === "PUT"); assert.equal(puts[1].body.navigation.tree, null); assert.equal(puts[1].body.revision, "s2"); env.app.dispose();
+});
+
+test("empty sections fail without a request and document removal does not follow navigation removal", async () => {
+  const env = environment({ confirm: false }); await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("unsaved source remains"); await env.app.navigate("navigation");
+  env.event(controls(env.document, "Customize navigation")[0], "click"); env.event(controls(env.document, "Add section")[0], "click");
+  const form = env.document.querySelector(".navigation-form"); env.event(form, "submit"); await settle(); assert.equal(env.requests.some(item => item.route === "settings" && item.method === "PUT"), false);
+  assert.match(env.document.querySelector('#view [role="alert"]').textContent, /empty section/); assert.equal(env.document.querySelector(".navigation-form"), form);
+  await env.app.navigate("settings"); assert.equal(env.document.querySelector(".navigation-form"), form);
+  env.event(env.document.querySelector('[aria-label="Remove New section"]'), "click");
+  env.event(env.document.querySelector('[data-navigation-page="reference"] button[aria-label="Remove Reference"]'), "click"); env.event(form, "submit"); await settle();
+  const request = env.requests.find(item => item.route === "settings" && item.method === "PUT"); assert.deepEqual(request.body.navigation.tree.items, [{ kind: "page", pageId: "guide" }]);
+  assert.equal(env.requests.some(item => item.method === "DELETE"), false); assert.equal(env.app.workspace.content, "unsaved source remains"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("navigation revision conflicts preserve the edited tree until an explicit reviewed rebase", async () => {
+  let published = false, writes = 0;
+  const nav = { showTOC: true, showPreviousNext: false, stickyHeader: true, tree: { unlistedPages: "append", items: [{ kind: "page", pageId: "guide" }] } };
+  const env = environment({ settings: { navigation: nav }, respond({ route, request, search, body }) {
+    if (route === "settings" && request.method === "PUT") { if (++writes === 1) { published = true; return json({ error: { code: "conflict", message: "Navigation changed elsewhere" } }, 409); } return json({ ...body, revision: "s3" }); }
+    if (published && route === "settings" && request.method === "GET") return json({ revision: "s2", title: "Docs", theme: {}, navigation: nav });
+    if (published && route === "documents" && search === "?published=true") return json({ revision: "s2", documents: [{ ...source, content: undefined }] });
+  } });
+  await env.app.ready; await env.app.openDocument("guide"); env.app.workspace.edit("keep conflict draft"); await env.app.navigate("navigation");
+  const form = env.document.querySelector(".navigation-form"), label = form.querySelector('[name="navigationPageTitle"]'); label.value = "My retained label"; env.event(label, "input"); env.event(form, "submit"); await settle();
+  assert.equal(env.document.querySelector(".navigation-form"), form); assert.equal(label.value, "My retained label"); assert.match(env.document.querySelector('#view [role="alert"]').textContent, /retained/);
+  env.event(controls(env.document, "Review latest navigation")[0], "click"); await settle(); assert.equal(env.document.querySelector(".navigation-form"), form); assert.equal(label.value, "My retained label");
+  env.event(controls(env.document, "Use reviewed navigation revision")[0], "click"); env.event(form, "submit"); await settle();
+  const request = env.requests.filter(item => item.route === "settings" && item.method === "PUT")[1]; assert.equal(request.body.revision, "s2"); assert.equal(request.body.navigation.tree.items[0].title, "My retained label"); assert.equal(env.app.workspace.content, "keep conflict draft"); assert.equal(env.app.workspace.dirty, true); env.app.dispose();
+});
+
+test("late navigation loads and saves cannot replace the selected view or clear another form", async () => {
+  let block = false, finishRead;
+  const pending = new Promise(resolve => { finishRead = resolve; });
+  const env = environment({ respond({ route, request }) { if (block && route === "settings" && request.method === "GET") return pending; } });
+  await env.app.ready; await env.app.openDocument("guide"); block = true; const navigation = env.app.navigate("navigation"); await settle(); await env.app.navigate("documents");
+  const editor = env.document.querySelector(".source-editor"); finishRead(json({ revision: "s1", navigation: { showTOC: true, showPreviousNext: true, stickyHeader: true } })); await navigation;
+  assert.equal(env.document.querySelector(".source-editor"), editor); assert.equal(env.document.querySelector(".navigation-form"), null); env.app.dispose();
+
+  let finishSave, submitted;
+  const saving = new Promise(resolve => { finishSave = resolve; });
+  const other = environment({ respond({ route, request, body }) { if (route === "settings" && request.method === "PUT") { submitted = body; return saving; } } });
+  await other.app.ready; await other.app.openDocument("guide"); other.app.workspace.edit("still my source"); await other.app.navigate("navigation"); other.event(controls(other.document, "Customize navigation")[0], "click"); other.event(other.document.querySelector(".navigation-form"), "submit"); await settle();
+  await other.app.navigate("settings"); const form = other.document.querySelector(".settings-form"); form.querySelector('[name="title"]').value = "New unsaved settings"; other.event(form, "input"); other.window.confirm = () => false;
+  finishSave(json({ ...submitted, revision: "late" })); await settle(); await other.app.navigate("documents");
+  assert.equal(other.document.querySelector(".settings-form"), form); assert.equal(form.querySelector('[name="title"]').value, "New unsaved settings"); assert.equal(other.app.workspace.content, "still my source"); assert.doesNotMatch(other.document.getElementById("message").textContent, /Navigation saved/); other.app.dispose();
+});
+
+test("published page picker and section labels remain text while adding an unplaced page", async () => {
+  const tree = { unlistedPages: "omit", items: [{ kind: "group", id: "guides", title: "<img src=x onerror=attack()>", children: [{ kind: "page", pageId: "guide" }] }] };
+  const env = environment({ settings: { navigation: { showTOC: true, showPreviousNext: true, stickyHeader: true, tree } } }); await env.app.ready; await env.app.navigate("navigation");
+  assert.equal(env.document.querySelector(".navigation-form img"), null);
+  const parent = env.document.querySelector('[name="navigationParent"]'); parent.value = "[0]";
+  assert.equal(env.document.querySelector('[name="navigationPage"]').value, "reference"); env.event(controls(env.document, "Add selected page")[0], "click");
+  assert.equal(env.document.querySelectorAll('[data-navigation-group="guides"] [data-navigation-page]').length, 2);
+  env.event(env.document.querySelector(".navigation-form"), "submit"); await settle(); const request = env.requests.find(item => item.route === "settings" && item.method === "PUT");
+  assert.equal(request.body.navigation.tree.items[0].title, "<img src=x onerror=attack()>"); assert.equal(request.body.navigation.tree.items[0].children[1].pageId, "reference"); assert.equal(Object.hasOwn(request.body, "sync"), false); env.app.dispose();
 });

@@ -10,6 +10,45 @@ Upload a raster image as an attachment before selecting it as the logo or favico
 
 The reading controls show or hide the table of contents and adjacent page links, and choose whether the header remains visible while scrolling. The theme controls the font, spacing, reading width and corner radius. The font choices use local system, serif or monospace families; no remote font service is required.
 
+## Navigation groups
+
+Open **Navigation** to arrange published pages into groups. Add pages from the catalog, name groups and move entries up, down, into a group or out to its parent. The editor uses stable page IDs, so changing a source path does not break its menu entry. Deleting a document removes its entry and any groups left empty in the same publication.
+
+The complete tree is visible and editable by administrators with read and write access to the content root. Other scoped administrators can still change their permitted ordinary settings; those responses omit the full tree, and saving them preserves it. Reader HTML, previews and project models remove unreadable pages and empty groups with their names, IDs and descriptions.
+
+A source manifest can declare the hierarchy directly:
+
+```json
+{
+  "navigation": {
+    "showTOC": true,
+    "showPreviousNext": true,
+    "stickyHeader": true,
+    "tree": {
+      "unlistedPages": "append",
+      "items": [
+        {"kind": "page", "pageId": "home"},
+        {
+          "kind": "group",
+          "id": "guides",
+          "title": "Guides",
+          "collapsed": true,
+          "children": [
+            {"kind": "page", "pageId": "guide", "title": "Start here"}
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+Use IDs that exist in the published `pages` list; the CMS picker supplies them. Each page can appear once. A group ID matches `[a-z0-9][a-z0-9_-]{0,63}` and is unique in the tree. Group titles and optional page labels allow 256 UTF-8 bytes; descriptions allow 512. The tree is limited to eight authored node levels, 4096 nodes and 256 KiB of encoded JSON. Empty source groups, missing references and cycles are rejected.
+
+`append` adds permitted pages that were not explicitly placed, in manifest order. `omit` leaves them out of navigation and previous/next links; their access permissions, direct URLs and search visibility are unchanged. The visible leaf order determines previous/next, and the current page's group ancestors form its breadcrumb. Groups use native disclosures without requiring JavaScript; current-page ancestors open automatically.
+
+An omitted or `null` source tree keeps legacy flat navigation. An explicit `items: []` stays a custom tree, including after permission filtering. With `append` it lists the remaining pages; with `omit` it has no navigation entries. In settings requests, omitting `navigation.tree` preserves the stored tree, while an explicit `null` resets it. **Reset** in the editor makes that choice explicit. The complete settings request is limited to 512 KiB; a stale revision keeps the entered tree and requires review before saving again.
+
 ## Themes
 
 The builtins are **Default**, **Paper** and **Midnight**. Duplicate a builtin to create a custom theme. Each custom theme has a stable ID, a name, a short description, a default color mode, an accent color, a font, spacing, a reading width and a radius from 0 to 24 pixels.

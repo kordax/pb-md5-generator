@@ -93,6 +93,18 @@ func CompilePreviewContext(ctx context.Context, manifestPath string, page Page, 
 	}
 	page = manifest.Pages[index]
 	manifest.Pages = slices.DeleteFunc(manifest.Pages, func(candidate Page) bool { return !canRead(candidate.Source) })
+	if manifest.Navigation != nil && manifest.Navigation.Tree != nil {
+		retained := make(map[string]bool, len(manifest.Pages))
+		for _, candidate := range manifest.Pages {
+			retained[candidate.ID] = true
+		}
+		navigation := *manifest.Navigation
+		navigation.Tree, err = FilterNavigation(navigation.Tree, retained)
+		if err != nil {
+			return PreviewResult{}, err
+		}
+		manifest.Navigation = &navigation
+	}
 	manifest.Assets = slices.DeleteFunc(manifest.Assets, func(name string) bool { return !canRead(name) })
 	if manifest.Logo != "" && !canRead(manifest.Logo) {
 		manifest.Logo = ""

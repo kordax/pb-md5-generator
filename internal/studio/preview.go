@@ -122,6 +122,13 @@ func validateMutation(ctx context.Context, snapshot string, changes []content.Ch
 		return err
 	}
 	previous, previousErr := readProjectManifest(publishedRoot, filepath.Join(publishedRoot, "docs.json"))
+	if previousErr != nil {
+		if err := authorizeStorage(ctx, actor); err != nil {
+			return err
+		}
+	} else if err := authorizeNavigationChange(ctx, previous, manifest, actor); err != nil {
+		return err
+	}
 	oldPages := make(map[string]site.Page, len(previous.Pages))
 	for _, page := range previous.Pages {
 		oldPages[page.ID] = page

@@ -5,11 +5,16 @@ import (
 	"fmt"
 )
 
+// Eight authored navigation levels include both node objects and child arrays
+// beneath the manifest/settings/tree containers. The raw syntax budget leaves
+// room for those containers; navigation independently enforces its depth of 8.
+const maxManifestJSONDepth = 32
+
 // validateJSON rejects ambiguous duplicate members and excessively nested input
 // before decoding the typed contract. encoding/json otherwise accepts duplicates.
 func validateJSON(decoder *json.Decoder, depth int) error {
-	if depth > 16 {
-		return fmt.Errorf("manifest JSON nesting exceeds 16 levels")
+	if depth > maxManifestJSONDepth {
+		return fmt.Errorf("manifest JSON nesting exceeds %d levels", maxManifestJSONDepth)
 	}
 	token, err := decoder.Token()
 	if err != nil {

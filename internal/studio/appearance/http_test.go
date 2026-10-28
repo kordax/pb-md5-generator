@@ -105,7 +105,7 @@ func TestSettingsHTTPAuthenticationRightsCSRFAndStrictRequests(t *testing.T) {
 		response = requestHTTP(t, handler, http.MethodPut, "/settings", body, cookie, csrf)
 		assert.Equal(t, http.StatusBadRequest, response.Code, body)
 	}
-	response = requestHTTP(t, handler, http.MethodPut, "/settings", `{"title":"`+strings.Repeat("a", 33<<10)+`"}`, cookie, csrf)
+	response = requestHTTP(t, handler, http.MethodPut, "/settings", `{"title":"`+strings.Repeat("a", MaxSettingsBytes+1)+`"}`, cookie, csrf)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
 	request := httptest.NewRequest(http.MethodPut, "https://studio.test/settings", strings.NewReader(`{}`))
 	request.AddCookie(cookie)

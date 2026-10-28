@@ -49,7 +49,7 @@ func (s *Service) Handler(authentication *auth.Service) http.Handler {
 		}
 		switch {
 		case request.URL.Path == "/settings":
-			s.settingsHTTP(writer, request, user)
+			s.settingsHTTP(writer, request, user, authentication)
 		case request.URL.Path == "/themes":
 			s.themesHTTP(writer, request, user)
 		case strings.HasPrefix(request.URL.Path, "/themes/") && strings.Count(request.URL.Path, "/") == 2:
@@ -68,7 +68,7 @@ func actor(user *auth.User) content.Actor {
 	return content.Actor{ID: user.ID, Name: user.DisplayName}
 }
 
-func (s *Service) settingsHTTP(writer http.ResponseWriter, request *http.Request, user *auth.User) {
+func (s *Service) settingsHTTP(writer http.ResponseWriter, request *http.Request, user *auth.User, authentication *auth.Service) {
 	switch request.Method {
 	case http.MethodGet:
 		settings, err := s.Read(request.Context())
@@ -76,25 +76,48 @@ func (s *Service) settingsHTTP(writer http.ResponseWriter, request *http.Request
 			serviceFailure(writer, err)
 			return
 		}
-		writer.Header().Set("ETag", `"`+settings.Revision+`"`)
-		writeJSON(writer, http.StatusOK, settings)
+		s.settingsResponse(writer, request, settings, authentication)
 	case http.MethodPut:
 		if !permitted(user, s.manifest) {
 			failure(writer, http.StatusForbidden, "forbidden", "administrator access and writable settings are required")
 			return
 		}
-		var input Settings
-		if err := httpjson.Decode(writer, request, &input, 32<<10); err != nil {
+		var input settingsInput
+		if err := httpjson.Decode(writer, request, &input, MaxSettingsBytes); err != nil {
 			decodeFailure(writer, err)
 			return
 		}
-		settings, err := s.Update(request.Context(), input, actor(user))
+		decoded, err := input.settings()
+		if err != nil {
+			decodeFailure(writer, err)
+			return
+		}
+		user, err = authentication.Resolve(request)
+		if err != nil || user == nil {
+			serviceFailure(writer, auth.ErrUnauthorized)
+			return
+		}
+		if !permitted(user, s.manifest) {
+			serviceFailure(writer, auth.ErrForbidden)
+			return
+		}
+		if decoded.NavigationTreeSet {
+			allowed, err := s.navigationAllowed(request.Context(), user)
+			if err != nil {
+				serviceFailure(writer, err)
+				return
+			}
+			if !allowed {
+				serviceFailure(writer, auth.ErrForbidden)
+				return
+			}
+		}
+		settings, err := s.Update(request.Context(), decoded, actor(user))
 		if err != nil {
 			serviceFailure(writer, err)
 			return
 		}
-		writer.Header().Set("ETag", `"`+settings.Revision+`"`)
-		writeJSON(writer, http.StatusOK, settings)
+		s.settingsResponse(writer, request, settings, authentication)
 	default:
 		writer.Header().Set("Allow", "GET, PUT")
 		failure(writer, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
@@ -175,6 +198,10 @@ func decodeFailure(writer http.ResponseWriter, err error) {
 
 func serviceFailure(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, auth.ErrUnauthorized):
+		failure(writer, http.StatusUnauthorized, "unauthorized", "sign in to access settings")
+	case errors.Is(err, auth.ErrForbidden):
+		failure(writer, http.StatusForbidden, "forbidden", "the requested settings change is not permitted")
 	case errors.Is(err, content.ErrConflict):
 		failure(writer, http.StatusConflict, "conflict", "settings or themes changed; reload before saving")
 	case errors.Is(err, content.ErrInvalid), errors.Is(err, content.ErrUnsupported):

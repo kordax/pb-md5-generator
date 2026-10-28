@@ -57,7 +57,37 @@
     },
     "navigation": {
       "type": "object", "additionalProperties": false,
-      "properties": {"showTOC": {"type": "boolean"}, "showPreviousNext": {"type": "boolean"}, "stickyHeader": {"type": "boolean"}}
+      "properties": {"showTOC": {"type": "boolean"}, "showPreviousNext": {"type": "boolean"}, "stickyHeader": {"type": "boolean"}, "tree": {"anyOf": [{"$ref": "#/$defs/navigationTree"}, {"type": "null"}]}}
+    },
+    "navigationTree": {
+      "type": "object", "additionalProperties": false, "required": ["items"],
+      "$comment": "Compiler validation additionally enforces eight levels, 4096 total nodes, a 256 KiB encoded tree, UTF-8 byte budgets, unique group/page identities and existing page references.",
+      "properties": {
+        "unlistedPages": {"enum": ["append", "omit"], "default": "append"},
+        "items": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/navigationNode"}}
+      }
+    },
+    "navigationNode": {
+      "oneOf": [{"$ref": "#/$defs/navigationPage"}, {"$ref": "#/$defs/navigationGroup"}]
+    },
+    "navigationPage": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "pageId"],
+      "properties": {
+        "kind": {"const": "page"},
+        "pageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+        "title": {"type": "string", "maxLength": 256}
+      }
+    },
+    "navigationGroup": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "title", "children"],
+      "properties": {
+        "kind": {"const": "group"},
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 256},
+        "description": {"type": "string", "maxLength": 512},
+        "collapsed": {"type": ["boolean", "null"]},
+        "children": {"type": "array", "minItems": 1, "maxItems": 4096, "items": {"$ref": "#/$defs/navigationNode"}}
+      }
     },
     "editor": {
       "type": "object", "additionalProperties": false, "required": ["defaultFormat"],

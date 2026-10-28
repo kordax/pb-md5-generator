@@ -167,6 +167,9 @@ func (reader *cmsReader) render(ctx context.Context, root, manifestPath string, 
 		return readerResponse{body: data, contentType: mediaType}, nil
 	}
 	if name == "_docs/project.json" {
+		if err := filterReaderNavigation(&manifest); err != nil {
+			return readerResponse{}, err
+		}
 		model := site.ProjectModel(manifest)
 		data, err := site.EncodeProjectModel(ctx, model)
 		response.body = data

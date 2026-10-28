@@ -188,6 +188,11 @@ func (m Manifest) ValidateAppearance() error {
 			return fmt.Errorf("custom themeId requires resolved theme tokens")
 		}
 	}
+	if m.Navigation != nil {
+		if err := ValidateNavigation(m.Navigation.Tree, m.Pages); err != nil {
+			return err
+		}
+	}
 	if m.Editor != nil {
 		switch m.Editor.DefaultFormat {
 		case "markdown", "html", "protobuf", "openapi":

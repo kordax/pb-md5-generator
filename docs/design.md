@@ -211,7 +211,7 @@ The model contracts and remaining extensions are:
 
 | Entity | Required information |
 | --- | --- |
-| Project | Schema version, title and ordered page identities; grouped navigation and capabilities remain planned |
+| Project | Schema version, title, ordered page identities and a bounded optional navigation tree; declared extension capabilities remain planned |
 | Page | Stable ID, output path, source location, title, kind, content blocks and optional API |
 | Block | Typed Markdown blocks/inlines, callouts, tabs and includes with source locations; diagrams and API embeds remain planned |
 | Reference | Target ID and optional anchor, independent of output format |
@@ -280,14 +280,21 @@ are validated before publication; unsafe paths, symlinks and external resolution
 are rejected.
 
 The server renders authorized navigation, search and portable models instead of
-exposing its complete generated output directory. Themes and site settings use
+exposing its complete generated output directory. Its optional navigation tree
+uses stable page IDs, bounded nesting and node counts, DFS ordering and native
+group disclosures. Permission projections remove hidden leaves and empty groups
+with all their labels and metadata before rendering or export. The global tree
+editor requires administrator access to the complete project; ordinary document
+deletion can prune its own entry atomically. Omitted tree fields preserve existing
+settings, while explicit reset and custom empty trees retain distinct meanings.
+Themes and site settings use
 the same draft/publication transaction, with portable tokens stored in the
 manifest. The [appearance guide](appearance.md) describes the current controls.
 
 The broader Wiki.js-style target remains active. Follow-up work includes more
 storage providers, private credential provisioning controls, safe Git-to-local
 migration, recursive folder operations and broader attachment handling, a format
-registration contract, richer editing workflows, grouped navigation,
+registration contract, richer editing workflows,
 versions/locales and migration tools. Browser and native-platform acceptance
 checks must cover the complete workflows before a release claims that scope.
 
@@ -323,7 +330,7 @@ widths.
 
 | Area | Initial foundation | Required follow-up |
 | --- | --- | --- |
-| Reading | Static and authenticated pages, navigation, breadcrumbs, heading anchors, contents, previous/next and print styles | Grouped navigation and mobile contents disclosure |
+| Reading | Static and authenticated pages, grouped native navigation, breadcrumbs, heading anchors, contents, DFS previous/next and print styles | Mobile contents disclosure and broader accessibility acceptance |
 | Search | Local search data and small browser search UI | Heading-level results, ranking, keyboard palette, bounded worker index for large projects |
 | Appearance | Responsive layout, branding, custom light/dark palettes, fonts, spacing, width, radius and navigation controls | Theme package contract, richer customization and visual regression fixtures |
 | Authoring | CMS source editor, Markdown, sanitized HTML, protobuf/OpenAPI, assets, drafts/history, typed exports and bounded directives | Richer editing, diagrams, API embeds, format registration and version/locale authoring |

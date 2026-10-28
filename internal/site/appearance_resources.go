@@ -29,6 +29,24 @@ func EncodePageModel(ctx context.Context, page document.Page) ([]byte, error) {
 
 // EncodeProjectModel applies the static project index's 8 MiB encoded budget.
 func EncodeProjectModel(ctx context.Context, project document.Project) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("model encoding context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if project.Navigation != nil && project.Navigation.Tree != nil {
+		if len(project.Pages) > maxPages {
+			return nil, fmt.Errorf("navigation page catalog exceeds its limit")
+		}
+		pages := make([]Page, 0, len(project.Pages))
+		for _, page := range project.Pages {
+			pages = append(pages, Page{ID: page.ID, Title: page.Title, Path: page.Path})
+		}
+		if err := ValidateNavigation(project.Navigation.Tree, pages); err != nil {
+			return nil, err
+		}
+	}
 	return encodeModelContext(ctx, project, maxSearchBytes)
 }
 

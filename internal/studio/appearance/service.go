@@ -17,20 +17,23 @@ import (
 )
 
 const (
-	MaxThemes     = 64
-	maxThemeBytes = 16 << 10
+	MaxThemes        = 64
+	MaxSettingsBytes = 512 << 10
+	maxThemeBytes    = 16 << 10
 )
 
 type Config struct {
-	Content  *content.Service
-	Root     string
-	Manifest string
+	Content             *content.Service
+	Root                string
+	Manifest            string
+	AuthorizeNavigation func(context.Context, content.Actor) error
 }
 
 type Service struct {
-	content  *content.Service
-	manifest string
-	gate     chan struct{}
+	content             *content.Service
+	manifest            string
+	gate                chan struct{}
+	authorizeNavigation func(context.Context, content.Actor) error
 }
 
 // Settings is a complete, resolved view. Revision is the project's opaque
@@ -49,6 +52,10 @@ type Settings struct {
 	API         document.APISettings        `json:"api"`
 	Publishing  document.PublishingSettings `json:"publishing"`
 	Sync        *content.SyncStatus         `json:"sync,omitempty"`
+
+	// NavigationTreeSet makes a nil tree an explicit reset. Without it, a nil
+	// tree preserves the current navigation when older clients save settings.
+	NavigationTreeSet bool `json:"-"`
 }
 
 type Theme struct {
@@ -74,7 +81,7 @@ func New(config Config) (*Service, error) {
 	if config.Manifest != "docs.json" {
 		return nil, fmt.Errorf("%w: CMS settings require docs.json", content.ErrInvalid)
 	}
-	return &Service{content: config.Content, manifest: config.Manifest, gate: make(chan struct{}, 1)}, nil
+	return &Service{content: config.Content, manifest: config.Manifest, gate: make(chan struct{}, 1), authorizeNavigation: config.AuthorizeNavigation}, nil
 }
 
 func resolved(value snapshot) Settings {
@@ -217,6 +224,19 @@ func (s *Service) Update(ctx context.Context, settings Settings, actor content.A
 	if settings.Revision == "" || settings.Revision != value.revision {
 		return Settings{}, content.ErrConflict
 	}
+	if settings.NavigationTreeSet || settings.Navigation.Tree != nil {
+		if s.authorizeNavigation != nil {
+			if err := s.authorizeNavigation(ctx, actor); err != nil {
+				return Settings{}, err
+			}
+		}
+	} else {
+		settings.Navigation.Tree = resolved(value).Navigation.Tree
+	}
+	settings.Navigation.Tree, err = site.CloneNavigation(settings.Navigation.Tree)
+	if err != nil {
+		return Settings{}, fmt.Errorf("%w: invalid navigation", content.ErrInvalid)
+	}
 	if err := site.ValidateTheme(settings.Theme); err != nil {
 		return Settings{}, fmt.Errorf("%w: %v", content.ErrInvalid, err)
 	}
@@ -247,6 +267,15 @@ func (s *Service) Update(ctx context.Context, settings Settings, actor content.A
 	manifest.Navigation, manifest.Editor, manifest.API, manifest.Publishing = &settings.Navigation, &settings.Editor, &settings.API, &settings.Publishing
 	if err := site.ValidateManifest(&manifest); err != nil {
 		return Settings{}, fmt.Errorf("%w: %v", content.ErrInvalid, err)
+	}
+	bounded := settings
+	bounded.Sync = nil
+	data, err := json.Marshal(bounded)
+	if err != nil {
+		return Settings{}, fmt.Errorf("%w: invalid settings", content.ErrInvalid)
+	}
+	if len(data) > MaxSettingsBytes {
+		return Settings{}, content.ErrLimit
 	}
 	text, err := encode(manifest)
 	if err != nil {
